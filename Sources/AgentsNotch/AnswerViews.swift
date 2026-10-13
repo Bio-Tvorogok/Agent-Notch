@@ -19,6 +19,7 @@ private enum AnswerText {
 /// several questions or a multi-select collect the choices first and send them with "Ответить".
 struct QuestionChoices: View {
     let ask: PendingAsk
+    @Environment(\.theme) private var theme
     let store: Store
     @State private var picked: [String: [String]] = [:]
     @State private var own: [String: String] = [:]
@@ -60,7 +61,7 @@ struct QuestionChoices: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Ink.optionOn : Ink.option))
+                    .background(RoundedRectangle(cornerRadius: 6, style: theme.cornerStyle).fill(on ? Ink.optionOn : Ink.option))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

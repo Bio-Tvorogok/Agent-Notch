@@ -38,7 +38,7 @@ struct UsageInline: View {
             }
             .font(.system(size: 11))
             .padding(10)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Ink.inset))
+            .background(RoundedRectangle(cornerRadius: settings.theme == .terminal ? 6 : 8, style: settings.currentTheme.cornerStyle).fill(Ink.inset))
             .padding(.horizontal, 12).padding(.bottom, 6)
         }
     }

@@ -26,8 +26,8 @@ extension UsageTone {
     var usageColor: AnyShapeStyle {
         switch self {
         case .grey: AnyShapeStyle(dim)
-        case .amber: AnyShapeStyle(Ink.waiting)
-        case .red: AnyShapeStyle(Ink.error)
+        case .amber: AnyShapeStyle(Ink.usageAmber)
+        case .red: AnyShapeStyle(Ink.usageRed)
         }
     }
 }

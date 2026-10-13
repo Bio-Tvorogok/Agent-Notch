@@ -27,8 +27,8 @@ struct CardTabBody: View {
                             .font(.system(size: 11, design: .monospaced)).lineLimit(3).truncationMode(.middle)
                             .textSelection(.enabled)
                         Spacer(minLength: 2)
-                        Text("+\(file.added)").foregroundStyle(AgentState.working.color)
-                        Text("−\(file.removed)").foregroundStyle(AgentState.error.color)
+                        Text("+\(file.added)").foregroundStyle(Ink.working)
+                        Text("−\(file.removed)").foregroundStyle(Ink.error)
                     }
                 }
             case .log:
@@ -43,7 +43,7 @@ struct CardTabBody: View {
                                 Text(error.text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                                 Spacer(minLength: 4)
                                 Text("×\(error.count)").monospacedDigit()
-                            }.foregroundStyle(AgentState.error.color)
+                            }.foregroundStyle(Ink.error)
                         }
                     }
                 }

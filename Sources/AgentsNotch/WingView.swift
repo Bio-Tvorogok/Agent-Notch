@@ -73,7 +73,7 @@ private struct WingStatusMark: View {
     var body: some View {
         let size = small ? settings.wingDisplay.childSize : settings.appearance.markSize.points
         if settings.usesThemeMarks {
-            ThemeMark(theme: settings.currentTheme, vendor: mark.vendor, state: mark.state, isLight: mark.light, size: size + 1)
+            ThemeMark(theme: settings.currentTheme, vendor: mark.vendor, state: mark.state, isLight: mark.light, size: size, onDark: true)
         } else {
             StatusMark(vendor: mark.vendor, state: mark.state, isLight: mark.light, style: settings.appearance.markStyle, size: size)
         }

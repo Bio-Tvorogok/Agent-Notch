@@ -17,7 +17,7 @@ final class AppSettings: ObservableObject {
         didSet {
             save(theme, "theme")
             // A new theme shows its own marks at once; «Значки агентов» can switch back.
-            if theme != oldValue && theme != .terminal { themeMarks = true }
+            if oldValue == .terminal && theme != .terminal { themeMarks = true }
         }
     }
     /// The fourth mark style, «Как в теме»: kept apart from «markStyle», which «Терминал» falls back to.

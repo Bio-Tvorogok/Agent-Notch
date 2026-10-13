@@ -4,13 +4,15 @@ import NotchCore
 
 /// The look of the list, the card and the toast. The wing stays black: it sits on the camera housing.
 enum ThemeID: String, Codable, CaseIterable, Sendable {
-    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram, wasteland, pixel
+    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram, wasteland, pixel, ducks
 }
 
 /// Colour roles every themed view draws with. `Ink` resolves a role against the theme in the environment.
 enum InkRole: CaseIterable {
     case text, strong, secondary, dim, faint, rule, hover, inset, option, optionOn
     case pill, pillText, pillStroke, primary, primaryText, waitingBg, errorBg, waiting, error, working, code, accent
+    /// Usage warnings and the ask line; they fall back to waiting, error and text where a theme does not set them.
+    case usageAmber, usageRed, askText
 }
 
 struct Theme {
@@ -35,8 +37,17 @@ struct Theme {
     /// Buttons read as `[ Разрешить ]` menu items instead of pills.
     var bracketPills = false
     var headingPrefix = ""
+    var cornerStyle: RoundedCornerStyle = .continuous
 
-    func color(_ role: InkRole) -> Color { colors[role] ?? .clear }
+    func color(_ role: InkRole) -> Color {
+        if let c = colors[role] { return c }
+        switch role {
+        case .usageAmber: return color(.waiting)
+        case .usageRed: return color(.error)
+        case .askText: return color(.text)
+        default: return .clear
+        }
+    }
 
     static func of(_ id: ThemeID) -> Theme {
         switch id {
@@ -52,6 +63,7 @@ struct Theme {
         case .hologram: hologram
         case .wasteland: wasteland
         case .pixel: pixel
+        case .ducks: ducks
         }
     }
 }
@@ -73,6 +85,7 @@ extension Theme {
             .pill: white(0.23), .pillText: .white, .pillStroke: .clear, .primary: amber, .primaryText: .black,
             .waitingBg: rgb(0.17, 0.16, 0.1), .errorBg: rgb(0.17, 0.11, 0.11),
             .waiting: amber, .error: red, .working: green, .code: white(0.92), .accent: amber,
+            .usageAmber: rgb(0.94, 0.69, 0.24), .usageRed: rgb(0.96, 0.35, 0.32), .askText: white(0.85),
         ])
 
     /// Liquid Glass: the desktop shows through, a lit rim, capsule controls, white primary like system sheets.
@@ -189,7 +202,7 @@ extension Theme {
             .rule: .black, .hover: Color(white: 1, opacity: 0.55), .inset: .white, .option: .white, .optionOn: Color(red: 0.55, green: 0.85, blue: 1),
             .pill: .white, .pillText: .black, .pillStroke: .black, .primary: Color(red: 1, green: 0.45, blue: 0.72), .primaryText: .black,
             .waitingBg: .white, .errorBg: Color(red: 1, green: 0.6, blue: 0.55),
-            .waiting: Color(red: 0.75, green: 0.3, blue: 0), .error: Color(red: 0.8, green: 0, blue: 0.1), .working: Color(red: 0, green: 0.5, blue: 0.2),
+            .waiting: Color(red: 0.56, green: 0.2, blue: 0), .error: Color(red: 0.8, green: 0, blue: 0.1), .working: Color(red: 0, green: 0.5, blue: 0.2),
             .code: .black, .accent: Color(red: 1, green: 0.45, blue: 0.72),
         ],
         hardShadow: true)
@@ -220,7 +233,8 @@ extension Theme {
             .hover: pip(0.16), .inset: pip(0.07), .option: pip(0.07), .optionOn: pip(0.28),
             .pill: .clear, .pillText: pip(0.95), .pillStroke: .clear, .primary: pip(0.95), .primaryText: Color(red: 0.01, green: 0.08, blue: 0.03),
             .waitingBg: pip(0.1), .errorBg: pip(0.06),
-            .waiting: pip(1), .error: pip(1), .working: pip(0.85), .code: pip(1), .accent: pip(1),
+            // Warnings break the monochrome on purpose: amber waits, red is danger, as on the old amber and red tubes.
+            .waiting: rgb(1, 0.78, 0.2), .error: rgb(1, 0.33, 0.25), .working: pip(0.85), .code: pip(1), .accent: pip(1),
         ],
         glow: pip(0.6), bracketPills: true, headingPrefix: "> ")
 
@@ -240,6 +254,23 @@ extension Theme {
         ],
         hardShadow: false)
 
+    /// Rubber-duck debugging: a bath of pale water and tiles, soap bubbles, dev memes scrawled on the tiles,
+    /// project names as `//` comments, rubber-duck yellow for what needs you.
+    static let ducks = Theme(
+        id: .ducks, scheme: .light, radius: 22, pillRadius: 100, rowInset: 6, rowRadius: 12, design: .rounded,
+        headingFont: .system(size: 12.5, weight: .heavy, design: .rounded), headingUppercase: false,
+        colors: [
+            .text: rgb(0.05, 0.19, 0.27), .strong: rgb(0.02, 0.11, 0.17), .secondary: rgb(0.17, 0.35, 0.44), .dim: rgb(0.3, 0.47, 0.56),
+            .faint: rgb(0.05, 0.35, 0.5, 0.2), .rule: rgb(0.05, 0.35, 0.5, 0.13), .hover: white(1, 0.5), .inset: white(1, 0.55),
+            .option: white(1, 0.6), .optionOn: rgb(1, 0.8, 0.1, 0.45),
+            .pill: white(1, 0.85), .pillText: rgb(0.05, 0.19, 0.27), .pillStroke: rgb(0.05, 0.35, 0.5, 0.16),
+            .primary: rgb(1, 0.83, 0.12), .primaryText: rgb(0.33, 0.17, 0),
+            .waitingBg: rgb(1, 0.9, 0.45, 0.6), .errorBg: rgb(1, 0.6, 0.55, 0.38),
+            .waiting: rgb(0.8, 0.45, 0), .error: rgb(0.82, 0.15, 0.15), .working: rgb(0, 0.55, 0.45),
+            .code: rgb(0.04, 0.3, 0.42), .accent: rgb(0.95, 0.45, 0.05),
+        ],
+        headingPrefix: "// ")
+
     static let holoColors: [Color] = [Color(red: 1, green: 0.4, blue: 0.75), Color(red: 1, green: 0.85, blue: 0.4), Color(red: 0.4, green: 1, blue: 0.75),
                                       Color(red: 0.35, green: 0.75, blue: 1), Color(red: 0.7, green: 0.45, blue: 1), Color(red: 1, green: 0.4, blue: 0.75)]
 }
@@ -257,6 +288,7 @@ struct Ink: ShapeStyle {
     static let faint = Ink(role: .faint), rule = Ink(role: .rule), hover = Ink(role: .hover), inset = Ink(role: .inset)
     static let option = Ink(role: .option), optionOn = Ink(role: .optionOn), pill = Ink(role: .pill), pillText = Ink(role: .pillText)
     static let pillStroke = Ink(role: .pillStroke), primary = Ink(role: .primary), primaryText = Ink(role: .primaryText)
+    static let usageAmber = Ink(role: .usageAmber), usageRed = Ink(role: .usageRed), askText = Ink(role: .askText)
     static let waitingBg = Ink(role: .waitingBg), errorBg = Ink(role: .errorBg), waiting = Ink(role: .waiting)
     static let error = Ink(role: .error), working = Ink(role: .working), code = Ink(role: .code), accent = Ink(role: .accent)
 }
@@ -271,7 +303,7 @@ extension View {
     func themeSurface(_ theme: Theme, radius: CGFloat? = nil) -> some View {
         let r = radius ?? theme.radius
         return background(ThemeSurface(theme: theme, radius: r))
-            .clipShape(theme.id == .pixel ? AnyShape(SteppedRect(step: 4)) : AnyShape(RoundedRectangle(cornerRadius: r, style: .continuous)))
+            .clipShape(theme.id == .pixel ? AnyShape(SteppedRect(step: 4)) : AnyShape(RoundedRectangle(cornerRadius: r, style: theme.cornerStyle)))
             .overlay(ThemeRim(theme: theme, radius: r))
     }
 }
@@ -287,7 +319,7 @@ struct ThemeSurface: View {
     @Environment(\.themeSnapshot) private var snapshot
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: theme.cornerStyle)
         switch theme.id {
         case .terminal:
             shape.fill(Color(white: 0.11))
@@ -295,7 +327,7 @@ struct ThemeSurface: View {
             ZStack {
                 if snapshot { shape.fill(Color(red: 0.16, green: 0.19, blue: 0.27).opacity(0.86)) } else { GlassBlur().clipShape(shape) }
                 // A dark wash keeps text readable over any wallpaper; the sheen is the light hitting the top.
-                shape.fill(Color.black.opacity(snapshot ? 0.18 : 0.32))
+                shape.fill(Color.black.opacity(snapshot ? 0.18 : 0.4))
                 shape.fill(LinearGradient(colors: [.white.opacity(0.13), .white.opacity(0.02), .clear],
                                           startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.35)))
                 shape.fill(RadialGradient(colors: [.white.opacity(0.08), .clear], center: UnitPoint(x: 0.15, y: 0), startRadius: 0, endRadius: 260))
@@ -408,6 +440,15 @@ struct ThemeSurface: View {
                     }
                 }
             }
+        case .ducks:
+            ZStack {
+                shape.fill(LinearGradient(colors: [Color(red: 0.89, green: 0.97, blue: 1), Color(red: 0.72, green: 0.9, blue: 0.98)],
+                                          startPoint: .top, endPoint: .bottom))
+                BathTiles()
+                DevMemes()
+                BathBubbles()
+                BathWater().fill(Color(red: 0.3, green: 0.72, blue: 0.92).opacity(0.16))
+            }
         case .hologram:
             ZStack {
                 shape.fill(Color(red: 0.05, green: 0.055, blue: 0.08))
@@ -497,7 +538,7 @@ struct ThemeRim: View {
     let theme: Theme
     let radius: CGFloat
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: radius, style: theme.cornerStyle)
         switch theme.id {
         case .terminal:
             shape.strokeBorder(Color(white: 0.23), lineWidth: 0.5)
@@ -542,6 +583,11 @@ struct ThemeRim: View {
                 SteppedRect(step: 4, inset: 1.5).stroke(Color.white, lineWidth: 3)
                 SteppedRect(step: 4, inset: 5).stroke(Color(red: 0.45, green: 0.5, blue: 0.95), lineWidth: 1)
             }
+        case .ducks:
+            ZStack {
+                shape.strokeBorder(Color.white, lineWidth: 3)
+                shape.inset(by: 3).strokeBorder(Color(red: 0.35, green: 0.7, blue: 0.88).opacity(0.45), lineWidth: 1)
+            }
         case .hologram:
             shape.strokeBorder(AngularGradient(colors: Theme.holoColors, center: .center), lineWidth: 1.2).opacity(0.85)
         }
@@ -552,7 +598,7 @@ struct ThemeRim: View {
 private struct GlassBlur: View {
     var body: some View {
         if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.clear, in: Rectangle())
+            Color.clear.glassEffect(.regular, in: Rectangle())
         } else {
             BehindWindowBlur()
         }
@@ -577,8 +623,8 @@ struct ThemeRowFill<S: ShapeStyle>: View {
     @Environment(\.theme) private var theme
     var body: some View {
         if theme.rowInset > 0 {
-            RoundedRectangle(cornerRadius: theme.rowRadius, style: .continuous).fill(style)
-                .overlay { if theme.hardShadow { RoundedRectangle(cornerRadius: theme.rowRadius, style: .continuous).strokeBorder(Color.black, lineWidth: 2) } }
+            RoundedRectangle(cornerRadius: theme.rowRadius, style: theme.cornerStyle).fill(style)
+                .overlay { if theme.hardShadow { RoundedRectangle(cornerRadius: theme.rowRadius, style: theme.cornerStyle).strokeBorder(Color.black, lineWidth: 2) } }
                 .padding(.horizontal, theme.rowInset)
         } else {
             Rectangle().fill(style)
@@ -588,4 +634,74 @@ struct ThemeRowFill<S: ShapeStyle>: View {
 
 extension AppSettings {
     var currentTheme: Theme { Theme.of(theme) }
+}
+
+/// Square bath tiles with white grout.
+struct BathTiles: View {
+    var body: some View {
+        Canvas { ctx, size in
+            var x: CGFloat = 0
+            while x < size.width { ctx.fill(Path(CGRect(x: x, y: 0, width: 1, height: size.height)), with: .color(.white.opacity(0.4))); x += 26 }
+            var y: CGFloat = 0
+            while y < size.height { ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)), with: .color(.white.opacity(0.4))); y += 26 }
+        }
+    }
+}
+
+/// Soap bubbles drifting along the right edge, where the text rarely reaches.
+struct BathBubbles: View {
+    private static let bubbles: [(x: CGFloat, y: CGFloat, r: CGFloat)] = [
+        (0.93, 0.06, 9), (0.85, 0.12, 5), (0.96, 0.2, 4), (0.9, 0.34, 7), (0.97, 0.47, 3.5),
+        (0.04, 0.9, 6), (0.1, 0.95, 3.5), (0.88, 0.62, 4.5), (0.95, 0.78, 8),
+    ]
+    var body: some View {
+        Canvas { ctx, size in
+            for b in Self.bubbles {
+                let c = CGPoint(x: b.x * size.width, y: b.y * size.height)
+                let rect = CGRect(x: c.x - b.r, y: c.y - b.r, width: b.r * 2, height: b.r * 2)
+                ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.22)))
+                ctx.stroke(Path(ellipseIn: rect), with: .color(.white.opacity(0.85)), lineWidth: 1)
+                let h = b.r * 0.35
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - b.r * 0.55, y: c.y - b.r * 0.6, width: h, height: h)), with: .color(.white))
+            }
+        }
+    }
+}
+
+/// Two gentle waves along the bottom of the panel.
+struct BathWater: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let top = r.maxY - 26
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX, y: top))
+        var x = r.minX
+        while x <= r.maxX {
+            p.addLine(to: CGPoint(x: x, y: top + 4 * CGFloat(sin(Double(x) / 18)) + 2 * CGFloat(sin(Double(x) / 7))))
+            x += 2
+        }
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Dev folklore scrawled faintly on the tiles, the way it ends up on every office whiteboard.
+struct DevMemes: View {
+    private static let lines: [(text: String, x: CGFloat, y: CGFloat, angle: Double)] = [
+        ("works on my machine", 0.62, 0.17, -6), ("// TODO: fix later", 0.2, 0.3, 4), ("LGTM", 0.8, 0.4, -3),
+        ("it's not a bug,\nit's a feature", 0.3, 0.52, -5), ("git push --force", 0.72, 0.62, 5), ("418 I'm a teapot", 0.22, 0.74, -2),
+        ("rm -rf node_modules", 0.66, 0.84, -4), ("quack?", 0.12, 0.1, 8), ("¯\\_(ツ)_/¯", 0.86, 0.94, 0),
+    ]
+    var body: some View {
+        Canvas { ctx, size in
+            for line in Self.lines {
+                var c = ctx
+                c.translateBy(x: line.x * size.width, y: line.y * size.height)
+                c.rotate(by: .degrees(line.angle))
+                c.draw(Text(line.text).font(.system(size: 12, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(Color(red: 0.1, green: 0.4, blue: 0.55).opacity(0.07)), at: .zero)
+            }
+        }
+    }
 }

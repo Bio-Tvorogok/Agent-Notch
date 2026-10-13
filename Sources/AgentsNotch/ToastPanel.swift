@@ -63,17 +63,27 @@ private struct ToastView: View {
                 AgentStatusMark(agent: notice.agent)
                 Text(notice.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.strong).lineLimit(1)
             }
-            Text(notice.line).font(.system(size: 11)).foregroundStyle(Ink.text).lineLimit(1)
+            Text(notice.line).font(.system(size: 11)).foregroundStyle(Ink.askText).lineLimit(1)
             if let p = notice.preview {
                 Text(p).font(.system(size: 11)).foregroundStyle(dim).lineLimit(2)
             }
         }
         .frame(width: 340, alignment: .leading)
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .themeSurface(settings.currentTheme, radius: min(settings.currentTheme.radius, 18))
+        .background { if settings.theme == .terminal { RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.11)) } }
+        .overlay { if settings.theme == .terminal { RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.23), lineWidth: 1) } }
+        .modifier(ToastSurface(theme: settings.currentTheme))
         .themed(settings.currentTheme)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .help(ToastText.open)
+    }
+}
+
+/// «Терминал» keeps its original toast frame (drawn above); every other theme gets its surface.
+private struct ToastSurface: ViewModifier {
+    let theme: Theme
+    func body(content: Content) -> some View {
+        if theme.id == .terminal { content } else { content.themeSurface(theme, radius: min(theme.radius, 18)) }
     }
 }

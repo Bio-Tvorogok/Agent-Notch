@@ -141,7 +141,7 @@ struct AgentStatusMark: View {
     var body: some View {
         if settings.usesThemeMarks {
             ThemeMark(theme: theme, vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
-                      size: (small ? settings.wingDisplay.childSize : settings.appearance.markSize.points) + 1)
+                      size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)
         } else {
             plain
         }

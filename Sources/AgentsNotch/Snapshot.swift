@@ -113,8 +113,11 @@ enum Snapshot {
     }
 
     static func runCard(to file: String) -> Bool {
-        host(CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
-                      cost: SessionCost(tokens: 1, usd: 1.37)).environmentObject(AppSettings.shared),
+        let suite = "AgentsNotch.snapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        return host(CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
+                      cost: SessionCost(tokens: 1, usd: 1.37)).environmentObject(AppSettings(defaults: defaults)),
              size: NSSize(width: 340, height: 480), to: URL(fileURLWithPath: file))
     }
 

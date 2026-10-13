@@ -27,7 +27,8 @@ struct PanelView: View {
         .themeSurface(theme)
         .themed(theme)
         .font(.system(size: 12, design: theme.design))
-        .foregroundStyle(Ink.text)
+        // «Терминал» keeps the system label colour its rows always had.
+        .foregroundStyle(theme.id == .terminal ? AnyShapeStyle(.primary) : AnyShapeStyle(Ink.text))
     }
 
     @ViewBuilder private func content(_ projects: [ProjectNode]) -> some View {
@@ -143,8 +144,8 @@ private struct AttentionRow: View {
                     Request(event: ask.event)
                     Choices(ask: ask, store: store, hint: first)
                 } else {
-                    Text(waiting ? Loc.t("asks: ", "просит: ") + (a.ask ?? Loc.t("approval", "подтверждение")) : Loc.t("repeats the same error", "повторяет одну и ту же ошибку"))
-                        .foregroundStyle(waiting ? Ink.text : dim).lineLimit(1).truncationMode(.middle)
+                    Text(waiting ? "просит: \(a.ask ?? "подтверждение")" : "повторяет одну и ту же ошибку")
+                        .foregroundStyle(waiting ? Ink.askText : dim).lineLimit(1).truncationMode(.middle)
                         .font(.system(size: 11))
                 }
             }
@@ -331,7 +332,7 @@ private struct PillBody: View {
     let primary: Bool
     @Environment(\.theme) private var theme
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: theme.cornerStyle)
         let pressed = configuration.isPressed
         if theme.bracketPills {
             // A terminal menu item: brackets, inverted when it is the default choice.

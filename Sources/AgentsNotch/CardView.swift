@@ -41,7 +41,7 @@ struct CardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(12)
-            Rectangle().fill(Ink.rule).frame(height: 0.5)
+            if settings.theme == .terminal { Divider().overlay(Color(white: 0.23)) } else { Rectangle().fill(Ink.rule).frame(height: 0.5) }
             HStack(spacing: 6) {
                 ForEach(tabs, id: \.self) { item in
                     Button(CardText.tab(item)) {

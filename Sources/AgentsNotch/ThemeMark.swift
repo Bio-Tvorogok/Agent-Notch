@@ -10,12 +10,20 @@ struct ThemeMark: View {
     let state: AgentState
     let isLight: Bool
     let size: CGFloat
+    /// The wing is always black: themes made for light surfaces borrow the terminal's state colours there.
+    var onDark = false
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.12)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            mark(t: t)
-                .opacity(state == .waiting && blinks ? (Int(t * 2) % 2 == 0 ? 1 : 0.35) : 1)
+        Group {
+            if animates {
+                TimelineView(.periodic(from: .now, by: 0.12)) { context in
+                    let t = context.date.timeIntervalSinceReferenceDate
+                    mark(t: t)
+                        .opacity(state == .waiting && blinks ? (Int(t * 2) % 2 == 0 ? 1 : 0.35) : 1)
+                }
+            } else {
+                mark(t: 0)
+            }
         }
         .frame(width: size, height: size)
         .accessibilityLabel((vendor == .claude ? SettingsText.claude : SettingsText.codex) + ", " + SettingsText.name(stateKey))
@@ -25,7 +33,15 @@ struct ThemeMark: View {
     private var stateKey: String {
         switch state { case .working: "working"; case .waiting: "waiting"; case .error: "error"; case .done: "done" }
     }
-    private var ink: Color { theme.color(role) }
+    private var ink: Color { (onDark && theme.scheme == .light ? Theme.terminal : theme).color(role) }
+    /// Only marks that move get a timeline; a still mark costs nothing while the wing sits on screen.
+    private var animates: Bool {
+        switch state {
+        case .waiting: true
+        case .working: [ThemeID.midnight, .phosphor, .hologram, .wasteland, .pixel, .ducks].contains(theme.id)
+        case .error, .done: false
+        }
+    }
     private var role: InkRole {
         switch state { case .working: .working; case .waiting: .waiting; case .error: .error; case .done: .dim }
     }
@@ -46,6 +62,7 @@ struct ThemeMark: View {
         case .hologram: prism(t: t)
         case .wasteland: pixels(t: t)
         case .pixel: sprite(t: t)
+        case .ducks: duck(t: t)
         }
     }
 
@@ -221,7 +238,7 @@ struct ThemeMark: View {
             }
         }
         .shadow(color: ink.opacity(0.8), radius: 1.5)
-        .frame(width: max(size, 10), height: max(size, 10))
+        .frame(width: size, height: size)
     }
 }
 
@@ -263,7 +280,57 @@ extension ThemeMark {
                 }
             }
         }
-        .frame(width: max(size, 10), height: max(size, 10))
+        .frame(width: size, height: size)
+    }
+}
+
+extension ThemeMark {
+    // MARK: ducks — a rubber duck: Claude swims right, Codex swims left
+
+    func duck(t: Double) -> some View {
+        let body: Color = switch state {
+        case .working: Color(red: 1, green: 0.84, blue: 0.1)
+        case .waiting: Color(red: 1, green: 0.55, blue: 0.1)
+        case .error: Color(red: 0.95, green: 0.32, blue: 0.3)
+        case .done: Color(red: 0.72, green: 0.77, blue: 0.82)
+        }
+        let beak = state == .waiting ? Color(red: 0.85, green: 0.22, blue: 0.05) : Color(red: 1, green: 0.48, blue: 0.05)
+        let line = Color(red: 0.32, green: 0.18, blue: 0.04)
+        // Working ducks bob on the water; a waiting duck quacks with its beak open; an error capsizes it; done sleeps.
+        let bob = state == .working ? CGFloat(sin(t * 5)) : 0
+        let side = size
+        return Canvas { ctx, sz in
+            // The outline is drawn outside each part, so the duck sits inside the box by its width.
+            let w = max(0.6, sz.width * 0.07)
+            ctx.translateBy(x: w, y: w)
+            let s = sz.width - 2 * w
+            func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+            let parts = [
+                Path(ellipseIn: CGRect(x: 0.04 * s, y: 0.5 * s, width: 0.8 * s, height: 0.42 * s)),
+                Path { p in p.move(to: pt(0.06, 0.64)); p.addLine(to: pt(0.02, 0.42)); p.addLine(to: pt(0.26, 0.56)); p.closeSubpath() },
+                Path(ellipseIn: CGRect(x: 0.42 * s, y: 0.14 * s, width: 0.42 * s, height: 0.42 * s)),
+            ]
+            let beaks: [Path] = state == .waiting
+                ? [Path { p in p.move(to: pt(0.8, 0.3)); p.addLine(to: pt(0.96, 0.28)); p.addLine(to: pt(0.82, 0.39)); p.closeSubpath() },
+                   Path { p in p.move(to: pt(0.82, 0.42)); p.addLine(to: pt(0.95, 0.5)); p.addLine(to: pt(0.8, 0.47)); p.closeSubpath() }]
+                : [Path { p in p.move(to: pt(0.8, 0.31)); p.addLine(to: pt(1, 0.39)); p.addLine(to: pt(0.8, 0.46)); p.closeSubpath() }]
+            // Outline every part first, then fill over it: the inner seams disappear and only the silhouette keeps a line.
+            for part in parts + beaks { ctx.stroke(part, with: .color(isLight ? body : line), lineWidth: w * 2) }
+            for part in parts { ctx.fill(part, with: .color(isLight ? .white : body)) }
+            for part in beaks { ctx.fill(part, with: .color(beak)) }
+            let eye = pt(0.68, 0.3)
+            if state == .done {
+                ctx.stroke(Path { p in p.move(to: CGPoint(x: eye.x - s * 0.06, y: eye.y)); p.addLine(to: CGPoint(x: eye.x + s * 0.05, y: eye.y)) },
+                           with: .color(line), lineWidth: max(0.8, s * 0.06))
+            } else {
+                let r = max(0.8, s * 0.055)
+                ctx.fill(Path(ellipseIn: CGRect(x: eye.x - r, y: eye.y - r, width: r * 2, height: r * 2)), with: .color(line))
+            }
+        }
+        .frame(width: side, height: side)
+        .scaleEffect(x: claude ? 1 : -1, y: 1)
+        .rotationEffect(.degrees(state == .error ? 180 : Double(bob) * 7))
+        .offset(y: bob * side * 0.07)
     }
 }
 
@@ -276,7 +343,7 @@ struct ThemedVendorMark: View {
         if !settings.usesThemeMarks {
             StatusMark(vendor: vendor, state: .working, isLight: false, style: settings.appearance.markStyle, size: settings.appearance.markSize.points)
         } else {
-            ThemeMark(theme: theme, vendor: vendor, state: .working, isLight: false, size: settings.appearance.markSize.points + 1)
+            ThemeMark(theme: theme, vendor: vendor, state: .working, isLight: false, size: settings.appearance.markSize.points)
         }
     }
 }
