@@ -16,8 +16,45 @@ struct SoundChecks {
         XCTAssertEqual(restored[.agentFinished], "Hero")
         XCTAssertEqual(restored[.permissionRequested], "")
         XCTAssertEqual(restored.volume, 0.35)
+        let custom = "custom:0c1b18de-52a3-4ff2-afbe-67c141cf4cb7"
+        prefs[.agentFinished] = custom
+        let customRestored = try JSONDecoder().decode(SoundPrefs.self, from: JSONEncoder().encode(prefs))
+        XCTAssertEqual(customRestored[.agentFinished], custom)
+        prefs[.agentError] = "custom:../../outside.wav"
+        XCTAssertEqual(prefs[.agentError], "")
         prefs[.agentError] = "missing-sound"
         XCTAssertEqual(prefs[.agentError], "")
+    }
+
+    func presets() throws {
+        let expected: [(SoundPreset, [SoundEvent: String])] = [
+            (.requestsOnly, [.permissionRequested: "Glass"]),
+            (.attention, [.permissionRequested: "Glass", .questionAsked: "Glass", .planProposed: "Glass", .agentError: "Basso", .operationFailed: "Basso", .limitWarning: "Sosumi", .limitExhausted: "Basso"]),
+            (.important, [.permissionRequested: "Glass", .questionAsked: "Glass", .planProposed: "Glass", .agentError: "Basso", .operationFailed: "Basso", .limitWarning: "Sosumi", .limitExhausted: "Basso", .agentFinished: "Hero", .limitRestored: "Ping"])
+        ]
+        for (preset, sounds) in expected {
+            var prefs = SoundPrefs(legacyName: "Ping")
+            prefs.volume = 0.35
+            prefs[.cardOpened] = "Frog"
+            prefs = preset.apply(to: prefs)
+            for event in SoundEvent.allCases {
+                XCTAssertEqual(prefs[event], sounds[event] ?? "", "wrong event in \(preset.rawValue): \(event.rawValue)")
+            }
+            XCTAssertEqual(prefs.volume, 0.35)
+            XCTAssertEqual(SoundPreset.matching(prefs), preset)
+            let restored = try JSONDecoder().decode(SoundPrefs.self, from: JSONEncoder().encode(prefs))
+            XCTAssertEqual(SoundPreset.matching(restored), preset)
+        }
+        var all = SoundPreset.allEvents.apply(to: SoundPrefs())
+        XCTAssertTrue(SoundEvent.allCases.allSatisfy { SoundPrefs.names.contains(all[$0]) })
+        XCTAssertEqual(all[.denied], "Basso")
+        XCTAssertEqual(all[.listOpened], "Tink")
+        XCTAssertEqual(all[.agentFinished], "Hero")
+        XCTAssertEqual(SoundPreset.matching(all), .allEvents)
+        all[.cardOpened] = ""
+        XCTAssertNil(SoundPreset.matching(all))
+        XCTAssertEqual(SoundPreset.matching(SoundPrefs()), .requestsOnly)
+        XCTAssertNil(SoundPreset.matching(SoundPrefs(legacyName: "Ping")))
     }
 
     func transitions() {

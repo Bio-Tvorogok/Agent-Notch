@@ -36,6 +36,8 @@ guard input.count < HookServer.maxLine - 4096,
       let payload = try? JSONSerialization.jsonObject(with: input) as? [String: Any],
       let event = payload["hook_event_name"] as? String else { exit(0) }
 let parsed = HookEvent(vendor: vendor, payload: payload)
+// Leave confirmed automatic reviews to Codex without making a decision or showing a human prompt.
+if parsed?.isAutomaticReview == true { exit(0) }
 // PreToolUse holds the call only for the entry installed with --wait and only for a question or plan; the async one reports and leaves.
 let holds = event == "PermissionRequest" || (args.contains("--wait") && parsed?.waitsForAnswer == true)
 let wait = holds ? Double(HookInstaller.wait) : 0

@@ -60,7 +60,7 @@ public struct SoundPrefs: Codable, Equatable, Sendable {
         choices = try c.decodeIfPresent([String: String].self, forKey: .choices) ?? [:]
         volume = Self.clamp(try c.decodeIfPresent(Double.self, forKey: .volume) ?? 1)
     }
-    private static func validName(_ name: String) -> String { names.contains(name) ? name : "" }
+    private static func validName(_ name: String) -> String { (names.contains(name) || SoundLibrary.isCustomID(name)) ? name : "" }
     private static func clamp(_ value: Double) -> Double { value.isFinite ? min(1, max(0, value)) : 1 }
 }
 

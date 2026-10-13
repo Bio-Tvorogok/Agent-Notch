@@ -2,9 +2,16 @@ import Foundation
 
 extension DetailState {
     mutating func codex(_ r: Rec) {
+        if let type = r["type"] as? String, type.hasPrefix("item.") || type.hasPrefix("turn.") || type == "error" {
+            codexExec(r)
+            return
+        }
         let p = r["payload"] as? Rec ?? [:]
         let kind = p["type"] as? String ?? ""
         if r["type"] as? String == "event_msg" {
+            if kind == "error" || kind == "stream_error" {
+                if let text = p["message"] as? String { error(text) }
+            }
             if kind == "agent_message", let text = p["message"] as? String { message(text) }
             if kind == "exec_command_end" {
                 let code = p["exit_code"] as? Int
@@ -14,6 +21,14 @@ extension DetailState {
             return
         }
         guard r["type"] as? String == "response_item" else { return }
+        if kind == "web_search_call" {
+            let id = p["id"] as? String
+            activity(id, Self.webCommand(p), r["timestamp"])
+            let status = p["status"] as? String
+            result(id, ok: status == "completed" ? true : status == "failed" ? false : nil,
+                   text: Self.eventError(p))
+            return
+        }
         if kind == "message", p["role"] as? String == "assistant" {
             let text = (p["content"] as? [Rec] ?? []).filter { $0["type"] as? String == "output_text" }
                 .compactMap { $0["text"] as? String }.joined(separator: "\n")

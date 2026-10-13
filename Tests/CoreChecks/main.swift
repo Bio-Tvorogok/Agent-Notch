@@ -37,6 +37,7 @@ func run(_ name: String, _ body: () throws -> Void) {
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
 Loc.forced = .ru
+run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("claudeProcessStatus") { try l.testClaudeProcessStatusWins() }
@@ -66,11 +67,25 @@ run("hookInstaller") { try h.testInstallerKeepsOtherHooksAndRemovesOnlyOurs() }
 let detail = DetailChecks()
 run("detailClaude") { try detail.claude() }
 run("detailCodex") { try detail.codex() }
+run("codexExecCardLog") { try CodexCardLogChecks().execCardLog() }
+run("codexExecCardCompletionOnly") { try CodexCardLogChecks().execCompletionWithoutStart() }
+run("codexRolloutCardWebSearch") { try CodexCardLogChecks().rolloutWebSearch() }
+run("codexExecCardWebActions") { try CodexCardLogChecks().execWebActionsAndDeclinedCommand() }
+run("codexCardRunErrors") { try CodexCardLogChecks().codexRunErrors() }
 run("detailWorktrees") { try detail.worktrees() }
 run("detailTasksAndBounds") { try detail.tasksAndBounds() }
 run("detailCodexOutputs") { try detail.codexOutputs() }
 run("detailFailedAndStreamed") { try detail.failedAndStreamed() }
 run("detailOutcomeDeduplication") { try detail.outcomeDeduplication() }
+let prompts = PromptChecks()
+run("promptsClaude") { try prompts.claude() }
+run("promptsCodex") { try prompts.codex() }
+run("promptsStartSurvivesTail") { try prompts.startSurvivesTail() }
+run("promptsBounds") { try prompts.bounds() }
+run("promptsWrapped") { try prompts.wrapped() }
+run("promptsSubagent") { try prompts.subagent() }
+run("promptsCodexLongHead") { try prompts.codexLongHead() }
+run("promptsTabMigration") { prompts.migration() }
 // NOTCH-usage
 let usage = UsageChecks()
 run("usageLimits") { try usage.limits() }
@@ -130,6 +145,7 @@ run("finishWatcher") { finish.watcher() }
 let card = CardChecks()
 run("cardGrouping") { card.grouping() }
 run("cardVisibility") { card.visibility() }
+run("cardPrompts") { card.prompts() }
 run("cardFormatting") { card.formatting() }
 // NOTCH-ui-usage
 let usageView = UsageViewChecks()
@@ -196,7 +212,16 @@ let language = LanguageChecks()
 run("languageDetect") { language.detect() }
 run("languageEnglish") { language.english() }
 
+let libraryChecks = SoundLibraryChecks()
+run("soundLibraryStartupAndReplacedManifestLinks") { try libraryChecks.rejectsStartupDirectoryAndReplacedManifestLinks() }
+run("soundLibraryOwnedCopy") { try libraryChecks.persistsOwnedCopy() }
+run("soundLibraryDuplicatesAndRemoval") { try libraryChecks.duplicateNamesAndRemoval() }
+run("soundLibraryBadManifest") { try libraryChecks.rejectsBadManifestAndPaths() }
+run("soundLibraryRollback") { try libraryChecks.rollsBackPersistenceFailure() }
+run("soundLibraryNonFiles") { try libraryChecks.rejectsSymlinkAndNonFile() }
+run("soundLibraryDanglingAndReplacedDirectory") { try libraryChecks.rejectsDanglingManifestAndReplacedDirectory() }
 let soundChecks = SoundChecks()
+run("soundPresets") { try soundChecks.presets() }
 run("soundPreferences") { try soundChecks.preferences() }
 run("soundTransitions") { soundChecks.transitions() }
 run("soundRequests") { soundChecks.requests() }

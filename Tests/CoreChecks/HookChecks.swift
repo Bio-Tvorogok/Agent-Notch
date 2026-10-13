@@ -4,6 +4,52 @@ import NotchCore
 #endif
 
 struct HookTests {
+    func testCodexAutomaticReviewDoesNotWaitForAHuman() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jsonl")
+        defer { try? FileManager.default.removeItem(at: path) }
+        let meta = #"{"type":"session_meta","payload":{"id":"s"}}"#
+        func context(_ turn: String, _ reviewer: String) -> String {
+            "{\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"\(turn)\",\"approvals_reviewer\":\"\(reviewer)\"}}"
+        }
+        var payload: [String: Any] = ["session_id": "s", "turn_id": "t", "hook_event_name": "PermissionRequest",
+                                      "tool_name": "Bash", "tool_input": ["command": "ps -axo pid,etime,pcpu,comm"],
+                                      "transcript_path": path.path]
+        func event(_ vendor: Vendor = .codex) throws -> HookEvent { try XCTUnwrap(HookEvent(vendor: vendor, payload: payload)) }
+        try (meta + "\n" + context("t", "auto_review") + "\n").write(to: path, atomically: true, encoding: .utf8)
+        XCTAssertFalse(try event().waitsForAnswer)
+        XCTAssertTrue(try event(.claude).waitsForAnswer)
+        payload["turn_id"] = "other"
+        XCTAssertTrue(try event().waitsForAnswer)
+        payload["turn_id"] = "t"
+        payload["session_id"] = "other"
+        XCTAssertTrue(try event().waitsForAnswer)
+        payload["session_id"] = "s"
+        payload["agent_id"] = "child"
+        XCTAssertTrue(try event().waitsForAnswer)
+        payload["agent_id"] = nil
+        payload["tool_name"] = "mcp__computer__click"
+        XCTAssertTrue(try event().waitsForAnswer)
+        payload["tool_name"] = "Bash"
+        for reviewer in ["user", "future", ""] {
+            try (meta + "\n" + context("t", reviewer) + "\n").write(to: path, atomically: true, encoding: .utf8)
+            XCTAssertTrue(try event().waitsForAnswer)
+        }
+        try (meta + "\n" + context("old", "auto_review") + "\n" + context("t", "user") + "\n").write(to: path, atomically: true, encoding: .utf8)
+        XCTAssertTrue(try event().waitsForAnswer)
+        for suffix in ["malformed\n", "{\"type\":\"turn_context\",\"payload\":"] {
+            try (meta + "\n" + context("t", "auto_review") + "\n" + suffix).write(to: path, atomically: true, encoding: .utf8)
+            XCTAssertTrue(try event().waitsForAnswer)
+        }
+        try "malformed\n".write(to: path, atomically: true, encoding: .utf8)
+        XCTAssertTrue(try event().waitsForAnswer)
+        try FileManager.default.removeItem(at: path)
+        XCTAssertTrue(try event().waitsForAnswer)
+        XCTAssertEqual(mkfifo(path.path, 0o600), 0)
+        let started = Date()
+        XCTAssertTrue(try event().waitsForAnswer)
+        XCTAssertTrue(Date().timeIntervalSince(started) < 1)
+    }
+
     func payload(_ extra: String = "") -> Data {
         Data(#"{"session_id":"s-1","hook_event_name":"PermissionRequest","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"pnpm test\nsecond"}\#(extra)}"#.utf8)
     }
