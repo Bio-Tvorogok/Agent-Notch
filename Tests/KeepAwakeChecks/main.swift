@@ -203,6 +203,22 @@ struct KeepAwakeChecks {
             expect(false, "a root user must not receive a persistent passwordless rule")
         } catch {}
         let policy = try! SleepPermissionPolicy(uid: 501)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agent-notch-directory-\(UUID().uuidString)")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            // Execute the generated mode gate without installing any privileged rule.
+            for install in [true, false] {
+                let gate = policy.script(install: install).split(separator: "\n").first { $0.hasPrefix("case ") }!
+                for (mode, accessible) in [(0o755, true), (0o555, true), (0o750, false), (0o700, false), (0o550, false), (0o500, false)] {
+                    chmod(directory.path, mode_t(mode))
+                    let check = try await SleepProcessCommands().run("/bin/sh", arguments: ["-c",
+                        "d=\"$1\"\nfail() { exit 1; }\n" + gate, "mode-check", directory.path])
+                    expect((check.status == 0) == (accessible || !install),
+                           "installation must reject non-traversable directories; removal must retain support for restrictive modes")
+                }
+            }
+        } catch { expect(false, "could not validate directory access: \(error)") }
         expect(policy.rule == "# Agent Notch keep-awake permission\n#501 ALL=(root) NOPASSWD: /usr/bin/pmset disablesleep 0, /usr/bin/pmset disablesleep 1\n",
                "the emitted sudoers policy must grant exactly two arguments for one user, with no wildcards")
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("agent-notch-rule-\(UUID().uuidString)")

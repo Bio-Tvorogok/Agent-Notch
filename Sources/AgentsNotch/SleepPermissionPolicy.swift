@@ -29,6 +29,8 @@ struct SleepPermissionPolicy {
 
     func script(install: Bool) -> String {
         // The UID is numeric. Policy bytes are embedded here, never read from a user-writable staging file.
+        // A new rule must stay discoverable by the unprivileged app for removal.
+        let directoryModes = install ? "755|555" : "755|750|700|555|550|500"
         let checks = """
         set -eu
         umask 077
@@ -40,7 +42,7 @@ struct SleepPermissionPolicy {
         [ ! -L "$d" ] || fail 'The sudoers directory is a symbolic link.'
         if [ ! -e "$d" ]; then /usr/bin/install -d -o root -g wheel -m 0755 "$d"; fi
         [ -d "$d" ] && [ "$(/usr/bin/stat -f %u "$d")" = 0 ] || fail 'The sudoers directory is not owned by root.'
-        case "$(/usr/bin/stat -f %Lp "$d")" in 755|750|700|555|550|500) ;; *) fail 'The sudoers directory has unsafe permissions.' ;; esac
+        case "$(/usr/bin/stat -f %Lp "$d")" in \(directoryModes)) ;; *) fail 'The sudoers directory is unsafe or inaccessible to the user.' ;; esac
         [ ! -L "$f" ] || fail 'The permission file is a symbolic link.'
         candidate=$(/usr/bin/mktemp "$d/.agent-notch-rule.XXXXXX")
         backup=$(/usr/bin/mktemp "$d/.agent-notch-backup.XXXXXX")
