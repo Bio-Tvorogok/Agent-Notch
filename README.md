@@ -1,115 +1,51 @@
 <div align="center">
 
-<img src="assets/icon-1024.png" width="112" alt="Agent Notch icon">
+Крыло слева от «чёлки» MacBook. Показывает, какие агенты Claude Code и Codex работают на этом Mac, в каких проектах и кто кого запустил. Данные берутся только из локальных журналов (`~/.claude/projects`, `~/.codex/sessions`), наружу ничего не уходит.
+
+![Темы](docs/themes/theme-terminal.png)
 
 # Agent Notch
 
-**Your Claude Code and Codex agents, live in the MacBook notch.**<br>
-See who's working and who's waiting for you. Approve commands without switching windows.
+Одна метка на агента. Форма — вендор (кружок Claude, квадрат Codex), цвет — состояние: зелёный работает, жёлтый ждёт вас, красный застрял на ошибке, серый закончил. Субагенты мельче и прижаты к родителю.
 
-[![Release](https://img.shields.io/github/v/release/Forichok/Agent-Notch?style=flat-square&color=orange)](https://github.com/Forichok/Agent-Notch/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Forichok/Agent-Notch/total?style=flat-square&color=blue)](https://github.com/Forichok/Agent-Notch/releases)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?style=flat-square&logo=apple)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+Клик открывает список: сверху то, что требует внимания, ниже проекты и сессии с моделью и тем, что агент делает сейчас. Клик по строке открывает чат в приложении Claude или Codex, без приложения — `claude --resume` / `codex resume` в Terminal. Правый клик — меню и настройки.
 
-<img src="assets/demo.gif" width="820" alt="Agents appear beside the notch, one starts waiting, the list drops down and the command is approved">
+## Темы
 
-```bash
-brew install --cask forichok/tap/agent-notch
-```
+В настройках 12 тем для списка, карточки и уведомлений: Терминал, Жидкое стекло, Бумага, Полночь, Пульт, Фосфор, Синтвейв, Чертёж, Брутализм, Голограмма, Пустошь, Пиксель. У каждой свои метки агентов; в «Значках агентов» они включаются вариантом «Как в теме» и тогда видны и в крыле. Снимки всех тем — в [docs/themes](docs/themes).
 
-[Download DMG](https://github.com/Forichok/Agent-Notch/releases/latest) · [Watch the video](assets/agent-notch-promo.mp4) · [Русский](README.ru.md)
+## Разрешения из чёлки
 
-</div>
-
-## Why
-
-You run three Claude Code sessions and a couple of Codex workers. One of them has been sitting on `rm -rf dist?` for twenty minutes, and you find out only when you switch windows.
-
-Agent Notch puts one mark per agent beside the notch. A glance shows who is busy, and a click answers whoever is waiting. It reads the logs Claude Code and Codex already keep on your Mac and makes no network requests.
-
-## How to read the wing
-
-| Logo | Brightness | Dot |
-|---|---|---|
-| Claude or Codex | Full for big models, dimmed for haiku and luna | 🟢 working · 🟡 waiting for you · 🔴 stuck · ⚪ done |
-
-Subagents are smaller and sit next to their parent. Past six agents in a project, the marks fold into counters.
-
-## Answer from the notch
-
-<table>
-<tr>
-<td width="50%"><img src="assets/screens/ask.png" alt="Two permission requests with Allow and Deny; rm -rf is red"></td>
-<td width="50%"><img src="assets/screens/heavy.png" alt="Projects, sessions and subagent trees"></td>
-</tr>
-<tr>
-<td valign="top"><b>Permissions, questions, plans.</b> Allow with <kbd>⌃⌥Y</kbd>, deny with <kbd>⌃⌥N</kbd>, or pick an answer. Risky commands like <code>rm -rf</code> and <code>git push --force</code> turn red and need a click.</td>
-<td valign="top"><b>Every project and subagent.</b> What each agent is running right now, plan limits, context and cost. A click jumps back to its chat.</td>
-</tr>
-</table>
-
-Nothing is approved without a human click. If nobody answers in 100 seconds, the agent asks in its own window as usual.
-
-## Install
+С хуками запрос разрешения приходит в список со звуком и полной командой. «Разрешить» (⌃⌥Y), «Отклонить» (⌃⌥N) или «В окне агента». Опасные команды (`rm -rf`, `sudo`, `git push --force`…) и многострочные разрешаются только кликом. Без ответа за 100 секунд хук молча выходит и агент спрашивает как обычно: разрешения без клика человека не бывает. Решения пишутся в `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
 
 ```bash
 brew install --cask forichok/tap/agent-notch
 ```
 
-To answer from the notch, right-click the wing and choose **Install Claude Code hooks** and **Install Codex hooks**. Codex also wants you to trust `notch-hook` once: type `/hooks` in Codex.
+Хуки добавляются в `~/.claude/settings.json` и `~/.codex/hooks.json`, чужие записи не трогаются, исходный файл сохраняется как `*.agents-notch-backup`. В Codex после установки откройте `/hooks` и отметьте `notch-hook` доверенным.
 
-<details>
-<summary>DMG instead of Homebrew</summary>
+## Сборка
 
-Download the DMG from [Releases](https://github.com/Forichok/Agent-Notch/releases/latest) and drag the app to Applications. It isn't notarized yet, so clear the download quarantine once:
-
-```bash
-xattr -dr com.apple.quarantine "/Applications/Agent Notch.app"
-```
-</details>
-
-Requires macOS 14+ on Apple Silicon.
-
-## Shortcuts
-
-| | |
-|---|---|
-| <kbd>⌃⌥A</kbd> | Open or close the list |
-| <kbd>⌃⌥Y</kbd> / <kbd>⌃⌥N</kbd> | Allow / deny the oldest request |
-| Double-click a row | Open that agent's window |
-| Right-click the wing | Hooks, sound, open at login, quit |
-
-<details>
-<summary>FAQ</summary>
-
-**Terminal, VS Code, desktop app?** All of them. Agent Notch reads the session logs, so it doesn't matter where the agent runs.
-
-**Do I need the hooks?** Only to answer from the notch. Without them you still see every agent and its state.
-
-**Language?** English, or Russian on a Russian system. Force one with `AGENT_NOTCH_LANG=en` or `ru`.
-
-**What does it read?** Files under `~/.claude` and `~/.codex`, plus the Claude app's plan-usage file. Hook decisions are logged to `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
-
-**Uninstall?** `brew uninstall --zap agent-notch` also removes the hooks.
-</details>
-
-<details>
-<summary>Build from source</summary>
-
-Needs Xcode.
+Нужен Xcode (Command Line Tools не подходят).
 
 ```bash
-git clone https://github.com/Forichok/Agent-Notch.git && cd Agent-Notch
-./scripts/test.sh && ./scripts/build.sh
+./scripts/build.sh        # build/AgentsNotch.app
+./scripts/test.sh         # код выхода 0 — всё прошло
 open build/AgentsNotch.app
 ```
 
-`--fixture <scene>` shows a made-up scene, `--snapshot <dir>` renders every scene to PNG. The promo video is a [Remotion](https://www.remotion.dev) project in [`promo/`](promo/).
-</details>
+Флаги: `--fixture <сцена>` (выдуманные данные), `--open-list`, `--snapshot <папка>`, `--snapshot-themes <папка>`, `--install-hooks`, `--uninstall-hooks`.
 
----
+## Ограничения
 
-[Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) · [MIT](LICENSE) © 2026 Nikita Udalov
+- Без хуков ждущая сессия видна, но ответить из чёлки нельзя.
+- На `AskUserQuestion` и согласование плана из чёлки ответить пока нельзя.
+- Codex-воркеры из `codex-job` видны отдельными сессиями, без связи с родителем.
+- Сжатие крыла по меню требует доступа Accessibility; после каждой пересборки его надо выдать заново (подпись ad-hoc).
 
-<sub>An independent project, not affiliated with Anthropic or OpenAI.</sub>
+## Устройство
+
+- `Sources/NotchCore` — журналы, дерево проектов, раскладка крыла, хуки. Без AppKit.
+- `Sources/NotchHook` — `notch-hook`, который запускают агенты.
+- `Sources/AgentsNotch` — окно крыла, список, настройки, темы.
+- `Tests/CoreChecks` — проверки на поддельных журналах.
