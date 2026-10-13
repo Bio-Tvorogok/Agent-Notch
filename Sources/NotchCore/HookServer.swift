@@ -99,6 +99,8 @@ public final class HookServer: @unchecked Sendable {
         guard let line, let r = try? JSONSerialization.jsonObject(with: line) as? Rec,
               let vendor = Vendor(rawValue: r["vendor"] as? String ?? ""), let payload = r["payload"] as? Rec,
               let event = HookEvent(vendor: vendor, payload: payload) else { close(fd); return }
+        // Older helpers may still send these while the newly built app is running.
+        guard !event.isAutomaticReview else { close(fd); return }
         guard event.waitsForAnswer, r["wait"] as? Bool == true, waiting.count < Self.maxWaiting else {
             close(fd)
             onEvent(event, nil)
