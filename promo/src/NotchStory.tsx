@@ -114,7 +114,8 @@ export const NotchStory: React.FC<{cfg: Cfg}> = ({cfg}) => {
   const panelVisible = frame >= cfg.panelOpen - 1 && closeP < 1;
 
   // cursor
-  const allow = {x: panelLeft + 150 * PS, y: panelTop + (480 - 76) * PS};
+  // Allow button of the rm -rf row in ask.png: centre (501, 474) of the 1280px image; panel crop origin is (400, 76)
+  const allow = {x: panelLeft + (501 - 400) * PS, y: panelTop + (474 - 76) * PS};
   const cp = range(frame, cfg.cursorIn, cfg.click - 4, easeIO);
   const curX = interpolate(cp, [0, 1], [allow.x + 420, allow.x]);
   const curY = interpolate(cp, [0, 1], [allow.y + 300, allow.y]);

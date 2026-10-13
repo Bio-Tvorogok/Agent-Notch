@@ -9,21 +9,21 @@ const Cmd: React.FC<{children: React.ReactNode}> = ({children}) => (
 );
 
 const cfg: Cfg = {
-  wingIn: 95, popStart: 112, popGap: 11, yellow: 275,
-  panelOpen: 408, keysIn: 452, cursorIn: 484, click: 524, panelClose: 560, green: 566,
+  wingIn: 40, popStart: 56, popGap: 10, yellow: 228,
+  panelOpen: 330, keysIn: 366, cursorIn: 396, click: 430, panelClose: 466, green: 472,
   cam: {
-    f: [0, 90, 200, 270, 330, 390, 414],
+    f: [0, 70, 140, 226, 262, 322, 336],
     s: [2.8, 2.3, 1.95, 1.95, 3.1, 3.1, 1.0],
     fx: [795, 795, 795, 795, m3, m3, 960],
     cy: [400, 400, 380, 380, 400, 400, 29],
   },
-  legend: [180, 270],
+  legend: [140, 224],
   captions: [
-    {from: 8, to: 98, y: 640, size: 84, node: <>7 agents running. Where are they?</>},
-    {from: 108, to: 176, y: 640, size: 84, node: <>Every agent. One glance.</>},
-    {from: 282, to: 392, y: 640, size: 80, node: <>Codex wants to run <Cmd>rm -rf dist build</Cmd></>},
-    {from: 424, to: 492, y: 880, size: 72, node: <>Risky commands glow red.</>},
-    {from: 496, to: 598, y: 880, size: 72, node: <>Approve from the notch.</>},
+    {from: 6, to: 74, y: 640, size: 84, node: <>7 agents running. Where are they?</>},
+    {from: 82, to: 138, y: 640, size: 84, node: <>Every agent. One glance.</>},
+    {from: 236, to: 320, y: 640, size: 80, node: <>Codex wants to run <Cmd>rm -rf dist build</Cmd></>},
+    {from: 346, to: 404, y: 880, size: 72, node: <>Risky commands glow red.</>},
+    {from: 408, to: 500, y: 880, size: 72, node: <>Approve from the notch.</>},
   ],
 };
 
@@ -104,14 +104,14 @@ const EndCard: React.FC = () => {
 
 export const Promo: React.FC = () => (
   <AbsoluteFill style={{background: C.bg}}>
-    <Sequence from={0} durationInFrames={612}>
-      <Fade inF={1} outF={12} dur={612}><NotchStory cfg={cfg} /></Fade>
+    <Sequence from={0} durationInFrames={506}>
+      <Fade inF={1} outF={12} dur={506}><NotchStory cfg={cfg} /></Fade>
     </Sequence>
-    <Sequence from={600} durationInFrames={192}>
-      <Fade dur={192}><Directory /></Fade>
+    <Sequence from={494} durationInFrames={150}>
+      <Fade dur={150}><Directory /></Fade>
     </Sequence>
-    <Sequence from={780} durationInFrames={180}>
-      <Fade inF={14} outF={1} dur={180}><EndCard /></Fade>
+    <Sequence from={632} durationInFrames={150}>
+      <Fade inF={14} outF={1} dur={150}><EndCard /></Fade>
     </Sequence>
   </AbsoluteFill>
 );
