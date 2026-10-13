@@ -2,7 +2,7 @@
 # Builds build/AgentsNotch.app with plain swiftc (no SwiftPM, no Xcode project).
 # Needs a working toolchain: Xcode selected via xcode-select (or DEVELOPER_DIR), license accepted.
 set -eu
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 cd "$(dirname "$0")/.."
 TARGET="arm64-apple-macos14.0"

@@ -9,6 +9,16 @@ All notable changes to this project are documented here. The format follows [Kee
 - English interface. It is the default; Russian stays when Russian is the system's first language. `AGENT_NOTCH_LANG=en|ru` overrides it.
 - README and promo screenshots are now in English.
 
+## [0.2.0] - 2026-10-13
+
+### Added
+
+- English interface. It is the default; Russian is used when Russian is the first system language. `AGENT_NOTCH_LANG=en` or `ru` picks one by hand.
+
+### Fixed
+
+- `brew uninstall --zap agent-notch` now removes the Claude Code and Codex hooks before deleting the app's support folder (#1).
+
 ## [0.1.0] - 2026-10-13
 
 First public release.
@@ -24,4 +34,5 @@ First public release.
 - Finish toast, settings with presets, launch at login.
 - Homebrew cask, DMG and zip downloads.
 
+[0.2.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.1.0
