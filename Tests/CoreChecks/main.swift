@@ -207,6 +207,7 @@ run("languageDetect") { language.detect() }
 run("languageEnglish") { language.english() }
 
 let soundChecks = SoundChecks()
+run("soundPresets") { try soundChecks.presets() }
 run("soundPreferences") { try soundChecks.preferences() }
 run("soundTransitions") { soundChecks.transitions() }
 run("soundRequests") { soundChecks.requests() }
