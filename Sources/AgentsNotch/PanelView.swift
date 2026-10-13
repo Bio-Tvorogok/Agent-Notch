@@ -232,7 +232,7 @@ private struct VendorCount: View {
     var body: some View {
         if n > 0 {
             HStack(spacing: 4) {
-                StatusMark(vendor: vendor, state: .working, isLight: false, style: settings.appearance.markStyle, size: settings.appearance.markSize.points)
+                ThemedVendorMark(vendor: vendor)
                 Text("\(n) \(label)")
             }
         }
@@ -246,14 +246,14 @@ private struct ProjectHeader: View {
     var body: some View {
         let live = project.live
         HStack(spacing: 8) {
-            Text(theme.headingUppercase ? project.name.uppercased() : project.name)
+            Text(theme.headingPrefix + (theme.headingUppercase ? project.name.uppercased() : project.name))
                 .font(theme.headingFont).tracking(theme.headingUppercase ? 0.8 : 0).foregroundStyle(theme.headingUppercase ? Ink.dim : Ink.strong)
             Spacer()
             ForEach([Vendor.claude, .codex], id: \.self) { v in
                 let n = live.filter { $0.vendor == v }.count
                 if n > 0 {
                     HStack(spacing: 3) {
-                        StatusMark(vendor: v, state: .working, isLight: false, style: settings.appearance.markStyle, size: settings.appearance.markSize.points)
+                        ThemedVendorMark(vendor: v)
                         Text("\(n)").foregroundStyle(dim).font(.system(size: 11))
                     }
                 }
@@ -333,6 +333,20 @@ private struct PillBody: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: .continuous)
         let pressed = configuration.isPressed
+        if theme.bracketPills {
+            // A terminal menu item: brackets, inverted when it is the default choice.
+            HStack(spacing: 0) { Text("[ "); configuration.label; Text(" ]") }
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .padding(.horizontal, primary ? 2 : 0).padding(.vertical, 1)
+                .background(Rectangle().fill(primary || pressed ? AnyShapeStyle(Ink.primary) : AnyShapeStyle(Color.clear)))
+                .foregroundStyle(primary || pressed ? Ink.primaryText : Ink.pillText)
+                .fixedSize()
+        } else {
+            pill(shape: shape, pressed: pressed)
+        }
+    }
+
+    private func pill(shape: RoundedRectangle, pressed: Bool) -> some View {
         configuration.label
             .font(.system(size: 11, weight: theme.hardShadow ? .heavy : primary && theme.id != .terminal ? .semibold : .medium,
                           design: theme.id == .console ? .monospaced : theme.design))

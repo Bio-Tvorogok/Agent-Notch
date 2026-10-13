@@ -97,6 +97,9 @@ enum Snapshot {
             .environment(\.themeSnapshot, true)
             ok = write(scene, to: url.appendingPathComponent("theme-\(id.rawValue).png")) && ok
         }
+        settings.theme = .terminal
+        ok = write(ThemeMarksGrid().environmentObject(settings).environment(\.themeSnapshot, true),
+                   to: url.appendingPathComponent("theme-marks.png")) && ok
         return ok
     }
 
@@ -159,5 +162,41 @@ enum Snapshot {
             .environmentObject(store.settings)
             .environmentObject(store.usage)
         }
+    }
+}
+
+/// Every theme's own mark side by side: vendor × weight × state, on that theme's surface.
+private struct ThemeMarksGrid: View {
+    private let states: [AgentState] = [.working, .waiting, .error, .done]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(ThemeID.allCases, id: \.self) { id in
+                let theme = Theme.of(id)
+                HStack(spacing: 14) {
+                    Text(SettingsText.theme(id)).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.text).frame(width: 110, alignment: .leading)
+                    ForEach([Vendor.claude, .codex], id: \.rawValue) { vendor in
+                        ForEach([false, true], id: \.self) { light in
+                            HStack(spacing: 10) {
+                                ForEach(states, id: \.rawValue) { state in
+                                    Group {
+                                        if id == .terminal {
+                                            StatusMark(vendor: vendor, state: state, isLight: light, style: .logos, size: 14)
+                                        } else {
+                                            ThemeMark(theme: theme, vendor: vendor, state: state, isLight: light, size: 14)
+                                        }
+                                    }.frame(width: 18, height: 18)
+                                }
+                            }
+                            .padding(.horizontal, 6)
+                        }
+                    }
+                }
+                .padding(10)
+                .themeSurface(theme, radius: min(theme.radius, 10))
+                .themed(theme)
+            }
+        }
+        .padding(20)
+        .background(ThemeWallpaper())
     }
 }

@@ -24,6 +24,8 @@ enum SettingsText {
         case .blueprint: Loc.t("Blueprint", "Чертёж")
         case .brutal: Loc.t("Brutalism", "Брутализм")
         case .hologram: Loc.t("Hologram", "Голограмма")
+        case .wasteland: Loc.t("Wasteland", "Пустошь")
+        case .pixel: Loc.t("Pixel", "Пиксель")
         }
     }
     static var markSize: String { Loc.t("Size", "Размер") }

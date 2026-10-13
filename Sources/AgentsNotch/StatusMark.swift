@@ -136,8 +136,18 @@ struct AgentStatusMark: View {
     let agent: Agent
     var small = false
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.theme) private var theme
 
     var body: some View {
+        if theme.id != .terminal {
+            ThemeMark(theme: theme, vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
+                      size: (small ? settings.wingDisplay.childSize : settings.appearance.markSize.points) + 1)
+        } else {
+            plain
+        }
+    }
+
+    private var plain: some View {
         StatusMark(vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
                    style: settings.appearance.markStyle,
                    size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)

@@ -4,7 +4,7 @@ import NotchCore
 
 /// The look of the list, the card and the toast. The wing stays black: it sits on the camera housing.
 enum ThemeID: String, Codable, CaseIterable, Sendable {
-    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram
+    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram, wasteland, pixel
 }
 
 /// Colour roles every themed view draws with. `Ink` resolves a role against the theme in the environment.
@@ -32,6 +32,9 @@ struct Theme {
     var primaryGradient: [Color]? = nil
     /// Buttons cast a hard offset shadow and wear a thick border.
     var hardShadow = false
+    /// Buttons read as `[ Разрешить ]` menu items instead of pills.
+    var bracketPills = false
+    var headingPrefix = ""
 
     func color(_ role: InkRole) -> Color { colors[role] ?? .clear }
 
@@ -47,6 +50,8 @@ struct Theme {
         case .blueprint: blueprint
         case .brutal: brutal
         case .hologram: hologram
+        case .wasteland: wasteland
+        case .pixel: pixel
         }
     }
 }
@@ -204,6 +209,37 @@ extension Theme {
         ],
         primaryGradient: [Color(red: 1, green: 0.7, blue: 0.9), Color(red: 0.7, green: 0.85, blue: 1), Color(red: 0.75, green: 1, blue: 0.85), Color(red: 1, green: 0.95, blue: 0.7)])
 
+    private static func pip(_ a: Double) -> Color { Color(red: 0.1, green: 1, blue: 0.42, opacity: a) }
+
+    /// A wasteland terminal: green phosphor, `>` prompts, bracketed menu items, the selection drawn inverted.
+    static let wasteland = Theme(
+        id: .wasteland, scheme: .dark, radius: 14, pillRadius: 0, rowInset: 0, rowRadius: 0, design: .monospaced,
+        headingFont: .system(size: 11, weight: .bold, design: .monospaced), headingUppercase: true,
+        colors: [
+            .text: pip(0.92), .strong: pip(1), .secondary: pip(0.72), .dim: pip(0.48), .faint: pip(0.28), .rule: pip(0.35),
+            .hover: pip(0.16), .inset: pip(0.07), .option: pip(0.07), .optionOn: pip(0.28),
+            .pill: .clear, .pillText: pip(0.95), .pillStroke: .clear, .primary: pip(0.95), .primaryText: Color(red: 0.01, green: 0.08, blue: 0.03),
+            .waitingBg: pip(0.1), .errorBg: pip(0.06),
+            .waiting: pip(1), .error: pip(1), .working: pip(0.85), .code: pip(1), .accent: pip(1),
+        ],
+        glow: pip(0.6), bracketPills: true, headingPrefix: "> ")
+
+    /// An 8-bit RPG dialog box: navy panel, stepped corners, a double white frame, bright console palette.
+    static let pixel = Theme(
+        id: .pixel, scheme: .dark, radius: 0, pillRadius: 0, rowInset: 6, rowRadius: 0, design: .monospaced,
+        headingFont: .system(size: 11, weight: .black, design: .monospaced), headingUppercase: true,
+        colors: [
+            .text: .white, .strong: .white, .secondary: Color(red: 0.75, green: 0.8, blue: 1), .dim: Color(red: 0.55, green: 0.6, blue: 0.9),
+            .faint: Color(red: 0.4, green: 0.45, blue: 0.85), .rule: .white, .hover: Color(red: 0.25, green: 0.3, blue: 0.75),
+            .inset: Color(red: 0.12, green: 0.14, blue: 0.4), .option: Color(red: 0.16, green: 0.18, blue: 0.5), .optionOn: Color(red: 0.95, green: 0.3, blue: 0.4),
+            .pill: Color(red: 0.2, green: 0.24, blue: 0.62), .pillText: .white, .pillStroke: .white,
+            .primary: Color(red: 1, green: 0.82, blue: 0.1), .primaryText: Color(red: 0.08, green: 0.06, blue: 0.2),
+            .waitingBg: Color(red: 0.35, green: 0.22, blue: 0.5), .errorBg: Color(red: 0.5, green: 0.12, blue: 0.25),
+            .waiting: Color(red: 1, green: 0.82, blue: 0.1), .error: Color(red: 1, green: 0.35, blue: 0.4), .working: Color(red: 0.35, green: 0.95, blue: 0.4),
+            .code: Color(red: 0.6, green: 1, blue: 1), .accent: Color(red: 1, green: 0.82, blue: 0.1),
+        ],
+        hardShadow: false)
+
     static let holoColors: [Color] = [Color(red: 1, green: 0.4, blue: 0.75), Color(red: 1, green: 0.85, blue: 0.4), Color(red: 0.4, green: 1, blue: 0.75),
                                       Color(red: 0.35, green: 0.75, blue: 1), Color(red: 0.7, green: 0.45, blue: 1), Color(red: 1, green: 0.4, blue: 0.75)]
 }
@@ -235,7 +271,7 @@ extension View {
     func themeSurface(_ theme: Theme, radius: CGFloat? = nil) -> some View {
         let r = radius ?? theme.radius
         return background(ThemeSurface(theme: theme, radius: r))
-            .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+            .clipShape(theme.id == .pixel ? AnyShape(SteppedRect(step: 4)) : AnyShape(RoundedRectangle(cornerRadius: r, style: .continuous)))
             .overlay(ThemeRim(theme: theme, radius: r))
     }
 }
@@ -343,6 +379,35 @@ struct ThemeSurface: View {
                     }
                 }
             }
+        case .wasteland:
+            ZStack {
+                shape.fill(Color(red: 0.01, green: 0.06, blue: 0.025))
+                shape.fill(RadialGradient(colors: [Color(red: 0.1, green: 1, blue: 0.4).opacity(0.1), .clear], center: .center, startRadius: 10, endRadius: 380))
+                Canvas { ctx, size in
+                    var y: CGFloat = 0
+                    while y < size.height {
+                        ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1.2)), with: .color(.black.opacity(0.35)))
+                        y += 3
+                    }
+                }
+                // A brighter band rolling down the tube, frozen where the refresh caught it.
+                LinearGradient(colors: [.clear, Color(red: 0.1, green: 1, blue: 0.4).opacity(0.05), .clear], startPoint: UnitPoint(x: 0.5, y: 0.25), endPoint: UnitPoint(x: 0.5, y: 0.4))
+                shape.fill(RadialGradient(colors: [.clear, .black.opacity(0.6)], center: .center, startRadius: 150, endRadius: 420))
+            }
+        case .pixel:
+            ZStack {
+                Rectangle().fill(LinearGradient(colors: [Color(red: 0.1, green: 0.12, blue: 0.38), Color(red: 0.05, green: 0.06, blue: 0.22)],
+                                                startPoint: .top, endPoint: .bottom))
+                // A coarse 2×2 dither, so the gradient bands like an old palette.
+                Canvas { ctx, size in
+                    var y: CGFloat = 0
+                    while y < size.height {
+                        var x: CGFloat = (Int(y / 2) % 2 == 0) ? 0 : 2
+                        while x < size.width { ctx.fill(Path(CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.black.opacity(0.12))); x += 4 }
+                        y += 2
+                    }
+                }
+            }
         case .hologram:
             ZStack {
                 shape.fill(Color(red: 0.05, green: 0.055, blue: 0.08))
@@ -351,6 +416,30 @@ struct ThemeSurface: View {
                 shape.fill(LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: UnitPoint(x: 0.2, y: 0), endPoint: UnitPoint(x: 0.6, y: 0.5)))
             }
         }
+    }
+}
+
+/// A rectangle whose corners are cut in pixel stairs, like a dialog box of an old console game.
+struct SteppedRect: Shape {
+    var step: CGFloat
+    var inset: CGFloat = 0
+    func path(in rect: CGRect) -> Path {
+        let r = rect.insetBy(dx: inset, dy: inset), s = step
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX + 2 * s, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.minY + s)); p.addLine(to: CGPoint(x: r.maxX - s, y: r.minY + s))
+        p.addLine(to: CGPoint(x: r.maxX - s, y: r.minY + 2 * s)); p.addLine(to: CGPoint(x: r.maxX, y: r.minY + 2 * s))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - 2 * s))
+        p.addLine(to: CGPoint(x: r.maxX - s, y: r.maxY - 2 * s)); p.addLine(to: CGPoint(x: r.maxX - s, y: r.maxY - s))
+        p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.maxY - s)); p.addLine(to: CGPoint(x: r.maxX - 2 * s, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.maxY - s)); p.addLine(to: CGPoint(x: r.minX + s, y: r.maxY - s))
+        p.addLine(to: CGPoint(x: r.minX + s, y: r.maxY - 2 * s)); p.addLine(to: CGPoint(x: r.minX, y: r.maxY - 2 * s))
+        p.addLine(to: CGPoint(x: r.minX, y: r.minY + 2 * s))
+        p.addLine(to: CGPoint(x: r.minX + s, y: r.minY + 2 * s)); p.addLine(to: CGPoint(x: r.minX + s, y: r.minY + s))
+        p.addLine(to: CGPoint(x: r.minX + 2 * s, y: r.minY + s)); p.closeSubpath()
+        return p
     }
 }
 
@@ -443,6 +532,16 @@ struct ThemeRim: View {
             }
         case .brutal:
             shape.strokeBorder(Color.black, lineWidth: 2.5)
+        case .wasteland:
+            ZStack {
+                shape.strokeBorder(Color(white: 0.12), lineWidth: 3)
+                shape.inset(by: 3).strokeBorder(Color(red: 0.1, green: 1, blue: 0.42).opacity(0.35), lineWidth: 0.75)
+            }
+        case .pixel:
+            ZStack {
+                SteppedRect(step: 4, inset: 1.5).stroke(Color.white, lineWidth: 3)
+                SteppedRect(step: 4, inset: 5).stroke(Color(red: 0.45, green: 0.5, blue: 0.95), lineWidth: 1)
+            }
         case .hologram:
             shape.strokeBorder(AngularGradient(colors: Theme.holoColors, center: .center), lineWidth: 1.2).opacity(0.85)
         }
