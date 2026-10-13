@@ -37,5 +37,5 @@ private enum CardFixtureText {
     static var error: String { Loc.t("Check file not found", "Не найден файл проверки") }
     static var start: String { Loc.t("Add a tab with my prompts to the agent card. I want to see how the agent started, and my messages should stand out from commands and replies. Check it on a snapshot and restart the app.", "Сделай в карточке агента вкладку с моими запросами. Хочу видеть, с чего агент начал, и чтобы мои сообщения выделялись среди команд и ответов. Проверь на снимке и перезапусти приложение.") }
     static var next: String { Loc.t("go on", "продолжай") }
-    static var last: String { Loc.t("the highlight is too pale, make it stronger", "подсветка слишком бледная, сделай заметнее") }
+    static var last: String { Loc.t("the highlight is too pale, make it stronger; and check that a prompt longer than three lines folds and unfolds with the button under it", "подсветка слишком бледная, сделай заметнее; и проверь, что длинный запрос в три с лишним строки сворачивается и раскрывается по кнопке под ним") }
 }

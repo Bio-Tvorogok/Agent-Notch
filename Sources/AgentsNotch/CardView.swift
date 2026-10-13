@@ -15,9 +15,10 @@ enum CardText {
     static var errors: String { Loc.t("Errors and repeats", "Ошибки и повторы") }
     static var test: String { Loc.t("test", "тест") }
     static var start: String { Loc.t("How it started", "С чего начали") }
-    static var later: String { Loc.t("Later", "Дальше") }
+    static var task: String { Loc.t("Task from an agent", "Задача от агента") }
+    static var later: String { Loc.t("Next ones, newest first", "Следующие, новые сверху") }
     static var noPrompts: String { Loc.t("None of your prompts in the log yet", "Ваших запросов в журнале пока нет") }
-    static var startLost: String { Loc.t("The start of the session is outside the part of the log that was read", "Начало сессии не попало в прочитанную часть журнала") }
+    static var startLost: String { Loc.t("The first prompt is too far back in the log", "Первый запрос слишком далеко в журнале") }
     static var more: String { Loc.t("Show all", "Показать целиком") }
     static var less: String { Loc.t("Collapse", "Свернуть") }
     static func cost(_ amount: String) -> String { Loc.t("session cost ", "цена сессии ") + amount }
@@ -68,7 +69,7 @@ struct CardView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     if loading { Text(CardText.loading).foregroundStyle(dim) }
                     else if let detail, let visibleTab {
-                        CardTabBody(detail: detail, tab: visibleTab, blocks: blocks, cwd: agent.cwd)
+                        CardTabBody(detail: detail, tab: visibleTab, blocks: blocks, cwd: agent.cwd, isSubagent: agent.parentId != nil)
                     } else { Text(tabs.isEmpty ? CardText.hidden : CardText.unavailable).foregroundStyle(dim) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

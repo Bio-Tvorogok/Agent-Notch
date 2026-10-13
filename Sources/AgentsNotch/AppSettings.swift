@@ -69,7 +69,7 @@ final class AppSettings: ObservableObject {
         sounds = load("sounds", true)
         finishToast = load("finishToast", true)
         rows.parts = DisplayOrder.normalize(rows.parts)
-        card.blocks = DisplayOrder.normalize(card.blocks)
+        card.blocks = DisplayPreset.migrate(card.blocks)
         if !shortcuts.isValid { shortcuts = ShortcutPrefs() }
         appearance.finishedMinutes = DisplayPreset.finishedChoices.contains(appearance.finishedMinutes) ? appearance.finishedMinutes : 30
         wing.maxMarks = min(20, max(1, wing.maxMarks))

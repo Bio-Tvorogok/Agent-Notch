@@ -6,6 +6,7 @@ struct CardTabBody: View {
     let tab: CardTab
     let blocks: [CardBlock]
     let cwd: String?
+    var isSubagent = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -35,13 +36,13 @@ struct CardTabBody: View {
                 let prompts = CardContent.prompts(detail)
                 if prompts.start == nil && prompts.later.isEmpty { Text(CardText.noPrompts).foregroundStyle(dim) }
                 if let start = prompts.start {
-                    section(CardText.start) { PromptBubble(prompt: start) }
+                    section(isSubagent ? CardText.task : CardText.start) { PromptBubble(prompt: start) }
                 } else if !prompts.later.isEmpty {
                     Text(CardText.startLost).font(.system(size: 10.5)).foregroundStyle(dim)
                 }
                 if !prompts.later.isEmpty {
                     section(CardText.later) {
-                        ForEach(Array(prompts.later.enumerated()), id: \.offset) { _, prompt in PromptBubble(prompt: prompt) }
+                        ForEach(PromptBubble.keyed(prompts.later), id: \.key) { PromptBubble(prompt: $0.prompt) }
                     }
                 }
             case .log:
@@ -102,19 +103,43 @@ struct CardTabBody: View {
 struct PromptBubble: View {
     let prompt: UserPrompt
     @State private var expanded = false
+    @State private var clipped = false
     static let tint = Color(red: 0.29, green: 0.55, blue: 1)
 
-    private var long: Bool { prompt.text.count > 160 || prompt.text.filter { $0 == "\n" }.count > 2 }
+    /// Keys survive a refresh that puts a new prompt on top, so an open bubble stays open.
+    static func keyed(_ newestFirst: [UserPrompt]) -> [(key: String, prompt: UserPrompt)] {
+        var seen: [String: Int] = [:]
+        return newestFirst.reversed().map { prompt in
+            let base = "\(prompt.at ?? 0)|\(prompt.text.hashValue)"
+            seen[base, default: 0] += 1
+            return (base + "|\(seen[base]!)", prompt)
+        }.reversed()
+    }
+
+    private var time: Text? {
+        guard let at = prompt.at else { return nil }
+        let date = Date(timeIntervalSince1970: at)
+        return Calendar.current.isDateInToday(date) ? Text(date, format: .dateTime.hour().minute())
+            : Text(date, format: .dateTime.day().month(.abbreviated).hour().minute())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let at = prompt.at {
-                Text(Date(timeIntervalSince1970: at), format: .dateTime.hour().minute())
-                    .font(.system(size: 10)).foregroundStyle(dim).monospacedDigit()
-            }
+            if let time { time.font(.system(size: 10)).foregroundStyle(dim).monospacedDigit() }
             Text(prompt.text).lineLimit(expanded ? nil : 3).fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
-            if long {
+                // The button appears only when three lines really cut the text at this width.
+                .overlay {
+                    GeometryReader { shown in
+                        Text(prompt.text).fixedSize(horizontal: false, vertical: true)
+                            .frame(width: shown.size.width, alignment: .leading).hidden()
+                            .background(GeometryReader { full in
+                                Color.clear.preference(key: Clipped.self, value: full.size.height > shown.size.height + 1)
+                            })
+                    }
+                }
+                .onPreferenceChange(Clipped.self) { clipped = $0 }
+            if clipped || expanded {
                 Button(expanded ? CardText.less : CardText.more) { expanded.toggle() }
                     .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Self.tint)
             }
@@ -125,4 +150,9 @@ struct PromptBubble: View {
         .overlay(alignment: .leading) { Rectangle().fill(Self.tint).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
+}
+
+private struct Clipped: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }

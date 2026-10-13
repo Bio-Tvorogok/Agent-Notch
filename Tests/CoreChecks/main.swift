@@ -76,6 +76,10 @@ run("promptsClaude") { try prompts.claude() }
 run("promptsCodex") { try prompts.codex() }
 run("promptsStartSurvivesTail") { try prompts.startSurvivesTail() }
 run("promptsBounds") { try prompts.bounds() }
+run("promptsWrapped") { try prompts.wrapped() }
+run("promptsSubagent") { try prompts.subagent() }
+run("promptsCodexLongHead") { try prompts.codexLongHead() }
+run("promptsTabMigration") { prompts.migration() }
 // NOTCH-usage
 let usage = UsageChecks()
 run("usageLimits") { try usage.limits() }

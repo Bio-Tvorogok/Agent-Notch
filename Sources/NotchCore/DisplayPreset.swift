@@ -60,6 +60,15 @@ public enum DisplayPreset: String, CaseIterable, Sendable {
         }
     }
 
+    /// A block added in an update is switched on only if the preset the saved layout matched has it.
+    public static func migrate(_ saved: [DisplayPart<CardBlock>]) -> [DisplayPart<CardBlock>] {
+        let known = Set(saved.map(\.part))
+        let visible = Set(DisplayOrder.visible(saved))
+        let preset = allCases.first { $0.cardBlocks.intersection(known) == visible }
+        return DisplayOrder.normalize(saved + CardBlock.allCases.filter { !known.contains($0) }
+            .map { DisplayPart($0, enabled: preset?.cardBlocks.contains($0) ?? true) })
+    }
+
     /// Switches parts on and off in place; the user's order stays.
     public func apply(to values: PresetValues) -> PresetValues {
         var next = values
