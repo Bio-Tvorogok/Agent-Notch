@@ -61,6 +61,15 @@ enum Snapshot {
             ok = shot(section, dir.appendingPathComponent("section-\(section.rawValue).png")) && ok
             ok = shot(section, dir.appendingPathComponent("full-\(section.rawValue).png"), height: section == .sounds ? 2200 : 1500) && ok
         }
+        ok = host(SettingsSounds(settings: settings, customizing: true)
+            .formStyle(.grouped).environment(\.colorScheme, .light),
+            size: NSSize(width: 570, height: 2200), to: dir.appendingPathComponent("sounds-customize.png")) && ok
+        for preset in SoundPreset.allCases {
+            settings.applySoundPreset(preset)
+            ok = shot(.sounds, dir.appendingPathComponent("sounds-\(preset.rawValue).png")) && ok
+        }
+        settings.soundEvents[.cardOpened] = "Frog"
+        ok = shot(.sounds, dir.appendingPathComponent("sounds-custom.png")) && ok
         for preset in DisplayPreset.allCases {
             settings.apply(preset)
             ok = shot(.appearance, dir.appendingPathComponent("preset-\(preset.rawValue).png")) && ok

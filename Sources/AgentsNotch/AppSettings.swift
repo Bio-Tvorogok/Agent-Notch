@@ -140,6 +140,9 @@ final class AppSettings: ObservableObject {
     var preset: DisplayPreset? { DisplayPreset.matching(presetValues) }
     func apply(_ preset: DisplayPreset) { presetValues = preset.apply(to: presetValues) }
 
+    var soundPreset: SoundPreset? { SoundPreset.matching(soundEvents) }
+    func applySoundPreset(_ preset: SoundPreset) { soundEvents = preset.apply(to: soundEvents) }
+
     /// A row part is on when both its switch in «Внешний вид» and its place in «Порядок…» are on.
     func rowPartShown(_ part: RowPart) -> Bool { visibleRowParts.contains(part) }
     func setRowPart(_ part: RowPart, shown: Bool) {

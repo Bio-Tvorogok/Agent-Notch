@@ -3,6 +3,7 @@ import NotchCore
 
 struct SettingsSounds: View {
     @ObservedObject var settings: AppSettings
+    @State var customizing = false
     var body: some View {
         Form {
             Section {
@@ -14,15 +15,30 @@ struct SettingsSounds: View {
                             .monospacedDigit().frame(width: 46, alignment: .trailing)
                     }
                 }
+                Picker(Loc.t("Sound set", "Набор звуков"), selection: Binding<String>(
+                    get: { settings.soundPreset?.rawValue ?? "custom" },
+                    set: { if let preset = SoundPreset(rawValue: $0) { settings.applySoundPreset(preset) } })) {
+                    ForEach(SoundPreset.allCases, id: \.self) { preset in
+                        Text(SoundText.preset(preset)).tag(preset.rawValue)
+                    }
+                    if settings.soundPreset == nil { Text(Loc.t("Custom", "Свой")).tag("custom") }
+                }
             } footer: {
-                Text(Loc.t("Pick a sound for each event, or “No sound”. Preview works even with event sounds off.", "Для каждого события выберите звук или «Без звука». Прослушивание доступно и при выключенных звуках событий."))
+                Text(settings.soundPreset.map(SoundText.presetHelp)
+                     ?? Loc.t("Your sounds for individual events.", "Ваши звуки для отдельных событий."))
             }
-            ForEach(SoundGroup.allCases, id: \.self) { group in
-                Section(SoundText.group(group)) {
-                    ForEach(SoundEvent.allCases.filter { $0.group == group }, id: \.self) { event in
-                        row(event)
+            Section {
+                DisclosureGroup(Loc.t("Customize by event", "Настроить по событиям"), isExpanded: $customizing) {
+                    ForEach(SoundGroup.allCases, id: \.self) { group in
+                        Text(SoundText.group(group))
+                            .font(.headline).foregroundStyle(.secondary).padding(.top, 10)
+                        ForEach(SoundEvent.allCases.filter { $0.group == group }, id: \.self) { event in
+                            row(event).padding(.vertical, 3)
+                        }
                     }
                 }
+            } footer: {
+                Text(Loc.t("Preview works even with event sounds off.", "Прослушивание доступно и при выключенных звуках событий."))
             }
         }
     }
@@ -47,6 +63,23 @@ struct SettingsSounds: View {
 }
 
 enum SoundText {
+    static func preset(_ preset: SoundPreset) -> String {
+        switch preset {
+        case .requestsOnly: Loc.t("Permissions only", "Только разрешения")
+        case .attention: Loc.t("Needs attention", "Нужно внимание")
+        case .important: Loc.t("Important events", "Важные события")
+        case .allEvents: Loc.t("All events", "Все события")
+        }
+    }
+    static func presetHelp(_ preset: SoundPreset) -> String {
+        switch preset {
+        case .requestsOnly: Loc.t("A sound when an agent waits for permission.", "Звук, когда агент ждёт разрешения.")
+        case .attention: Loc.t("Permissions, questions, plans, errors and limit warnings.", "Разрешения, вопросы, планы, ошибки и предупреждения о лимитах.")
+        case .important: Loc.t("Everything that needs attention, plus task completion and restored limits.", "Всё, что требует внимания, плюс завершение задач и восстановление лимитов.")
+        case .allEvents: Loc.t("Sounds for every event, including answers and app actions.", "Звуки для всех событий, включая ответы и действия в приложении.")
+        }
+    }
+
     static func group(_ group: SoundGroup) -> String {
         switch group { case .agents: Loc.t("Agent events", "События агентов"); case .answers: Loc.t("Answers to agents", "Ответы агенту"); case .interface: Loc.t("App actions", "Действия в приложении"); case .limits: Loc.t("Limits", "Лимиты") }
     }

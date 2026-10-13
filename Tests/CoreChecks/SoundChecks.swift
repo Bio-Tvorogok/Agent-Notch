@@ -20,6 +20,37 @@ struct SoundChecks {
         XCTAssertEqual(prefs[.agentError], "")
     }
 
+    func presets() throws {
+        let expected: [(SoundPreset, [SoundEvent: String])] = [
+            (.requestsOnly, [.permissionRequested: "Glass"]),
+            (.attention, [.permissionRequested: "Glass", .questionAsked: "Glass", .planProposed: "Glass", .agentError: "Basso", .operationFailed: "Basso", .limitWarning: "Sosumi", .limitExhausted: "Basso"]),
+            (.important, [.permissionRequested: "Glass", .questionAsked: "Glass", .planProposed: "Glass", .agentError: "Basso", .operationFailed: "Basso", .limitWarning: "Sosumi", .limitExhausted: "Basso", .agentFinished: "Hero", .limitRestored: "Ping"])
+        ]
+        for (preset, sounds) in expected {
+            var prefs = SoundPrefs(legacyName: "Ping")
+            prefs.volume = 0.35
+            prefs[.cardOpened] = "Frog"
+            prefs = preset.apply(to: prefs)
+            for event in SoundEvent.allCases {
+                XCTAssertEqual(prefs[event], sounds[event] ?? "", "wrong event in \(preset.rawValue): \(event.rawValue)")
+            }
+            XCTAssertEqual(prefs.volume, 0.35)
+            XCTAssertEqual(SoundPreset.matching(prefs), preset)
+            let restored = try JSONDecoder().decode(SoundPrefs.self, from: JSONEncoder().encode(prefs))
+            XCTAssertEqual(SoundPreset.matching(restored), preset)
+        }
+        var all = SoundPreset.allEvents.apply(to: SoundPrefs())
+        XCTAssertTrue(SoundEvent.allCases.allSatisfy { SoundPrefs.names.contains(all[$0]) })
+        XCTAssertEqual(all[.denied], "Basso")
+        XCTAssertEqual(all[.listOpened], "Tink")
+        XCTAssertEqual(all[.agentFinished], "Hero")
+        XCTAssertEqual(SoundPreset.matching(all), .allEvents)
+        all[.cardOpened] = ""
+        XCTAssertNil(SoundPreset.matching(all))
+        XCTAssertEqual(SoundPreset.matching(SoundPrefs()), .requestsOnly)
+        XCTAssertNil(SoundPreset.matching(SoundPrefs(legacyName: "Ping")))
+    }
+
     func transitions() {
         var watcher = SoundAgentWatcher()
         var a = Agent(id: "a", vendor: .claude, title: "a", state: .working, project: "p")
