@@ -16,6 +16,12 @@ struct SoundChecks {
         XCTAssertEqual(restored[.agentFinished], "Hero")
         XCTAssertEqual(restored[.permissionRequested], "")
         XCTAssertEqual(restored.volume, 0.35)
+        let custom = "custom:0c1b18de-52a3-4ff2-afbe-67c141cf4cb7"
+        prefs[.agentFinished] = custom
+        let customRestored = try JSONDecoder().decode(SoundPrefs.self, from: JSONEncoder().encode(prefs))
+        XCTAssertEqual(customRestored[.agentFinished], custom)
+        prefs[.agentError] = "custom:../../outside.wav"
+        XCTAssertEqual(prefs[.agentError], "")
         prefs[.agentError] = "missing-sound"
         XCTAssertEqual(prefs[.agentError], "")
     }

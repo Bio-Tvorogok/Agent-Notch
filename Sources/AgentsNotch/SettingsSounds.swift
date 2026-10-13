@@ -27,6 +27,7 @@ struct SettingsSounds: View {
                 Text(settings.soundPreset.map(SoundText.presetHelp)
                      ?? Loc.t("Your sounds for individual events.", "Ваши звуки для отдельных событий."))
             }
+            SettingsSoundLibrary(settings: settings)
             Section {
                 DisclosureGroup(Loc.t("Customize by event", "Настроить по событиям"), isExpanded: $customizing) {
                     ForEach(SoundGroup.allCases, id: \.self) { group in
@@ -34,6 +35,7 @@ struct SettingsSounds: View {
                             .font(.headline).foregroundStyle(.secondary).padding(.top, 10)
                         ForEach(SoundEvent.allCases.filter { $0.group == group }, id: \.self) { event in
                             row(event).padding(.vertical, 3)
+                                .accessibilityElement(children: .contain)
                         }
                     }
                 }
@@ -49,14 +51,26 @@ struct SettingsSounds: View {
                 Picker(SoundText.label(event), selection: Binding(
                     get: { settings.soundEvents[event] }, set: { settings.soundEvents[event] = $0 })) {
                     Text(Loc.t("No sound", "Без звука")).tag("")
-                    ForEach(SoundPrefs.names, id: \.self) { Text($0).tag($0) }
+                    Section(Loc.t("System sounds", "Системные звуки")) {
+                        ForEach(SoundPrefs.names, id: \.self) { Text($0).tag($0) }
+                    }
+                    if !settings.customSounds.isEmpty {
+                        Section(Loc.t("My sounds", "Свои звуки")) {
+                            ForEach(settings.customSounds) { sound in Text(sound.name).tag(sound.id) }
+                        }
+                    }
+                    let choice = settings.soundEvents[event]
+                    if SoundLibrary.isCustomID(choice), !settings.customSounds.contains(where: { $0.id == choice }) {
+                        Text(Loc.t("Unavailable sound", "Звук недоступен")).tag(choice).disabled(true)
+                    }
                 }.labelsHidden().frame(width: 130)
                 Button {
-                    SoundPlayer.shared.preview(settings.soundEvents[event], volume: settings.soundEvents.volume)
+                    SoundPlayer.shared.preview(settings.soundEvents[event], volume: settings.soundEvents.volume, library: settings.soundLibrary)
                 } label: { Image(systemName: "play.fill") }
                 .accessibilityLabel(Loc.t("Preview: ", "Послушать: ") + SoundText.label(event))
                 .help(Loc.t("Preview the selected sound", "Послушать выбранный звук"))
-                .disabled(settings.soundEvents[event].isEmpty || settings.soundEvents.volume == 0)
+                .disabled(settings.soundEvents[event].isEmpty || settings.soundEvents.volume == 0
+                          || (SoundLibrary.isCustomID(settings.soundEvents[event]) && settings.soundLibrary.url(for: settings.soundEvents[event]) == nil))
             }
         }
     }

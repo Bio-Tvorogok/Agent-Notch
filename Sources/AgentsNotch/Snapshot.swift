@@ -48,7 +48,9 @@ enum Snapshot {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suite) else { return false }
         defer { defaults.removePersistentDomain(forName: suite) }
-        let settings = AppSettings(defaults: defaults)
+        let libraryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("notch-snapshot-library-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: libraryDirectory) }
+        let settings = AppSettings(defaults: defaults, soundLibraryDirectory: libraryDirectory)
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
             host(SettingsView(selection: section).environmentObject(settings).environment(\.colorScheme, .light),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
@@ -70,6 +72,17 @@ enum Snapshot {
         }
         settings.soundEvents[.cardOpened] = "Frog"
         ok = shot(.sounds, dir.appendingPathComponent("sounds-custom.png")) && ok
+        let sample = FileManager.default.temporaryDirectory.appendingPathComponent("Soft bell-" + UUID().uuidString + ".aiff")
+        defer { try? FileManager.default.removeItem(at: sample) }
+        do {
+            try FileManager.default.copyItem(at: URL(fileURLWithPath: "/System/Library/Sounds/Glass.aiff"), to: sample)
+            let custom = try settings.importSound(sample)
+            settings.soundEvents[.agentFinished] = custom.id
+            ok = shot(.sounds, dir.appendingPathComponent("sounds-library.png")) && ok
+            ok = host(SettingsSounds(settings: settings, customizing: true)
+                .formStyle(.grouped).environment(\.colorScheme, .light),
+                size: NSSize(width: 570, height: 2500), to: dir.appendingPathComponent("sounds-library-events.png")) && ok
+        } catch { print("snapshot sound library: \(error.localizedDescription)"); ok = false }
         for preset in DisplayPreset.allCases {
             settings.apply(preset)
             ok = shot(.appearance, dir.appendingPathComponent("preset-\(preset.rawValue).png")) && ok
