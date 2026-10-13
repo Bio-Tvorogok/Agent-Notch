@@ -60,13 +60,15 @@ struct PromptChecks {
         try detail.fixture([
             user("<pasted_content id=\"08af\">\nКАРТОЧКА: X-1\nсделай\n</pasted_content>\nвот задача"),
             user("<command-message>decide</command-message>\n<command-name>/decide</command-name>\n<command-args>выбор макета</command-args>"),
+            // Real logs usually repeat the id on the closing tag.
+            user([["type": "text", "text": "<pasted_content id=\"c5b2\">\nЗадача: карточка\n</pasted_content id=\"c5b2\">"]]),
             user("<system-reminder>\nworktree\n</system-reminder>\nпочини сборку"),
             user("<ide_opened_file>The user opened a.swift</ide_opened_file>"),
             user("<bash-input>git status</bash-input><bash-stdout>clean</bash-stdout>"),
             user("поясни, что значит <command-name>/x</command-name> в логе")
         ]) { path in
             let d = try XCTUnwrap(DetailReader.read(path: path, vendor: .claude))
-            XCTAssertEqual(d.prompts.map(\.text), ["КАРТОЧКА: X-1\nсделай\n\nвот задача", "/decide выбор макета",
+            XCTAssertEqual(d.prompts.map(\.text), ["КАРТОЧКА: X-1\nсделай\n\nвот задача", "/decide выбор макета", "Задача: карточка",
                                                     "почини сборку", "поясни, что значит <command-name>/x</command-name> в логе"])
         }
     }

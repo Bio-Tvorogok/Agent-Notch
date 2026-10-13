@@ -152,7 +152,7 @@ struct DetailState {
 
     private static let harness = try! NSRegularExpression(
         pattern: #"<(system-reminder|ide_[a-z_]+|bash-[a-z]+|local-command-[a-z]+|cross-session-message|task-notification)\b[^>]*>[\s\S]*?</\1>"#)
-    private static let pasted = try! NSRegularExpression(pattern: #"<pasted_content\b[^>]*>([\s\S]*?)</pasted_content>"#)
+    private static let pasted = try! NSRegularExpression(pattern: #"<pasted_content\b[^>]*>([\s\S]*?)</pasted_content\b[^>]*>"#)
 
     /// Drops what the harness wrapped around the owner's text, unwraps pasted text, spells slash commands as typed.
     static func ownText(_ raw: String) -> String {
