@@ -29,9 +29,9 @@ struct PresetChecks {
         XCTAssertEqual(v.finishedMinutes, 30)
         XCTAssertEqual(v.limitChips, .always)
         XCTAssertEqual(v.limitWindows, [.short])
-        // All four tabs; the log tab needs commands and errors to show anything.
-        XCTAssertEqual(CardContent.tabs(blocks: DisplayOrder.visible(v.cardBlocks)).count, 4)
-        XCTAssertEqual(Set(DisplayOrder.visible(v.cardBlocks)), [.done, .remaining, .files, .log, .commands, .errors])
+        // All five tabs; the log tab needs commands and errors to show anything.
+        XCTAssertEqual(CardContent.tabs(blocks: DisplayOrder.visible(v.cardBlocks)).count, 5)
+        XCTAssertEqual(Set(DisplayOrder.visible(v.cardBlocks)), [.done, .remaining, .files, .log, .prompts, .commands, .errors])
         XCTAssertEqual(DisplayPreset.matching(v), .detailed)
     }
 

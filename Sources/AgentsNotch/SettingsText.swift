@@ -146,7 +146,7 @@ enum SettingsText {
         "allow": "Разрешить", "deny": "Отклонить", "list.key": "Открыть список",
         "statusMark": "Значок", "title": "Название", "model": "Модель", "effort": "Режим размышлений", "worktree": "Папка и ветка",
         "activity": "Что агент делает сейчас", "runningTime": "Время работы", "context": "Контекст", "cost": "Стоимость",
-        "done": "Сделано", "remaining": "Осталось", "files": "Файлы", "log": "Лог", "commands": "Команды и тесты",
+        "done": "Сделано", "remaining": "Осталось", "files": "Файлы", "log": "Лог", "prompts": "Запросы", "commands": "Команды и тесты",
         "lastMessage": "Последнее сообщение", "errors": "Ошибки", "modelTime": "Модель и время", "contextCost": "Контекст и стоимость",
         "working": "Работает", "waiting": "Ждёт", "error": "Ошибка",
     ]
@@ -164,7 +164,7 @@ enum SettingsText {
         "allow": "Allow", "deny": "Deny", "list.key": "Open the list",
         "statusMark": "Icon", "title": "Name", "model": "Model", "effort": "Thinking mode", "worktree": "Folder and branch",
         "activity": "What the agent is doing", "runningTime": "Running time", "context": "Context", "cost": "Cost",
-        "done": "Done", "remaining": "Remaining", "files": "Files", "log": "Log", "commands": "Commands and tests",
+        "done": "Done", "remaining": "Remaining", "files": "Files", "log": "Log", "prompts": "Prompts", "commands": "Commands and tests",
         "lastMessage": "Last message", "errors": "Errors", "modelTime": "Model and time", "contextCost": "Context and cost",
         "working": "Working", "waiting": "Waiting", "error": "Error",
     ]

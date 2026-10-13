@@ -54,7 +54,20 @@ struct CardChecks {
     func visibility() {
         XCTAssertEqual(CardContent.tabs(blocks: [.files, .remaining, .files]), [.files, .remaining])
         XCTAssertTrue(CardContent.tabs(blocks: [.commands, .errors]).isEmpty)
-        XCTAssertEqual(CardContent.tabs(blocks: CardBlock.allCases), [.done, .remaining, .files, .log])
+        XCTAssertEqual(CardContent.tabs(blocks: CardBlock.allCases), [.done, .remaining, .files, .log, .prompts])
+    }
+
+    func prompts() {
+        let first = UserPrompt(text: "начни", at: 1), next = UserPrompt(text: "дальше", at: 2), last = UserPrompt(text: "всё", at: 3)
+        var detail = AgentDetail(prompts: [first, next, last], startPrompt: first)
+        XCTAssertEqual(CardContent.prompts(detail).start, first)
+        XCTAssertEqual(CardContent.prompts(detail).later, [last, next])
+        // A long session lost its start from the tail: nothing is dropped from the rest.
+        detail.prompts = [next, last]
+        XCTAssertEqual(CardContent.prompts(detail).later, [last, next])
+        detail.startPrompt = nil
+        XCTAssertNil(CardContent.prompts(detail).start)
+        XCTAssertTrue(CardContent.plan(detail, tab: .prompts).isEmpty)
     }
 
     func formatting() {

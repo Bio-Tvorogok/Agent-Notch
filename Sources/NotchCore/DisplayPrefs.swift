@@ -19,7 +19,7 @@ public enum RowPart: String, Codable, CaseIterable, Sendable {
     case statusMark, title, project, model, effort, branch, worktree, activity, runningTime, context, cost
 }
 public enum CardBlock: String, Codable, CaseIterable, Sendable {
-    case done, remaining, files, log, commands, lastMessage, errors, modelTime, contextCost
+    case done, remaining, files, log, prompts, commands, lastMessage, errors, modelTime, contextCost
 }
 
 /// Order and visibility travel together, including disabled parts.

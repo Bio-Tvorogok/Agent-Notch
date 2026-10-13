@@ -6,7 +6,8 @@ enum CardFixture {
                              model: "gpt-6.1-sol", effort: .high, state: .working, project: "Agents Notch",
                              cwd: "/tmp/agents-notch", branch: "feat/ui-card", worktree: "ui-card")
     static var detail: AgentDetail {
-        AgentDetail(plan: [PlanItem(text: CardFixtureText.completed, status: .done),
+        let prompts = prompts
+        return AgentDetail(plan: [PlanItem(text: CardFixtureText.completed, status: .done),
                            PlanItem(text: CardFixtureText.active, status: .active),
                            PlanItem(text: CardFixtureText.todo, status: .todo)],
                     files: [FileChange(path: "Sources/AgentsNotch/CardView.swift", added: 96, removed: 3)],
@@ -16,7 +17,14 @@ enum CardFixture {
                     lastMessage: CardFixtureText.message,
                     errors: [DetailError(text: CardFixtureText.error, count: 2)],
                     meta: DetailMeta(model: "gpt-6.1-sol", effort: .high,
-                                     startedAt: Date().timeIntervalSince1970 - 732, branch: "feat/ui-card", worktree: "ui-card"))
+                                     startedAt: Date().timeIntervalSince1970 - 732, branch: "feat/ui-card", worktree: "ui-card"),
+                    prompts: prompts, startPrompt: prompts.first)
+    }
+    private static var prompts: [UserPrompt] {
+        let now = Date().timeIntervalSince1970
+        return [UserPrompt(text: CardFixtureText.start, at: now - 732),
+                UserPrompt(text: CardFixtureText.next, at: now - 420),
+                UserPrompt(text: CardFixtureText.last, at: now - 60)]
     }
 }
 
@@ -27,4 +35,7 @@ private enum CardFixtureText {
     static var todo: String { Loc.t("Check jumping to the agent window", "Проверить переход в окно агента") }
     static var message: String { Loc.t("The card reads the log in the background. Jumping between windows is left to check.", "Карточка читает журнал в фоне. Осталось проверить переход между окнами.") }
     static var error: String { Loc.t("Check file not found", "Не найден файл проверки") }
+    static var start: String { Loc.t("Add a tab with my prompts to the agent card. I want to see how the agent started, and my messages should stand out from commands and replies. Check it on a snapshot and restart the app.", "Сделай в карточке агента вкладку с моими запросами. Хочу видеть, с чего агент начал, и чтобы мои сообщения выделялись среди команд и ответов. Проверь на снимке и перезапусти приложение.") }
+    static var next: String { Loc.t("go on", "продолжай") }
+    static var last: String { Loc.t("the highlight is too pale, make it stronger; and check that a prompt longer than three lines folds and unfolds with the button under it", "подсветка слишком бледная, сделай заметнее; и проверь, что длинный запрос в три с лишним строки сворачивается и раскрывается по кнопке под ним") }
 }

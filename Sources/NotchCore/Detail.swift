@@ -46,6 +46,13 @@ public struct DetailError: Equatable, Sendable {
     public init(text: String, count: Int) { self.text = text; self.count = count }
 }
 
+/// Something the owner typed to the agent, not a harness insert or a tool result.
+public struct UserPrompt: Equatable, Sendable {
+    public var text: String
+    public var at: Double?
+    public init(text: String, at: Double? = nil) { self.text = text; self.at = at }
+}
+
 public struct DetailMeta: Equatable, Sendable {
     public var model: String?
     public var effort: Effort?
@@ -68,9 +75,15 @@ public struct AgentDetail: Equatable, Sendable {
     public var lastMessage: String?
     public var errors: [DetailError]
     public var meta: DetailMeta
+    /// Log order, newest last; capped, so the first one may be gone in a long session.
+    public var prompts: [UserPrompt]
+    /// What the session began with, kept even when the log is read from its tail.
+    public var startPrompt: UserPrompt?
     public init(plan: [PlanItem] = [], files: [FileChange] = [], commands: [CommandRun] = [],
-                lastMessage: String? = nil, errors: [DetailError] = [], meta: DetailMeta = DetailMeta()) {
+                lastMessage: String? = nil, errors: [DetailError] = [], meta: DetailMeta = DetailMeta(),
+                prompts: [UserPrompt] = [], startPrompt: UserPrompt? = nil) {
         self.plan = plan; self.files = files; self.commands = commands
         self.lastMessage = lastMessage; self.errors = errors; self.meta = meta
+        self.prompts = prompts; self.startPrompt = startPrompt
     }
 }

@@ -71,6 +71,15 @@ run("detailTasksAndBounds") { try detail.tasksAndBounds() }
 run("detailCodexOutputs") { try detail.codexOutputs() }
 run("detailFailedAndStreamed") { try detail.failedAndStreamed() }
 run("detailOutcomeDeduplication") { try detail.outcomeDeduplication() }
+let prompts = PromptChecks()
+run("promptsClaude") { try prompts.claude() }
+run("promptsCodex") { try prompts.codex() }
+run("promptsStartSurvivesTail") { try prompts.startSurvivesTail() }
+run("promptsBounds") { try prompts.bounds() }
+run("promptsWrapped") { try prompts.wrapped() }
+run("promptsSubagent") { try prompts.subagent() }
+run("promptsCodexLongHead") { try prompts.codexLongHead() }
+run("promptsTabMigration") { prompts.migration() }
 // NOTCH-usage
 let usage = UsageChecks()
 run("usageLimits") { try usage.limits() }
@@ -130,6 +139,7 @@ run("finishWatcher") { finish.watcher() }
 let card = CardChecks()
 run("cardGrouping") { card.grouping() }
 run("cardVisibility") { card.visibility() }
+run("cardPrompts") { card.prompts() }
 run("cardFormatting") { card.formatting() }
 // NOTCH-ui-usage
 let usageView = UsageViewChecks()
