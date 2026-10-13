@@ -113,6 +113,7 @@ final class Store: ObservableObject {
     }
 
     private func receive(_ e: HookEvent, ticket: Int?) {
+        let receivedTicket = ticket
         var ticket = ticket
         let now = Date().timeIntervalSince1970
         let handedBack = ticket != nil && route.isHandedBack(e, now: now)
@@ -127,8 +128,13 @@ final class Store: ObservableObject {
         let wasWaiting = hooks.pending.count
         let stale = hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970)
         for ticket in stale { server?.answer(ticket, .pass) }
-        if !stale.isEmpty || ["Stop", "UserPromptSubmit", "SessionEnd", "SubagentStop"].contains(e.name) {
+        if e.name == "UserPromptSubmit" {
+            soundWatcher.resume(e.agentKey)
+        } else if !stale.isEmpty || ["Stop", "SessionEnd", "SubagentStop"].contains(e.name) {
             soundWatcher.resolve(e.agentKey)
+        }
+        if e.name == "PostToolUse", !hooks.pending.contains(where: { $0.event.agentKey == e.agentKey }) {
+            soundWatcher.finishedTool(e)
         }
         let owner = agents.first { $0.id == e.agentKey }
         let visible = owner.map { settings.listFilter.includes(vendor: $0.vendor, project: $0.project, cwd: $0.cwd) }
@@ -136,12 +142,12 @@ final class Store: ObservableObject {
         // A fresh permission handled in the agent's window still starts a new waiting event.
         // The permission after handing back a question/plan is the same request.
         if e.isPermission, ticket == nil, !handedBack, visible {
-            if let event = soundWatcher.request(e) { play(event) }
+            if let event = soundWatcher.request(e, ticket: receivedTicket) { play(event) }
         }
         // A held request always has a row; a prompt shown elsewhere only matters for agents in the list.
         if hooks.pending.count > wasWaiting
             || (e.isPromptShown && settings.listFilter.includes(vendor: e.vendor, project: names.name(for: e.cwd), cwd: e.cwd)) {
-            if let event = soundWatcher.request(e) { play(event) }
+            if let event = soundWatcher.request(e, ticket: receivedTicket) { play(event) }
             onNewAsk?()
         }
     }

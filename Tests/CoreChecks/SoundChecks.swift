@@ -100,4 +100,47 @@ struct SoundChecks {
         var startup = SoundLimitWatcher()
         XCTAssertEqual(startup.update(sample(100), threshold: 80), [])
     }
+
+    func nativeRequests() {
+        var watcher = SoundAgentWatcher()
+        let a = Agent(id: "native", vendor: .claude, title: "native", state: .working, project: "p")
+        _ = watcher.update([a])
+        let first = HookEvent(vendor: .claude, name: "PermissionRequest", sessionId: "native", tool: "Bash", detail: "pwd")
+        let next = HookEvent(vendor: .claude, name: "PermissionRequest", sessionId: "native", tool: "Bash", detail: "ls")
+        XCTAssertEqual(watcher.request(first), .permissionRequested)
+        _ = watcher.update([a]) // The first request was answered before a waiting poll.
+        XCTAssertEqual(watcher.request(next), .permissionRequested)
+        var numbered = SoundAgentWatcher()
+        _ = numbered.update([a])
+        XCTAssertEqual(numbered.request(first, ticket: 101), .permissionRequested)
+        XCTAssertNil(numbered.request(first, ticket: 101))
+        XCTAssertEqual(numbered.request(first, ticket: 102), .permissionRequested) // Same command, distinct requests.
+        var pollCycle = SoundAgentWatcher()
+        _ = pollCycle.update([a])
+        _ = pollCycle.request(first, ticket: 201)
+        var waiting = a
+        waiting.state = .waiting
+        _ = pollCycle.update([waiting])
+        _ = pollCycle.update([a])
+        XCTAssertEqual(pollCycle.update([waiting]), [.permissionRequested])
+        XCTAssertNil(pollCycle.request(next, ticket: 202)) // The previous cycle's ticket cannot replay a poll-first request.
+        var completed = SoundAgentWatcher()
+        _ = completed.update([a])
+        _ = completed.request(first)
+        let unrelated = HookEvent(vendor: .claude, name: "PostToolUse", sessionId: "native", tool: "Read", detail: "file.txt")
+        completed.finishedTool(unrelated)
+        XCTAssertNil(completed.request(first))
+        let matched = HookEvent(vendor: .claude, name: "PostToolUse", sessionId: "native", tool: "Bash", detail: "pwd")
+        completed.finishedTool(matched)
+        _ = completed.update([a])
+        XCTAssertEqual(completed.request(first), .permissionRequested)
+        let input = HookEvent(vendor: .claude, name: "Notification", sessionId: "native", notificationType: "agent_needs_input")
+        var turns = SoundAgentWatcher()
+        _ = turns.update([a])
+        XCTAssertEqual(turns.request(input), .questionAsked)
+        turns.resolve("native")
+        XCTAssertNil(turns.request(input))
+        turns.resume("native") // UserPromptSubmit is authoritative even before a waiting poll.
+        XCTAssertEqual(turns.request(input), .questionAsked)
+    }
 }

@@ -201,6 +201,7 @@ run("soundPreferences") { try soundChecks.preferences() }
 run("soundTransitions") { soundChecks.transitions() }
 run("soundRequests") { soundChecks.requests() }
 run("soundLimits") { soundChecks.limits() }
+run("soundNativeRequests") { soundChecks.nativeRequests() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

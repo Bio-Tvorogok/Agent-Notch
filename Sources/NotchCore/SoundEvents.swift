@@ -68,22 +68,57 @@ public struct SoundPrefs: Codable, Equatable, Sendable {
 public struct SoundAgentWatcher: Sendable {
     private var states: [String: AgentState] = [:]
     private var requests: [String: SoundEvent] = [:]
+    private var requestHooks: [String: HookEvent] = [:]
+    private var requestTickets: [String: Int] = [:]
     private var answered = Set<String>()
     private var initialized = false
     public init() {}
 
-    public mutating func request(_ event: HookEvent) -> SoundEvent? {
+    public mutating func request(_ event: HookEvent, ticket: Int? = nil) -> SoundEvent? {
         if event.isPromptShown, answered.contains(event.agentKey) { return nil }
         let kind = SoundEvent.request(event)
+        if event.waitsForAnswer {
+            if let ticket, requestTickets[event.agentKey] == ticket { return nil }
+            let previous = requestHooks[event.agentKey]
+            let freshTicket = ticket != nil && requestTickets[event.agentKey] != ticket
+            if let previous, previous.waitsForAnswer,
+               freshTicket || !Self.sameTool(previous, event) {
+                requests[event.agentKey] = nil
+            }
+            requestHooks[event.agentKey] = event
+            requestTickets[event.agentKey] = ticket
+        }
         guard requests[event.agentKey] == nil else { return nil }
         answered.remove(event.agentKey)
         requests[event.agentKey] = kind
+        if !event.waitsForAnswer { requestHooks[event.agentKey] = event }
         return kind
     }
 
+    /// Native answers have no pending ticket; their matching command completion ends the request.
+    public mutating func finishedTool(_ event: HookEvent) {
+        guard event.name == "PostToolUse", let request = requestHooks[event.agentKey],
+              request.waitsForAnswer, Self.sameTool(request, event) else { return }
+        resolve(event.agentKey)
+    }
+
+    private static func sameTool(_ a: HookEvent, _ b: HookEvent) -> Bool { a.tool == b.tool && a.full == b.full }
+
     public mutating func resolve(_ id: String) {
         if requests[id] != nil || states[id] == .waiting { answered.insert(id) }
+        forgetRequest(id)
+    }
+
+    /// A new user message starts a new turn; late-log suppression belongs to the old one.
+    public mutating func resume(_ id: String) {
+        answered.remove(id)
+        forgetRequest(id)
+    }
+
+    private mutating func forgetRequest(_ id: String) {
         requests[id] = nil
+        requestHooks[id] = nil
+        requestTickets[id] = nil
     }
 
     public mutating func update(_ agents: [Agent]) -> [SoundEvent] {
@@ -107,13 +142,13 @@ public struct SoundAgentWatcher: Sendable {
             case .working:
                 if previous == .waiting || previous == .error { result.append(.agentResumed) }
                 else if previous == .done { result.append(.agentStarted) }
-                requests[agent.id] = nil
+                forgetRequest(agent.id)
             case .error:
                 result.append(.agentError)
-                requests[agent.id] = nil
+                forgetRequest(agent.id)
             case .done:
                 if previous != nil { result.append(.agentFinished) }
-                requests[agent.id] = nil
+                forgetRequest(agent.id)
             }
         }
         return result
