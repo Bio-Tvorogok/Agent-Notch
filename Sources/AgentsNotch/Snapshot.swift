@@ -104,7 +104,8 @@ enum Snapshot {
             .background(ThemeWallpaper())
             .environmentObject(settings)
             .environment(\.themeSnapshot, true)
-            ok = write(scene, to: url.appendingPathComponent("theme-\(id.rawValue).png")) && ok
+            // The card's tab body sits in a ScrollView, which ImageRenderer leaves blank, so this goes through a window.
+            ok = host(scene, to: url.appendingPathComponent("theme-\(id.rawValue).png")) && ok
         }
         settings.theme = .terminal
         ok = write(ThemeMarksGrid().environmentObject(settings).environment(\.themeSnapshot, true),
@@ -121,9 +122,14 @@ enum Snapshot {
              size: NSSize(width: 340, height: 480), to: URL(fileURLWithPath: file))
     }
 
-    /// Forms and lists are AppKit views that ImageRenderer cannot draw, so this snapshot goes through a real window.
-    private static func host<V: View>(_ scene: V, size: NSSize, to url: URL) -> Bool {
-        let view = NSHostingView(rootView: scene.frame(width: size.width, height: size.height))
+    /// Forms, lists and scroll views are AppKit views that ImageRenderer cannot draw, so this snapshot goes through a real window.
+    /// Without a size the scene keeps its own fitting size.
+    private static func host<V: View>(_ scene: V, size: NSSize? = nil, to url: URL) -> Bool {
+        let view: NSView
+        if let size { view = NSHostingView(rootView: scene.frame(width: size.width, height: size.height)) }
+        else { view = NSHostingView(rootView: scene) }
+        let size = size ?? view.fittingSize
+        view.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: .aqua)
         window.contentView = view
