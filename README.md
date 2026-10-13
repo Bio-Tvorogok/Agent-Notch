@@ -53,7 +53,7 @@ Nothing is approved without a human click. If nobody answers in 100 seconds, the
 
 ## Themes and sounds
 
-Fourteen themes for the list, from plain Terminal to Phosphor, Blueprint, Pixel and Rubber Ducks. Each theme can also restyle the marks in the wing.
+Thirteen themes for the list, from plain Terminal to Phosphor, Blueprint, Pixel and Rubber Ducks. Every theme except Terminal can also restyle the marks in the wing.
 
 <img src="assets/screens/themes.png" width="640" alt="Theme picker: Terminal, Liquid Glass, Paper, Midnight, Console, Phosphor, Synthwave, Blueprint, Brutalism, Hologram, Wasteland, Pixel, Rubber Ducks">
 

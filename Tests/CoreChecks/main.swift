@@ -200,6 +200,7 @@ let soundChecks = SoundChecks()
 run("soundPreferences") { try soundChecks.preferences() }
 run("soundTransitions") { soundChecks.transitions() }
 run("soundRequests") { soundChecks.requests() }
+run("soundRequestsEn") { Loc.forced = .en; defer { Loc.forced = .ru }; soundChecks.requests() }
 run("soundLimits") { soundChecks.limits() }
 run("soundNativeRequests") { soundChecks.nativeRequests() }
 

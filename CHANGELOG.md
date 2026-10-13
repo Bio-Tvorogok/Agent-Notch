@@ -6,8 +6,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- Fourteen list themes: Terminal, Liquid Glass, Paper, Midnight, Console, Phosphor, Synthwave, Blueprint, Brutalism, Hologram, Wasteland, Pixel and Rubber Ducks. A theme can also restyle the marks in the wing.
+- Thirteen list themes: Terminal, Liquid Glass, Paper, Midnight, Console, Phosphor, Synthwave, Blueprint, Brutalism, Hologram, Wasteland, Pixel and Rubber Ducks. Every theme except Terminal can also restyle the marks in the wing.
 - A sound for each event, set in Settings → Sounds, with a volume slider and preview. Only "waiting for permission" makes a sound until you change it.
+- README and promo screenshots are in English.
 
 ## [0.2.0] - 2026-10-13
 

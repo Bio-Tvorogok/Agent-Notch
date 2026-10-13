@@ -77,9 +77,6 @@ enum SettingsText {
     static var answer: String { Loc.t("Answer right in the notch", "Отвечать прямо в чёлке") }
     static var answerHelp: String { Loc.t("Allow or deny without switching to the terminal", "Разрешить или отклонить, не переключаясь в терминал") }
     static var openRequest: String { Loc.t("Open the list when an agent is waiting", "Открывать список, когда агент ждёт") }
-    static var sounds: String { Loc.t("Sound when an agent is waiting", "Звук, когда агент ждёт") }
-    static var sound: String { Loc.t("Which sound", "Какой звук") }
-    static var listen: String { Loc.t("Play", "Послушать") }
     static var keys: String { Loc.t("Keyboard shortcuts", "Горячие клавиши") }
     static var record: String { Loc.t("Record", "Записать") }
     static var recording: String { Loc.t("Press a shortcut…", "Нажмите сочетание…") }

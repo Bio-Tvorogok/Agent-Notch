@@ -80,7 +80,7 @@ struct SoundChecks {
         logAgent.state = .working
         _ = pollFirst.update([logAgent])
         logAgent.state = .waiting
-        logAgent.ask = "согласовать план"
+        logAgent.ask = Loc.t("approve plan", "согласовать план")
         XCTAssertEqual(pollFirst.update([logAgent]), [.planProposed])
     }
 

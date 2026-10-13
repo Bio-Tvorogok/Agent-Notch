@@ -134,6 +134,7 @@ public struct SoundAgentWatcher: Sendable {
             case .waiting:
                 if requests[agent.id] == nil, !answered.contains(agent.id) {
                     let ask = agent.ask ?? ""
+                    // Parsers and Hook word the plan ask differently in Russian.
                     let event: SoundEvent = ask == Loc.t("question", "вопрос") || ask.hasPrefix(Loc.t("question:", "вопрос:")) || ask == Loc.t("needs an answer", "нужен ответ") ? .questionAsked
                         : ask == Loc.t("approve plan", "согласовать план") || ask == Loc.t("approve plan", "принять план") ? .planProposed : .permissionRequested
                     result.append(event)
