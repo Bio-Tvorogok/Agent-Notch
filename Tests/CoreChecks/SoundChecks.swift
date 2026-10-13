@@ -74,7 +74,7 @@ struct SoundChecks {
         var logAgent = Agent(id: "q", vendor: .claude, title: "q", state: .working, project: "p")
         _ = pollFirst.update([logAgent])
         logAgent.state = .waiting
-        logAgent.ask = "вопрос"
+        logAgent.ask = Loc.t("question", "вопрос")
         XCTAssertEqual(pollFirst.update([logAgent]), [.questionAsked])
         XCTAssertNil(pollFirst.request(question))
         logAgent.state = .working

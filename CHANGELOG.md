@@ -6,8 +6,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
-- English interface. It is the default; Russian stays when Russian is the system's first language. `AGENT_NOTCH_LANG=en|ru` overrides it.
-- README and promo screenshots are now in English.
+- Fourteen list themes: Terminal, Liquid Glass, Paper, Midnight, Console, Phosphor, Synthwave, Blueprint, Brutalism, Hologram, Wasteland, Pixel and Rubber Ducks. A theme can also restyle the marks in the wing.
+- A sound for each event, set in Settings → Sounds, with a volume slider and preview. Only "waiting for permission" makes a sound until you change it.
 
 ## [0.2.0] - 2026-10-13
 

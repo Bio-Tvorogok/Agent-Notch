@@ -144,7 +144,7 @@ private struct AttentionRow: View {
                     Request(event: ask.event)
                     Choices(ask: ask, store: store, hint: first)
                 } else {
-                    Text(waiting ? "просит: \(a.ask ?? "подтверждение")" : "повторяет одну и ту же ошибку")
+                    Text(waiting ? Loc.t("asks: ", "просит: ") + (a.ask ?? Loc.t("approval", "подтверждение")) : Loc.t("repeats the same error", "повторяет одну и ту же ошибку"))
                         .foregroundStyle(waiting ? Ink.askText : dim).lineLimit(1).truncationMode(.middle)
                         .font(.system(size: 11))
                 }
