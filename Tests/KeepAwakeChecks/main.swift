@@ -15,6 +15,9 @@ final class TestSleepSystem: KeepAwakeSystem {
     var effectivePermission = true
     var ignoresPermissionWrite = false
     var permissionError: Error?
+    var staleReadsAfterWrite = 0
+    private var staleReadsLeft = 0
+    private var pendingState: Bool?
 
     func configurePasswordless(_ enabled: Bool) async throws {
         if let permissionError { throw permissionError }
@@ -25,6 +28,10 @@ final class TestSleepSystem: KeepAwakeSystem {
 
     func read() throws -> Bool {
         if cannotRead { throw KeepAwakeFailure.unavailable }
+        if let pendingState {
+            if staleReadsLeft > 0 { staleReadsLeft -= 1 }
+            else { state = pendingState; self.pendingState = nil }
+        }
         return state
     }
 
@@ -32,7 +39,12 @@ final class TestSleepSystem: KeepAwakeSystem {
         writes.append(enabled)
         if holdsWrite { await withCheckedContinuation { pending = $0 } }
         if let writeError { throw writeError }
-        if !ignoresWrite { state = enabled }
+        if !ignoresWrite {
+            if staleReadsAfterWrite > 0 {
+                pendingState = enabled
+                staleReadsLeft = staleReadsAfterWrite
+            } else { state = enabled }
+        }
         return permissionInstalled && effectivePermission
     }
 }
@@ -67,6 +79,13 @@ struct KeepAwakeChecks {
         await model.setEnabled(true)
         expect(model.enabled == true && system.writes == [false, true] && !model.busy,
                "switching on must write and confirm the real system state")
+
+        let delayedSystem = TestSleepSystem()
+        delayedSystem.staleReadsAfterWrite = 3
+        let delayedModel = KeepAwakeModel(system: delayedSystem)
+        await delayedModel.setEnabled(true)
+        expect(delayedModel.enabled == true && delayedModel.error == nil && !delayedModel.busy && delayedSystem.writes == [true],
+               "a successful write must wait for delayed OS readback without an error or a second command")
 
         system.writeError = KeepAwakeFailure.cancelled
         await model.setEnabled(false)

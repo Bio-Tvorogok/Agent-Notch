@@ -65,7 +65,18 @@ final class KeepAwakeModel: ObservableObject {
         }
 
         // Read even after a failed/cancelled command: another app may have changed the setting.
-        do { self.enabled = try system.read() }
+        do {
+            self.enabled = try system.read()
+            // A command can finish before IOKit's property catches up. Confirm the
+            // requested state for up to one second, without repeating the write.
+            if writeError == nil {
+                for _ in 0..<10 {
+                    if self.enabled == requested { break }
+                    try await Task.sleep(for: .milliseconds(100))
+                    self.enabled = try system.read()
+                }
+            }
+        }
         catch { self.enabled = nil; self.error = error; return }
 
         if let writeError {
