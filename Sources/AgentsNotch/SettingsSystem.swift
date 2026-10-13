@@ -109,7 +109,10 @@ enum SettingsSystem {
         do {
             if on && service.status != .enabled { try service.register() }
             else if !on && service.status != .notRegistered { try service.unregister() }
-        } catch { AppActions.say(SettingsText.operationFailed, error.localizedDescription) }
+        } catch {
+            SoundPlayer.shared.play(.operationFailed, settings: settings)
+            AppActions.say(SettingsText.operationFailed, error.localizedDescription)
+        }
         settings.general.openAtLogin = service.status == .enabled || service.status == .requiresApproval
     }
 }

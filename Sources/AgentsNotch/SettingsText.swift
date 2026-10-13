@@ -118,7 +118,7 @@ enum SettingsText {
 
     static let namesRu = [
         "appearance": "Внешний вид", "list": "Список", "requests": "Запросы", "limits": "Лимиты",
-        "connection": "Подключение", "general": "Общие",
+        "connection": "Подключение", "general": "Общие", "sounds": "Звуки",
         "brief": "Кратко", "detailed": "Подробно", "everything": "Всё",
         "dots": "Точки", "logos": "Логотипы", "logosMono": "Логотипы цветом состояния", "letters": "Буквы",
         "small": "Мелкий", "medium": "Средний", "large": "Крупный", "always": "Всегда", "nearLimit": "Когда мало", "never": "Никогда",
@@ -157,7 +157,7 @@ enum SettingsText {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, list, requests, limits, connection, general
+    case appearance, list, requests, sounds, limits, connection, general
     var id: String { rawValue }
     var title: String { SettingsText.name(rawValue) }
     var icon: String {
@@ -165,6 +165,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "circle.lefthalf.filled"
         case .list: "list.bullet"
         case .requests: "questionmark"
+        case .sounds: "speaker.wave.2.fill"
         case .limits: "gauge.with.dots.needle.33percent"
         case .connection: "powerplug.fill"
         case .general: "gearshape.fill"
@@ -175,6 +176,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: Color(red: 0.04, green: 0.52, blue: 1)
         case .list: Color(red: 0.37, green: 0.36, blue: 0.9)
         case .requests: Color(red: 1, green: 0.62, blue: 0.04)
+        case .sounds: Color(red: 0.84, green: 0.28, blue: 0.44)
         case .limits: Color(red: 0.19, green: 0.69, blue: 0.78)
         case .connection: Color(red: 0.2, green: 0.78, blue: 0.35)
         case .general: Color(white: 0.56)

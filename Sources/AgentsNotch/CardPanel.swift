@@ -47,9 +47,11 @@ final class CardPanel {
             if retry { DispatchQueue.main.async { [weak self] in self?.apply(store.selected, retry: false) } } else { close() }
             return
         }
+        let changed = !panel.isVisible || model.agent?.id != agent.id
         model.show(agent)
         place(nextTo: list)
         panel.orderFrontRegardless()
+        if changed { SoundPlayer.shared.play(.cardOpened, settings: store.settings) }
         watchMouse()
     }
 
@@ -70,6 +72,7 @@ final class CardPanel {
     }
 
     func close() {
+        if panel.isVisible { SoundPlayer.shared.play(.cardClosed, settings: store?.settings) }
         panel.orderOut(nil)
         mouseTimer?.invalidate()
         mouseTimer = nil

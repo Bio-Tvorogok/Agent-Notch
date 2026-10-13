@@ -59,7 +59,7 @@ enum Snapshot {
         var ok = true
         for section in SettingsSection.allCases {
             ok = shot(section, dir.appendingPathComponent("section-\(section.rawValue).png")) && ok
-            ok = shot(section, dir.appendingPathComponent("full-\(section.rawValue).png"), height: 1500) && ok
+            ok = shot(section, dir.appendingPathComponent("full-\(section.rawValue).png"), height: section == .sounds ? 2200 : 1500) && ok
         }
         for preset in DisplayPreset.allCases {
             settings.apply(preset)

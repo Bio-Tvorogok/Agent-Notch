@@ -28,6 +28,9 @@ final class UsageModel: ObservableObject {
     var listIsVisible: () -> Bool = { false }
     /// The first cost read parses a whole log, so it runs only while the row shows the cost.
     var readsCost: () -> Bool = { false }
+    var limitThreshold: () -> Int = { 80 }
+    var onSound: (SoundEvent) -> Void = { _ in }
+    private var soundWatcher = SoundLimitWatcher()
     private let contextCache = FileReadCache<ContextUsage?>()
     private var isFixture = false
 
@@ -85,6 +88,7 @@ final class UsageModel: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.limits = limits; self.spend = spend; self.spendComplete = complete; self.now = now
+                for event in Set(self.soundWatcher.update(limits, threshold: self.limitThreshold())) { self.onSound(event) }
                 self.readingLimits = false
             }
         }

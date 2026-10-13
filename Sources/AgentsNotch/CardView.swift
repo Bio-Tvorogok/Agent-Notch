@@ -33,6 +33,7 @@ struct CardView: View {
     var cost: SessionCost?
     var onOpen: () -> Void = {}
     @State private var tab: CardTab = .done
+    @EnvironmentObject private var settings: AppSettings
 
     private var tabs: [CardTab] { CardContent.tabs(blocks: blocks) }
     private var visibleTab: CardTab? { tabs.contains(tab) ? tab : tabs.first }
@@ -43,7 +44,9 @@ struct CardView: View {
             Divider().overlay(Color(white: 0.23))
             HStack(spacing: 6) {
                 ForEach(tabs, id: \.self) { item in
-                    Button(CardText.tab(item)) { tab = item }
+                    Button(CardText.tab(item)) {
+                        if visibleTab != item { tab = item; SoundPlayer.shared.play(.cardTabChanged, settings: settings) }
+                    }
                         .buttonStyle(Pill(primary: visibleTab == item))
                 }
             }.padding(10)

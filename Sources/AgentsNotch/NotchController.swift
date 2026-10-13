@@ -102,6 +102,7 @@ final class NotchController {
         if listPanel.isVisible { return }
         placeList()
         listPanel.orderFrontRegardless()
+        SoundPlayer.shared.play(.listOpened, settings: store.settings)
         settingsShortcut = SettingsListShortcut(panel: listPanel)
         store.listShownAt = Date().timeIntervalSince1970
         outsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -110,7 +111,9 @@ final class NotchController {
     }
 
     private func hideList() {
+        guard listPanel.isVisible else { return }
         listPanel.orderOut(nil)
+        SoundPlayer.shared.play(.listClosed, settings: store.settings)
         cardPanel.close()
         store.selected = nil
         settingsShortcut = nil
@@ -161,7 +164,7 @@ final class NotchController {
              : Loc.t("Install Codex hooks", "Установить хуки Codex"),
              #selector(AppActions.toggleHooks(_:)), tag: 1)
         item(Loc.t("Answer requests from the notch", "Решать запросы из чёлки"), #selector(AppActions.toggleAnswer), on: AppSettings.shared.answerFromNotch)
-        item(Loc.t("Sound when an agent is waiting", "Звук, когда агент ждёт"), #selector(AppActions.toggleSounds), on: AppSettings.shared.sounds)
+        item(Loc.t("Event sounds", "Звуки событий"), #selector(AppActions.toggleSounds), on: AppSettings.shared.sounds)
         item(ToastText.menu, #selector(AppActions.toggleFinishToast), on: AppSettings.shared.finishToast)
         menu.addItem(.separator())
         item(Loc.t("Open at login", "Открывать при входе в систему"), #selector(AppActions.toggleLogin), on: SMAppService.mainApp.status == .enabled)
@@ -213,12 +216,15 @@ final class AppActions: NSObject {
         do {
             if inst.isInstalled(vendor) {
                 try inst.uninstall(vendor)
+                SoundPlayer.shared.play(.disconnected)
             } else {
                 try inst.placeHelper(from: Self.bundledHelper, app: Self.appExecutable)
                 try inst.install(vendor)
+                SoundPlayer.shared.play(.connected)
                 if vendor == .codex { Self.say(Loc.t("Codex hooks written to ~/.codex/hooks.json", "Хуки Codex записаны в ~/.codex/hooks.json"), Self.codexTrustNote) }
             }
         } catch {
+            SoundPlayer.shared.play(.operationFailed)
             Self.say(Loc.t("Could not change the hooks", "Не получилось изменить хуки"), error.localizedDescription)
         }
     }
@@ -231,6 +237,7 @@ final class AppActions: NSObject {
         do {
             if s.status == .enabled { try s.unregister() } else { try s.register() }
         } catch {
+            SoundPlayer.shared.play(.operationFailed)
             Self.say(Loc.t("Could not turn on open at login", "Не получилось включить автозапуск"), error.localizedDescription)
         }
     }

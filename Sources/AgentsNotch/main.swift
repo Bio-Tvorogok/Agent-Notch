@@ -48,7 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notch = NotchController(store: store)
         self.notch = notch
         store.onNewAsk = { [weak notch] in
-            if AppSettings.shared.sounds { NSSound(named: NSSound.Name(AppSettings.shared.behavior.soundName))?.play() }
             if AppSettings.shared.behavior.openOnRequest { notch?.showList() }
         }
         // A hotkey that cannot answer yet opens the list, so the request gets seen first.

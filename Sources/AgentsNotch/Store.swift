@@ -8,6 +8,8 @@ final class Store: ObservableObject {
     init(settings: AppSettings? = nil) {
         self.settings = settings ?? .shared
         usage.readsCost = { [weak self] in self?.settings.rowPartShown(.cost) ?? false }
+        usage.limitThreshold = { [weak self] in self?.settings.limits.warningPercent ?? 80 }
+        usage.onSound = { [weak self] event in self?.play(event) }
     }
 
     @Published private(set) var agents: [Agent] = []
@@ -38,6 +40,14 @@ final class Store: ObservableObject {
     private var timer: Timer?
     private var server: HookServer?
     private var fakeTicket = 1_000_000
+    private var soundWatcher = SoundAgentWatcher()
+
+    private func play(_ event: SoundEvent) { SoundPlayer.shared.play(event, settings: settings) }
+
+    func visibilityChanged() {
+        passHiddenRequests()
+        soundWatcher.seed(shown)
+    }
 
     /// Agents as drawn: the logs with open requests and on-screen prompts laid over.
     var shown: [Agent] { settings.visibleAgents(hooks.apply(to: agents, now: Date().timeIntervalSince1970, project: names.name(for:)), store: self) }
@@ -73,6 +83,7 @@ final class Store: ObservableObject {
                 guard let self else { return }
                 if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
                 self.finisher.check(self.settings.listFilter.apply(next))
+                for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
                 done?()
             }
         }
@@ -86,21 +97,27 @@ final class Store: ObservableObject {
             Task { @MainActor in self?.receive(e, ticket: ticket) }
         }
         server.onGone = { [weak self] ticket in
-            Task { @MainActor in self?.hooks.resolve(ticket) }
+            Task { @MainActor in
+                guard let self else { return }
+                if let ask = self.hooks.pending.first(where: { $0.ticket == ticket }) { self.soundWatcher.resolve(ask.event.agentKey) }
+                self.hooks.resolve(ticket)
+            }
         }
         do {
             try server.start()
             self.server = server
         } catch {
             NSLog("agents-notch: hook socket failed: \(error)")
+            play(.operationFailed)
         }
     }
 
     private func receive(_ e: HookEvent, ticket: Int?) {
         var ticket = ticket
         let now = Date().timeIntervalSince1970
+        let handedBack = ticket != nil && route.isHandedBack(e, now: now)
         // A question already sent back to the agent's window must not come back through its PermissionRequest.
-        if let t = ticket, route.isHandedBack(e, now: now) { server?.answer(t, .pass); ticket = nil }
+        if let t = ticket, handedBack { server?.answer(t, .pass); ticket = nil }
         else if ticket != nil { route.noteRouted(e, now: now) }
         if let t = ticket, settings.listFilter.shouldPass(e, project: names.name(for: e.cwd), answerFromNotch: settings.answerFromNotch,
                                                          owner: agents.first { $0.id == e.agentKey }) {
@@ -108,10 +125,25 @@ final class Store: ObservableObject {
             ticket = nil
         }
         let wasWaiting = hooks.pending.count
-        for stale in hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970) { server?.answer(stale, .pass) }
+        let stale = hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970)
+        for ticket in stale { server?.answer(ticket, .pass) }
+        if !stale.isEmpty || ["Stop", "UserPromptSubmit", "SessionEnd", "SubagentStop"].contains(e.name) {
+            soundWatcher.resolve(e.agentKey)
+        }
+        let owner = agents.first { $0.id == e.agentKey }
+        let visible = owner.map { settings.listFilter.includes(vendor: $0.vendor, project: $0.project, cwd: $0.cwd) }
+            ?? settings.listFilter.includes(vendor: e.vendor, project: names.name(for: e.cwd), cwd: e.cwd)
+        // A fresh permission handled in the agent's window still starts a new waiting event.
+        // The permission after handing back a question/plan is the same request.
+        if e.isPermission, ticket == nil, !handedBack, visible {
+            if let event = soundWatcher.request(e) { play(event) }
+        }
         // A held request always has a row; a prompt shown elsewhere only matters for agents in the list.
         if hooks.pending.count > wasWaiting
-            || (e.isPromptShown && settings.listFilter.includes(vendor: e.vendor, project: names.name(for: e.cwd), cwd: e.cwd)) { onNewAsk?() }
+            || (e.isPromptShown && settings.listFilter.includes(vendor: e.vendor, project: names.name(for: e.cwd), cwd: e.cwd)) {
+            if let event = soundWatcher.request(e) { play(event) }
+            onNewAsk?()
+        }
     }
 
     func pending(for agent: Agent) -> PendingAsk? {
@@ -120,19 +152,27 @@ final class Store: ObservableObject {
 
     /// The human's answer from the notch. `.pass` hands the question back to the agent's own window.
     func decide(_ p: PendingAsk, _ d: HookDecision) {
+        guard hooks.pending.contains(where: { $0.ticket == p.ticket }) else { return }
         server?.answer(p.ticket, d)
         hooks.resolve(p.ticket)
+        soundWatcher.resolve(p.event.agentKey)
         Audit.record(p.event, d)
+        play(SoundEvent.decision(d, for: p.event))
     }
 
     /// "Всегда": allow and keep the rule. Claude gets it in the reply; for Codex the app writes the rule file and the reply is a plain allow.
     func decideAlways(_ p: PendingAsk) {
-        guard !p.event.needsClick, let rule = AlwaysRule.suggest(for: p.event) else { return }
+        guard hooks.pending.contains(where: { $0.ticket == p.ticket }), !p.event.needsClick, let rule = AlwaysRule.suggest(for: p.event) else { return }
         if p.event.vendor == .codex {
-            if let prefix = rule.prefix { do { try CodexRules.add(prefix: prefix, home: FileManager.default.homeDirectoryForCurrentUser) } catch { NSLog("agents-notch: codex rule failed: \(error)") } }
+            if let prefix = rule.prefix {
+                do { try CodexRules.add(prefix: prefix, home: FileManager.default.homeDirectoryForCurrentUser) }
+                catch { NSLog("agents-notch: codex rule failed: \(error)"); play(.operationFailed); return }
+            }
             server?.answer(p.ticket, .allow)
             hooks.resolve(p.ticket)
             Audit.record(p.event, .allowAlways(rule))
+            soundWatcher.resolve(p.event.agentKey)
+            play(.alwaysAllowed)
         } else {
             decide(p, .allowAlways(rule))
         }
@@ -167,7 +207,10 @@ final class Store: ObservableObject {
 
     func select(_ agent: Agent) { selected = agent.id }
 
-    func open(_ agent: Agent) { Opener.open(agent: JumpResolver.owner(of: agent, in: shown)) }
+    func open(_ agent: Agent) {
+        play(.agentOpened)
+        Opener.open(agent: JumpResolver.owner(of: agent, in: shown))
+    }
 }
 
 /// Every decision made in the notch, one JSON line each, in ~/Library/Application Support/AgentsNotch/decisions.jsonl.

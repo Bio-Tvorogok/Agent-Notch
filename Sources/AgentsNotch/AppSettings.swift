@@ -7,6 +7,8 @@ import NotchCore
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
     private let defaults: UserDefaults
+    private var ready = false
+    private var resetting = false
     var visibilityObservers: [ObjectIdentifier: () -> Void] = [:]
 
     @Published var appearance: AppearancePrefs { didSet { save(appearance, "appearance") } }
@@ -18,7 +20,8 @@ final class AppSettings: ObservableObject {
     @Published var shortcuts: ShortcutPrefs { didSet { save(shortcuts, "shortcuts") } }
     @Published var general: GeneralPrefs { didSet { save(general, "general") } }
     @Published var answerFromNotch: Bool { didSet { save(answerFromNotch, "answerFromNotch") } }
-    @Published var sounds: Bool { didSet { save(sounds, "sounds") } }
+    @Published var sounds: Bool { didSet { if !sounds { SoundPlayer.shared.stop() }; save(sounds, "sounds") } }
+    @Published var soundEvents: SoundPrefs { didSet { save(soundEvents, "soundEvents") } }
     /// A small toast under the notch when an agent finishes.
     @Published var finishToast: Bool { didSet { save(finishToast, "finishToast") } }
     @Published var isRecordingShortcut = false
@@ -44,7 +47,9 @@ final class AppSettings: ObservableObject {
         rows = load("rows", RowPrefs())
         card = load("card", CardPrefs())
         limits = load("limits", LimitsPrefs())
-        behavior = load("behavior", BehaviorPrefs())
+        let savedBehavior = load("behavior", BehaviorPrefs())
+        behavior = savedBehavior
+        soundEvents = load("soundEvents", SoundPrefs(legacyName: savedBehavior.soundName))
         shortcuts = load("shortcuts", ShortcutPrefs())
         general = load("general", GeneralPrefs())
         answerFromNotch = load("answerFromNotch", true)
@@ -58,6 +63,7 @@ final class AppSettings: ObservableObject {
         limits.warningPercent = min(100, max(1, limits.warningPercent))
         // Rewrite the section without the retired language preference.
         save(general, "general")
+        ready = true
     }
 
     func setShortcut(_ value: NotchCore.KeyboardShortcut, for action: ShortcutAction) -> Bool {
@@ -69,6 +75,9 @@ final class AppSettings: ObservableObject {
     /// Everything back to the first launch except what «Подключение» holds (hooks, hidden projects).
     /// Login is the caller's: it touches the system.
     func resetAll() {
+        SoundPlayer.shared.play(.settingsReset, settings: self)
+        resetting = true
+        defer { resetting = false }
         let hidden = behavior.hiddenProjects
         appearance = AppearancePrefs()
         wing = WingPrefs()
@@ -81,6 +90,7 @@ final class AppSettings: ObservableObject {
         shortcuts = ShortcutPrefs()
         answerFromNotch = true
         sounds = true
+        soundEvents = SoundPrefs()
         finishToast = true
     }
 
@@ -137,5 +147,9 @@ final class AppSettings: ObservableObject {
         card.blocks = blocks
     }
 
-    private func save<T: Codable>(_ value: T, _ key: String) { SettingsStorage.write(value, key: key, in: defaults) }
+    private func save<T: Codable & Equatable>(_ value: T, _ key: String) {
+        let unchanged = defaults.object(forKey: key) != nil && SettingsStorage.read(T.self, key: key, default: value, in: defaults) == value
+        SettingsStorage.write(value, key: key, in: defaults)
+        if ready, !resetting, !unchanged { SoundPlayer.shared.play(.settingsChanged, settings: self) }
+    }
 }

@@ -1,0 +1,103 @@
+import Foundation
+
+struct SoundChecks {
+    func preferences() throws {
+        var prefs = SoundPrefs(legacyName: "Ping")
+        XCTAssertEqual(prefs[.permissionRequested], "Ping")
+        XCTAssertTrue(SoundEvent.allCases.filter { $0 != .permissionRequested }.allSatisfy { prefs[$0].isEmpty })
+        prefs[.agentFinished] = "Hero"
+        prefs[.permissionRequested] = ""
+        prefs.volume = 0.35
+        let suite = "NOTCH-sounds-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        SettingsStorage.write(prefs, key: "soundEvents", in: defaults)
+        let restored = SettingsStorage.read(SoundPrefs.self, key: "soundEvents", default: SoundPrefs(), in: defaults)
+        XCTAssertEqual(restored[.agentFinished], "Hero")
+        XCTAssertEqual(restored[.permissionRequested], "")
+        XCTAssertEqual(restored.volume, 0.35)
+        prefs[.agentError] = "missing-sound"
+        XCTAssertEqual(prefs[.agentError], "")
+    }
+
+    func transitions() {
+        var watcher = SoundAgentWatcher()
+        var a = Agent(id: "a", vendor: .claude, title: "a", state: .working, project: "p")
+        XCTAssertEqual(watcher.update([a]), []) // Existing agents are silent on launch.
+        XCTAssertEqual(watcher.update([a]), [])
+        a.state = .waiting
+        XCTAssertEqual(watcher.update([a]), [.permissionRequested])
+        XCTAssertEqual(watcher.update([a]), [])
+        a.state = .working
+        XCTAssertEqual(watcher.update([a]), [.agentResumed])
+        a.state = .error
+        XCTAssertEqual(watcher.update([a]), [.agentError])
+        a.state = .done
+        XCTAssertEqual(watcher.update([a]), [.agentFinished])
+        XCTAssertEqual(watcher.update([a]), [])
+        a.state = .working
+        XCTAssertEqual(watcher.update([a]), [.agentStarted])
+        let b = Agent(id: "b", vendor: .codex, title: "b", state: .working, project: "p")
+        XCTAssertEqual(watcher.update([a, b]), [.agentAppeared])
+    }
+
+    func requests() {
+        var watcher = SoundAgentWatcher()
+        var a = Agent(id: "a", vendor: .claude, title: "a", state: .working, project: "p")
+        _ = watcher.update([a])
+        let permission = HookEvent(vendor: .claude, name: "PermissionRequest", sessionId: "a", tool: "Bash", detail: "pwd")
+        XCTAssertEqual(watcher.request(permission), .permissionRequested)
+        var answeredBeforePoll = SoundAgentWatcher()
+        _ = answeredBeforePoll.update([Agent(id: "a", vendor: .claude, title: "a", state: .working, project: "p")])
+        _ = answeredBeforePoll.request(permission)
+        answeredBeforePoll.resolve("a")
+        let staleWaiting = Agent(id: "a", vendor: .claude, title: "a", state: .waiting, project: "p")
+        XCTAssertEqual(answeredBeforePoll.update([staleWaiting]), []) // A stale log cannot reannounce an answered request.
+        var native = SoundAgentWatcher()
+        _ = native.update([a])
+        _ = native.request(permission)
+        native.resolve("a")
+        _ = native.update([a])
+        XCTAssertEqual(native.request(permission), .permissionRequested) // A new request passed to the native UI must re-arm it.
+        let notice = HookEvent(vendor: .claude, name: "Notification", sessionId: "a", notificationType: "permission_prompt")
+        XCTAssertNil(watcher.request(notice))
+        a.state = .waiting
+        XCTAssertEqual(watcher.update([a]), []) // Hook + polling must produce only one sound.
+        watcher.resolve("a")
+        XCTAssertEqual(watcher.request(permission), .permissionRequested)
+        let question = HookEvent(vendor: .claude, name: "PreToolUse", sessionId: "q", tool: "AskUserQuestion",
+                                 questions: [Question(question: "Which?", header: "Pick", options: [], multiSelect: false)], toolInput: "{}")
+        XCTAssertEqual(watcher.request(question), .questionAsked)
+        let plan = HookEvent(vendor: .claude, name: "PreToolUse", sessionId: "p", tool: "ExitPlanMode", plan: "A plan", toolInput: "{}")
+        XCTAssertEqual(watcher.request(plan), .planProposed)
+        var pollFirst = SoundAgentWatcher()
+        var logAgent = Agent(id: "q", vendor: .claude, title: "q", state: .working, project: "p")
+        _ = pollFirst.update([logAgent])
+        logAgent.state = .waiting
+        logAgent.ask = "вопрос"
+        XCTAssertEqual(pollFirst.update([logAgent]), [.questionAsked])
+        XCTAssertNil(pollFirst.request(question))
+        logAgent.state = .working
+        _ = pollFirst.update([logAgent])
+        logAgent.state = .waiting
+        logAgent.ask = "согласовать план"
+        XCTAssertEqual(pollFirst.update([logAgent]), [.planProposed])
+    }
+
+    func limits() {
+        var watcher = SoundLimitWatcher()
+        let now = Date(timeIntervalSince1970: 1_000)
+        func sample(_ percent: Double) -> [VendorLimits] {
+            [VendorLimits(vendor: .codex, windows: [LimitWindow(label: "5 ч", usedPercent: percent)], updatedAt: now)]
+        }
+        XCTAssertEqual(watcher.update(sample(60), threshold: 80), [])
+        XCTAssertEqual(watcher.update(sample(80), threshold: 80), [.limitWarning])
+        XCTAssertEqual(watcher.update(sample(82), threshold: 80), [])
+        XCTAssertEqual(watcher.update(sample(100), threshold: 80), [.limitExhausted])
+        XCTAssertEqual(watcher.update(sample(100), threshold: 80), [])
+        XCTAssertEqual(watcher.update([], threshold: 80), []) // Missing samples aren't a reset.
+        XCTAssertEqual(watcher.update(sample(0), threshold: 80), [.limitRestored])
+        var startup = SoundLimitWatcher()
+        XCTAssertEqual(startup.update(sample(100), threshold: 80), [])
+    }
+}

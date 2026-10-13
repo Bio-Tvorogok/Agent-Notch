@@ -3,7 +3,7 @@ import SwiftUI
 import NotchCore
 
 @MainActor
-final class SettingsWindow: NSObject {
+final class SettingsWindow: NSObject, NSWindowDelegate {
     static let shared = SettingsWindow()
     private var window: NSWindow?
 
@@ -18,15 +18,20 @@ final class SettingsWindow: NSObject {
             window.contentView = NSHostingView(rootView: SettingsView().environmentObject(AppSettings.shared))
             window.minSize = NSSize(width: 720, height: 560)
             window.isReleasedWhenClosed = false
+            window.delegate = self
             window.center()
             self.window = window
         }
         NSApp.activate(ignoringOtherApps: true)
+        let wasVisible = window?.isVisible ?? false
         window?.makeKeyAndOrderFront(nil)
+        if !wasVisible { SoundPlayer.shared.play(.settingsOpened) }
     }
+
+    func windowWillClose(_ notification: Notification) { SoundPlayer.shared.play(.settingsClosed) }
 }
 
-/// System Settings layout: a sidebar of six sections, each a grouped form.
+/// System Settings layout with a sidebar and grouped forms.
 struct SettingsView: View {
     static let size = NSSize(width: 780, height: 640)
     @EnvironmentObject private var settings: AppSettings
@@ -36,7 +41,9 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(SettingsSection.allCases) { section in
-                    Button { selection = section } label: {
+                    Button {
+                        if selection != section { selection = section; SoundPlayer.shared.play(.settingsSectionChanged, settings: settings) }
+                    } label: {
                         HStack(spacing: 8) {
                             Image(systemName: section.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                                 .frame(width: 20, height: 20).background(section.tint, in: RoundedRectangle(cornerRadius: 5))
@@ -61,6 +68,7 @@ struct SettingsView: View {
                     case .appearance: SettingsAppearance(settings: settings)
                     case .list: SettingsListSection(settings: settings)
                     case .requests: SettingsRequests(settings: settings)
+                    case .sounds: SettingsSounds(settings: settings)
                     case .limits: SettingsLimits(settings: settings)
                     case .connection: SettingsConnection(settings: settings)
                     case .general: SettingsGeneral(settings: settings)

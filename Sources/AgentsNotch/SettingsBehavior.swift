@@ -3,7 +3,6 @@ import SwiftUI
 
 struct SettingsRequests: View {
     @ObservedObject var settings: AppSettings
-    private let sounds = ["Basso", "Blow", "Bottle", "Frog", "Funk", "Glass", "Hero", "Morse", "Ping", "Pop", "Purr", "Sosumi", "Submarine", "Tink"]
 
     var body: some View {
         Form {
@@ -11,17 +10,6 @@ struct SettingsRequests: View {
                 Toggle(isOn: $settings.answerFromNotch) { SettingsLabel(SettingsText.answer, hint: SettingsText.answerHelp) }
                     .toggleStyle(.switch)
                 Toggle(SettingsText.openRequest, isOn: $settings.behavior.openOnRequest).toggleStyle(.switch)
-            }
-            Section {
-                Toggle(SettingsText.sounds, isOn: $settings.sounds).toggleStyle(.switch)
-                LabeledContent(SettingsText.sound) {
-                    HStack {
-                        Picker(SettingsText.sound, selection: $settings.behavior.soundName) {
-                            ForEach(sounds, id: \.self) { Text($0).tag($0) }
-                        }.labelsHidden().frame(width: 140)
-                        Button(SettingsText.listen) { NSSound(named: NSSound.Name(settings.behavior.soundName))?.play() }
-                    }
-                }.disabled(!settings.sounds)
             }
             SettingsShortcuts(settings: settings)
         }

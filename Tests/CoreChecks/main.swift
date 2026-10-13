@@ -196,5 +196,11 @@ let language = LanguageChecks()
 run("languageDetect") { language.detect() }
 run("languageEnglish") { language.english() }
 
+let soundChecks = SoundChecks()
+run("soundPreferences") { try soundChecks.preferences() }
+run("soundTransitions") { soundChecks.transitions() }
+run("soundRequests") { soundChecks.requests() }
+run("soundLimits") { soundChecks.limits() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

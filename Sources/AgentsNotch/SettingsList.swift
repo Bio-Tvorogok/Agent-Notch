@@ -7,7 +7,7 @@ extension AppSettings {
 
     /// Rendering registers the store before a user can hide a pending request.
     func visibleAgents(_ agents: [Agent], store: Store) -> [Agent] {
-        visibilityObservers[ObjectIdentifier(store)] = { [weak store] in store?.passHiddenRequests() }
+        visibilityObservers[ObjectIdentifier(store)] = { [weak store] in store?.visibilityChanged() }
         return listFilter.apply(agents, keeping: Set(store.hooks.pending.map(\.event.agentKey)))
     }
 

@@ -18,7 +18,10 @@ enum Opener {
     }
 
     private static func attempt(_ targets: ArraySlice<JumpTarget>) {
-        guard let target = targets.first else { return }
+        guard let target = targets.first else {
+            MainActor.assumeIsolated { SoundPlayer.shared.play(.operationFailed) }
+            return
+        }
         let rest = targets.dropFirst()
         switch target {
         case .claudeApp(let url), .codexApp(let url):
