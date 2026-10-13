@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import NotchCore
 
-/// Logos come from the installed apps, with our own shapes when an app is missing; the status colour and pulse mean the same in every style.
+/// App icons and original vendor glyphs share the same status colour and pulse.
 struct StatusMark: View {
     let vendor: Vendor
     let state: AgentState
@@ -51,8 +51,8 @@ struct StatusMark: View {
                 else { mark(RoundedRectangle(cornerRadius: size * 0.22)) }
             case .logos:
                 if let icon = appIcon { Image(nsImage: icon).resizable().interpolation(.high).opacity(isLight ? 0.55 : 1) }
-                else { ownLogo }
-            case .logosMono: ownLogo
+                else { vendorLogo }
+            case .logosMono: vendorLogo
             case .letters:
                 mark(Circle())
                 Text(vendor == .claude ? "C" : "X")
@@ -69,14 +69,8 @@ struct StatusMark: View {
         }
     }
 
-    @ViewBuilder private var ownLogo: some View {
-        if vendor == .claude { mark(SparkMark()) }
-        else {
-            mark(KnotHexagon())
-            KnotLines().stroke(isLight ? tint : (scheme == .dark ? .black : .white),
-                               style: StrokeStyle(lineWidth: line, lineCap: .round, lineJoin: .round))
-                .padding(size * 0.19)
-        }
+    private var vendorLogo: some View {
+        VendorLogo(vendor: vendor).fill(tint).opacity(isLight ? 0.55 : 1)
     }
 
     @ViewBuilder private func mark<S: Shape>(_ shape: S) -> some View {
@@ -84,52 +78,6 @@ struct StatusMark: View {
         else { shape.fill(tint) }
     }
 }
-
-private struct SparkMark: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        for i in 0..<16 {
-            let angle: CGFloat = CGFloat(i) * .pi / 8 - .pi / 2
-            let radius = min(rect.width, rect.height) * (i.isMultiple(of: 2) ? 0.5 : 0.19)
-            let point = CGPoint(x: rect.midX + cos(angle) * radius, y: rect.midY + sin(angle) * radius)
-            if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
-        }
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct KnotHexagon: Shape {
-    func path(in rect: CGRect) -> Path {
-        let points = (0..<6).map { i in
-            let angle: CGFloat = CGFloat(i) * .pi / 3 - .pi / 2
-            return CGPoint(x: rect.midX + sin(angle) * rect.width * 0.5, y: rect.midY + cos(angle) * rect.height * 0.5)
-        }
-        func between(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: a.x * 0.82 + b.x * 0.18, y: a.y * 0.82 + b.y * 0.18) }
-        var path = Path()
-        path.move(to: between(points[0], points[5]))
-        for i in 0..<6 {
-            path.addQuadCurve(to: between(points[i], points[(i + 1) % 6]), control: points[i])
-            path.addLine(to: between(points[(i + 1) % 6], points[i]))
-        }
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct KnotLines: Shape {
-    func path(in r: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: r.minX, y: r.midY))
-        path.addLine(to: CGPoint(x: r.midX, y: r.minY))
-        path.addLine(to: CGPoint(x: r.maxX, y: r.midY))
-        path.move(to: CGPoint(x: r.minX, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.midX, y: r.midY))
-        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
-        return path
-    }
-}
-
 
 /// Every agent surface reads the same style and size from its injected settings.
 struct AgentStatusMark: View {
