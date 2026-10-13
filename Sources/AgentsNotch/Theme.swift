@@ -4,7 +4,7 @@ import NotchCore
 
 /// The look of the list, the card and the toast. The wing stays black: it sits on the camera housing.
 enum ThemeID: String, Codable, CaseIterable, Sendable {
-    case terminal, glass, paper, midnight, console
+    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram
 }
 
 /// Colour roles every themed view draws with. `Ink` resolves a role against the theme in the environment.
@@ -26,6 +26,12 @@ struct Theme {
     let headingFont: Font
     let headingUppercase: Bool
     let colors: [InkRole: Color]
+    /// Light the text gives off: CRT phosphor, neon tubes.
+    var glow: Color? = nil
+    /// A fill for the primary button richer than one colour.
+    var primaryGradient: [Color]? = nil
+    /// Buttons cast a hard offset shadow and wear a thick border.
+    var hardShadow = false
 
     func color(_ role: InkRole) -> Color { colors[role] ?? .clear }
 
@@ -36,6 +42,11 @@ struct Theme {
         case .paper: paper
         case .midnight: midnight
         case .console: console
+        case .phosphor: phosphor
+        case .synthwave: synthwave
+        case .blueprint: blueprint
+        case .brutal: brutal
+        case .hologram: hologram
         }
     }
 }
@@ -113,6 +124,88 @@ extension Theme {
             .waiting: rgb(0.88, 0.3, 0), .error: rgb(0.82, 0.08, 0.08), .working: rgb(0.05, 0.55, 0.3),
             .code: white(0.07), .accent: rgb(1, 0.36, 0),
         ])
+}
+
+extension Theme {
+    private static func amb(_ a: Double) -> Color { Color(red: 1, green: 0.7, blue: 0.22, opacity: a) }
+
+    /// An amber CRT: everything glows, scan lines run across, the glass curves dark at the edges.
+    static let phosphor = Theme(
+        id: .phosphor, scheme: .dark, radius: 10, pillRadius: 2, rowInset: 0, rowRadius: 0, design: .monospaced,
+        headingFont: .system(size: 11, weight: .bold, design: .monospaced), headingUppercase: true,
+        colors: [
+            .text: amb(0.95), .strong: Color(red: 1, green: 0.84, blue: 0.45), .secondary: amb(0.75), .dim: amb(0.5), .faint: amb(0.25),
+            .rule: amb(0.2), .hover: amb(0.09), .inset: amb(0.07), .option: amb(0.07), .optionOn: amb(0.2),
+            .pill: .clear, .pillText: amb(0.95), .pillStroke: amb(0.6), .primary: amb(0.95), .primaryText: .black,
+            .waitingBg: amb(0.12), .errorBg: Color(red: 1, green: 0.25, blue: 0.1, opacity: 0.14),
+            .waiting: Color(red: 1, green: 0.86, blue: 0.4), .error: Color(red: 1, green: 0.38, blue: 0.2), .working: Color(red: 0.6, green: 1, blue: 0.45),
+            .code: Color(red: 1, green: 0.84, blue: 0.45), .accent: amb(1),
+        ],
+        glow: amb(0.55))
+
+    /// 1986 at night: violet sky, a striped sun sinking into a neon grid, chrome pink and cyan.
+    static let synthwave = Theme(
+        id: .synthwave, scheme: .dark, radius: 16, pillRadius: 100, rowInset: 6, rowRadius: 10, design: .default,
+        headingFont: .system(size: 12, weight: .black).italic(), headingUppercase: true,
+        colors: [
+            .text: Color(red: 0.98, green: 0.9, blue: 1), .strong: .white, .secondary: Color(red: 0.88, green: 0.72, blue: 0.98),
+            .dim: Color(red: 0.72, green: 0.55, blue: 0.9), .faint: Color(red: 1, green: 0.3, blue: 0.75, opacity: 0.35),
+            .rule: Color(red: 0.3, green: 0.95, blue: 1, opacity: 0.3), .hover: Color(red: 1, green: 0.3, blue: 0.75, opacity: 0.13),
+            .inset: Color(white: 1, opacity: 0.07), .option: Color(white: 1, opacity: 0.07), .optionOn: Color(red: 1, green: 0.3, blue: 0.75, opacity: 0.3),
+            .pill: Color(red: 0.3, green: 0.95, blue: 1, opacity: 0.1), .pillText: Color(red: 0.55, green: 0.97, blue: 1),
+            .pillStroke: Color(red: 0.3, green: 0.95, blue: 1, opacity: 0.7), .primary: Color(red: 1, green: 0.25, blue: 0.65), .primaryText: .white,
+            .waitingBg: Color(red: 1, green: 0.55, blue: 0.2, opacity: 0.16), .errorBg: Color(red: 1, green: 0.2, blue: 0.4, opacity: 0.18),
+            .waiting: Color(red: 1, green: 0.78, blue: 0.3), .error: Color(red: 1, green: 0.35, blue: 0.5), .working: Color(red: 0.3, green: 1, blue: 0.75),
+            .code: Color(red: 0.55, green: 0.97, blue: 1), .accent: Color(red: 1, green: 0.3, blue: 0.75),
+        ],
+        glow: Color(red: 1, green: 0.3, blue: 0.8, opacity: 0.55),
+        primaryGradient: [Color(red: 1, green: 0.22, blue: 0.62), Color(red: 1, green: 0.55, blue: 0.25)])
+
+    /// An architect's blueprint: cyan-blue sheet, white grid, dashed outline, everything in drafting mono.
+    static let blueprint = Theme(
+        id: .blueprint, scheme: .dark, radius: 3, pillRadius: 1, rowInset: 0, rowRadius: 0, design: .monospaced,
+        headingFont: .system(size: 10.5, weight: .bold, design: .monospaced), headingUppercase: true,
+        colors: [
+            .text: Color(white: 1, opacity: 0.95), .strong: .white, .secondary: Color(white: 1, opacity: 0.78), .dim: Color(red: 0.72, green: 0.85, blue: 1, opacity: 0.75),
+            .faint: Color(white: 1, opacity: 0.4), .rule: Color(white: 1, opacity: 0.35), .hover: Color(white: 1, opacity: 0.08),
+            .inset: Color(white: 1, opacity: 0.06), .option: Color(white: 1, opacity: 0.06), .optionOn: Color(white: 1, opacity: 0.2),
+            .pill: .clear, .pillText: .white, .pillStroke: Color(white: 1, opacity: 0.8), .primary: .white, .primaryText: Color(red: 0.06, green: 0.3, blue: 0.62),
+            .waitingBg: Color(red: 1, green: 0.85, blue: 0.3, opacity: 0.14), .errorBg: Color(red: 1, green: 0.4, blue: 0.4, opacity: 0.16),
+            .waiting: Color(red: 1, green: 0.88, blue: 0.4), .error: Color(red: 1, green: 0.6, blue: 0.55), .working: Color(red: 0.6, green: 1, blue: 0.8),
+            .code: .white, .accent: Color(red: 1, green: 0.88, blue: 0.4),
+        ])
+
+    /// Neo-brutalism: acid yellow, heavy black lines, hard shadows, loud type.
+    static let brutal = Theme(
+        id: .brutal, scheme: .light, radius: 10, pillRadius: 6, rowInset: 6, rowRadius: 6, design: .default,
+        headingFont: .system(size: 14, weight: .black), headingUppercase: true,
+        colors: [
+            .text: .black, .strong: .black, .secondary: Color(white: 0.12), .dim: Color(white: 0, opacity: 0.58), .faint: .black,
+            .rule: .black, .hover: Color(white: 1, opacity: 0.55), .inset: .white, .option: .white, .optionOn: Color(red: 0.55, green: 0.85, blue: 1),
+            .pill: .white, .pillText: .black, .pillStroke: .black, .primary: Color(red: 1, green: 0.45, blue: 0.72), .primaryText: .black,
+            .waitingBg: .white, .errorBg: Color(red: 1, green: 0.6, blue: 0.55),
+            .waiting: Color(red: 0.75, green: 0.3, blue: 0), .error: Color(red: 0.8, green: 0, blue: 0.1), .working: Color(red: 0, green: 0.5, blue: 0.2),
+            .code: .black, .accent: Color(red: 1, green: 0.45, blue: 0.72),
+        ],
+        hardShadow: true)
+
+    /// Holographic foil: near-black with a rainbow sheen that drifts across, iridescent rim and button.
+    static let hologram = Theme(
+        id: .hologram, scheme: .dark, radius: 18, pillRadius: 100, rowInset: 6, rowRadius: 12, design: .rounded,
+        headingFont: .system(size: 12, weight: .bold, design: .rounded), headingUppercase: false,
+        colors: [
+            .text: Color(white: 0.95), .strong: .white, .secondary: Color(white: 0.75), .dim: Color(red: 0.62, green: 0.66, blue: 0.75),
+            .faint: Color(white: 1, opacity: 0.18), .rule: Color(white: 1, opacity: 0.1), .hover: Color(white: 1, opacity: 0.07),
+            .inset: Color(white: 1, opacity: 0.06), .option: Color(white: 1, opacity: 0.07), .optionOn: Color(red: 0.7, green: 0.6, blue: 1, opacity: 0.3),
+            .pill: Color(white: 1, opacity: 0.08), .pillText: .white, .pillStroke: Color(white: 1, opacity: 0.22), .primary: .white, .primaryText: .black,
+            .waitingBg: Color(red: 1, green: 0.8, blue: 0.4, opacity: 0.1), .errorBg: Color(red: 1, green: 0.4, blue: 0.5, opacity: 0.12),
+            .waiting: Color(red: 1, green: 0.84, blue: 0.45), .error: Color(red: 1, green: 0.48, blue: 0.55), .working: Color(red: 0.45, green: 1, blue: 0.8),
+            .code: Color(red: 0.85, green: 0.92, blue: 1), .accent: Color(red: 0.75, green: 0.65, blue: 1),
+        ],
+        primaryGradient: [Color(red: 1, green: 0.7, blue: 0.9), Color(red: 0.7, green: 0.85, blue: 1), Color(red: 0.75, green: 1, blue: 0.85), Color(red: 1, green: 0.95, blue: 0.7)])
+
+    static let holoColors: [Color] = [Color(red: 1, green: 0.4, blue: 0.75), Color(red: 1, green: 0.85, blue: 0.4), Color(red: 0.4, green: 1, blue: 0.75),
+                                      Color(red: 0.35, green: 0.75, blue: 1), Color(red: 0.7, green: 0.45, blue: 1), Color(red: 1, green: 0.4, blue: 0.75)]
 }
 
 extension EnvironmentValues {
@@ -197,7 +290,116 @@ struct ThemeSurface: View {
                 }
                 .opacity(0.5)
             }
+        case .phosphor:
+            ZStack {
+                shape.fill(Color(red: 0.045, green: 0.03, blue: 0.01))
+                shape.fill(RadialGradient(colors: [Color(red: 1, green: 0.6, blue: 0.15).opacity(0.12), .clear],
+                                          center: .center, startRadius: 10, endRadius: 360))
+                Canvas { ctx, size in
+                    var y: CGFloat = 0
+                    while y < size.height {
+                        ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 1)), with: .color(.black.opacity(0.32)))
+                        y += 3
+                    }
+                }
+                // The tube darkens toward its curved edges.
+                shape.fill(RadialGradient(colors: [.clear, .black.opacity(0.55)], center: .center, startRadius: 160, endRadius: 420))
+            }
+        case .synthwave:
+            ZStack {
+                shape.fill(LinearGradient(colors: [Color(red: 0.07, green: 0.02, blue: 0.16), Color(red: 0.2, green: 0.03, blue: 0.3), Color(red: 0.32, green: 0.04, blue: 0.32)],
+                                          startPoint: .top, endPoint: .bottom))
+                SynthSun().opacity(0.85)
+                SynthGrid()
+            }
+        case .blueprint:
+            ZStack {
+                shape.fill(RadialGradient(colors: [Color(red: 0.1, green: 0.36, blue: 0.7), Color(red: 0.05, green: 0.24, blue: 0.52)],
+                                          center: .topLeading, startRadius: 0, endRadius: 600))
+                Canvas { ctx, size in
+                    for (step, alpha) in [(CGFloat(10), 0.06), (CGFloat(50), 0.14)] {
+                        var x: CGFloat = 0
+                        while x < size.width { ctx.fill(Path(CGRect(x: x, y: 0, width: 0.5, height: size.height)), with: .color(.white.opacity(alpha))); x += step }
+                        var y: CGFloat = 0
+                        while y < size.height { ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: 0.5)), with: .color(.white.opacity(alpha))); y += step }
+                    }
+                }
+            }
+        case .brutal:
+            ZStack {
+                shape.fill(Color(red: 1, green: 0.9, blue: 0.2))
+                // Halftone dots in one corner, like a cheap print.
+                Canvas { ctx, size in
+                    // Bottom-right corner, away from the summary line.
+                    var y = size.height - 4
+                    while y > size.height - 120 {
+                        var x = size.width - 4
+                        while x > size.width - 140 {
+                            let d = max(0, 3.2 - (size.width - x + size.height - y) / 50)
+                            if d > 0.3 { ctx.fill(Path(ellipseIn: CGRect(x: x - d / 2, y: y - d / 2, width: d, height: d)), with: .color(.black.opacity(0.22))) }
+                            x -= 7
+                        }
+                        y -= 7
+                    }
+                }
+            }
+        case .hologram:
+            ZStack {
+                shape.fill(Color(red: 0.05, green: 0.055, blue: 0.08))
+                shape.fill(LinearGradient(colors: Theme.holoColors.map { $0.opacity(0.16) }, startPoint: .topLeading, endPoint: .bottomTrailing))
+                shape.fill(AngularGradient(colors: Theme.holoColors.map { $0.opacity(0.1) }, center: UnitPoint(x: 0.8, y: 0.1)))
+                shape.fill(LinearGradient(colors: [.clear, .white.opacity(0.07), .clear], startPoint: UnitPoint(x: 0.2, y: 0), endPoint: UnitPoint(x: 0.6, y: 0.5)))
+            }
         }
+    }
+}
+
+/// A striped sun low on the horizon.
+private struct SynthSun: View {
+    var body: some View {
+        GeometryReader { g in
+            let d = min(g.size.width * 0.45, 170)
+            Circle()
+                .fill(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.3), Color(red: 1, green: 0.3, blue: 0.6)], startPoint: .top, endPoint: .bottom))
+                .mask {
+                    VStack(spacing: 0) {
+                        Rectangle().frame(height: d * 0.55)
+                        ForEach(0..<6, id: \.self) { i in
+                            Rectangle().frame(height: d * 0.075 - CGFloat(i) * 0.6).padding(.bottom, CGFloat(i + 1) * 1.6)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .frame(width: d, height: d)
+                .opacity(0.2)
+                .position(x: g.size.width * 0.8, y: g.size.height - d * 0.12)
+                .blur(radius: 0.3)
+        }
+    }
+}
+
+/// A neon floor in perspective, fading out toward the text.
+private struct SynthGrid: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let horizon = size.height * 0.72
+            let color = Color(red: 1, green: 0.3, blue: 0.8)
+            var p = Path()
+            for i in -12...12 {
+                let x0 = size.width / 2 + CGFloat(i) * 22
+                let x1 = size.width / 2 + CGFloat(i) * 110
+                p.move(to: CGPoint(x: x0, y: horizon)); p.addLine(to: CGPoint(x: x1, y: size.height))
+            }
+            var t: CGFloat = 0.02
+            while t < 1 {
+                let y = horizon + (size.height - horizon) * t
+                p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
+                t *= 1.6
+            }
+            ctx.stroke(p, with: .color(color.opacity(0.32)), lineWidth: 0.8)
+            ctx.fill(Path(CGRect(x: 0, y: horizon - 0.5, width: size.width, height: 1)), with: .color(Color(red: 0.4, green: 0.95, blue: 1).opacity(0.5)))
+        }
+        .mask(LinearGradient(colors: [.clear, .black], startPoint: UnitPoint(x: 0.5, y: 0.7), endPoint: .bottom))
     }
 }
 
@@ -226,6 +428,23 @@ struct ThemeRim: View {
                 shape.strokeBorder(Color.black.opacity(0.32), lineWidth: 1)
                 shape.inset(by: 1).strokeBorder(Color.white.opacity(0.7), lineWidth: 1)
             }
+        case .phosphor:
+            ZStack {
+                shape.strokeBorder(Color(white: 0.2), lineWidth: 2)
+                shape.inset(by: 2).strokeBorder(Color(red: 1, green: 0.7, blue: 0.22).opacity(0.25), lineWidth: 0.5)
+            }
+        case .synthwave:
+            shape.strokeBorder(LinearGradient(colors: [Color(red: 0.3, green: 0.95, blue: 1), Color(red: 1, green: 0.3, blue: 0.75), Color(red: 1, green: 0.6, blue: 0.25)],
+                                              startPoint: .top, endPoint: .bottom), lineWidth: 1.5)
+        case .blueprint:
+            ZStack {
+                shape.strokeBorder(Color.white.opacity(0.85), style: StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                shape.inset(by: 4).strokeBorder(Color.white.opacity(0.3), lineWidth: 0.5)
+            }
+        case .brutal:
+            shape.strokeBorder(Color.black, lineWidth: 2.5)
+        case .hologram:
+            shape.strokeBorder(AngularGradient(colors: Theme.holoColors, center: .center), lineWidth: 1.2).opacity(0.85)
         }
     }
 }
@@ -259,7 +478,9 @@ struct ThemeRowFill<S: ShapeStyle>: View {
     @Environment(\.theme) private var theme
     var body: some View {
         if theme.rowInset > 0 {
-            RoundedRectangle(cornerRadius: theme.rowRadius, style: .continuous).fill(style).padding(.horizontal, theme.rowInset)
+            RoundedRectangle(cornerRadius: theme.rowRadius, style: .continuous).fill(style)
+                .overlay { if theme.hardShadow { RoundedRectangle(cornerRadius: theme.rowRadius, style: .continuous).strokeBorder(Color.black, lineWidth: 2) } }
+                .padding(.horizontal, theme.rowInset)
         } else {
             Rectangle().fill(style)
         }

@@ -5,7 +5,7 @@ import NotchCore
 struct SettingsThemePicker: View {
     @ObservedObject var settings: AppSettings
     var body: some View {
-        HStack(spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 5), spacing: 10) {
             ForEach(ThemeID.allCases, id: \.self) { id in
                 ThemeSwatch(theme: .of(id), selected: settings.theme == id) { settings.theme = id }
             }

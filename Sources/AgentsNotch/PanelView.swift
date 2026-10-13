@@ -16,6 +16,7 @@ struct PanelView: View {
     var body: some View {
         let list = VStack(alignment: .leading, spacing: 0) { content(store.projects) }
             .padding(.vertical, 6)
+            .shadow(color: theme.glow ?? .clear, radius: theme.glow == nil ? 0 : 3)
             .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
         Group {
             if scrolls { ScrollView { list } } else { list }
@@ -331,13 +332,29 @@ private struct PillBody: View {
     @Environment(\.theme) private var theme
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: .continuous)
+        let pressed = configuration.isPressed
         configuration.label
-            .font(.system(size: 11, weight: primary && theme.id != .terminal ? .semibold : .medium, design: theme.id == .console ? .monospaced : .default))
-            .padding(.horizontal, theme.pillRadius > 20 ? 10 : 8).padding(.vertical, theme.pillRadius > 20 ? 3 : 2)
-            .background(shape.fill(primary ? Ink.primary : Ink.pill))
-            .overlay { if !primary { shape.strokeBorder(Ink.pillStroke, lineWidth: 0.5) } }
+            .font(.system(size: 11, weight: theme.hardShadow ? .heavy : primary && theme.id != .terminal ? .semibold : .medium,
+                          design: theme.id == .console ? .monospaced : theme.design))
+            .padding(.horizontal, theme.pillRadius > 20 ? 10 : 8).padding(.vertical, theme.pillRadius > 20 || theme.hardShadow ? 3 : 2)
+            .background {
+                if primary, let colors = theme.primaryGradient {
+                    shape.fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+                } else {
+                    shape.fill(primary ? Ink.primary : Ink.pill)
+                }
+            }
+            .overlay {
+                if theme.hardShadow { shape.strokeBorder(Color.black, lineWidth: 1.5) }
+                else if !primary { shape.strokeBorder(Ink.pillStroke, lineWidth: theme.id == .synthwave || theme.id == .phosphor || theme.id == .blueprint ? 1 : 0.5) }
+            }
             .foregroundStyle(primary ? Ink.primaryText : Ink.pillText)
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            // Neo-brutal buttons sit on a hard black shadow and sink into it when pressed.
+            .background { if theme.hardShadow { shape.fill(Color.black).offset(x: pressed ? 0 : 2, y: pressed ? 0 : 2) } }
+            .offset(x: theme.hardShadow && pressed ? 2 : 0, y: theme.hardShadow && pressed ? 2 : 0)
+            .shadow(color: primary && theme.id == .synthwave ? Color(red: 1, green: 0.3, blue: 0.7).opacity(0.7) : .clear, radius: 6)
+            .opacity(!theme.hardShadow && pressed ? 0.7 : 1)
+            .padding(.trailing, theme.hardShadow ? 2 : 0).padding(.bottom, theme.hardShadow ? 2 : 0)
             .fixedSize()
     }
 }
