@@ -13,6 +13,9 @@ struct SettingsAppearance: View {
                 SettingsLivePreview(settings: settings).listRowInsets(EdgeInsets())
                 SettingsPresetPicker(settings: settings)
             }
+            Section(SettingsText.theme) {
+                SettingsThemePicker(settings: settings)
+            }
             Section(SettingsText.marks) {
                 HStack(spacing: 10) {
                     ForEach([MarkStyle.dots, .logos, .logosMono], id: \.self) { style in
@@ -133,6 +136,7 @@ struct SettingsLivePreview: View {
             WingView(layout: store.layout)
                 .padding(.horizontal, 14).frame(height: 26).frame(minWidth: 200)
                 .background(UnevenRoundedRectangle(bottomLeadingRadius: 9, bottomTrailingRadius: 9).fill(.black))
+                .environment(\.colorScheme, .dark)
             PanelView(store: store, scrolls: false).fixedSize(horizontal: false, vertical: true)
                 .scaleEffect(0.86, anchor: .top).frame(width: 380 * 0.86)
         }
@@ -142,6 +146,5 @@ struct SettingsLivePreview: View {
         .allowsHitTesting(false)
         .environmentObject(settings)
         .environmentObject(store.usage)
-        .environment(\.colorScheme, .dark)
     }
 }

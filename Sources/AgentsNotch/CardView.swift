@@ -41,7 +41,7 @@ struct CardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(12)
-            Divider().overlay(Color(white: 0.23))
+            Rectangle().fill(Ink.rule).frame(height: 0.5)
             HStack(spacing: 6) {
                 ForEach(tabs, id: \.self) { item in
                     Button(CardText.tab(item)) {
@@ -63,19 +63,17 @@ struct CardView: View {
         }
         .frame(width: 340)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.11)))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(white: 0.23), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .environment(\.colorScheme, .dark)
-        .font(.system(size: 12))
-        .foregroundStyle(Color(white: 0.92))
+        .themeSurface(settings.currentTheme)
+        .themed(settings.currentTheme)
+        .font(.system(size: 12, design: settings.currentTheme.design))
+        .foregroundStyle(Ink.text)
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
                 AgentStatusMark(agent: agent)
-                Text(agent.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                Text(agent.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Ink.strong).lineLimit(2)
                 Spacer(minLength: 4)
                 Button(CardText.open, action: onOpen).buttonStyle(Pill(primary: false))
             }

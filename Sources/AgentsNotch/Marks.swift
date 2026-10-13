@@ -55,7 +55,7 @@ struct EffortBars: View {
         HStack(alignment: .bottom, spacing: 1) {
             ForEach(0..<4, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 0.5)
-                    .fill(i < (effort?.rawValue ?? 0) ? Color(white: 0.78) : Color(white: 0.23))
+                    .fill(i < (effort?.rawValue ?? 0) ? Ink.secondary : Ink.faint)
                     .frame(width: 2, height: CGFloat(3 + i * 2))
             }
         }

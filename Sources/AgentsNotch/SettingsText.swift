@@ -10,7 +10,17 @@ enum SettingsText {
     // Внешний вид
     static var presetHelp: String { Loc.t("A preset sets up the row, the list, limits and the card at once.", "Пресет сразу настраивает строку, список, лимиты и карточку.") }
     static var own: String { Loc.t("Custom", "Своё") }
+    static var theme: String { Loc.t("Theme", "Тема") }
     static var marks: String { Loc.t("Agent icons", "Значки агентов") }
+    static func theme(_ id: ThemeID) -> String {
+        switch id {
+        case .terminal: Loc.t("Terminal", "Терминал")
+        case .glass: Loc.t("Liquid Glass", "Жидкое стекло")
+        case .paper: Loc.t("Paper", "Бумага")
+        case .midnight: Loc.t("Midnight", "Полночь")
+        case .console: Loc.t("Console", "Пульт")
+        }
+    }
     static var markSize: String { Loc.t("Size", "Размер") }
     static var inRow: String { Loc.t("In the agent row", "В строке агента") }
     static var order: String { Loc.t("Order…", "Порядок…") }

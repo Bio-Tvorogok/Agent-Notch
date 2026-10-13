@@ -55,22 +55,23 @@ final class FinishToast {
 private struct ToastView: View {
     let notice: FinishNotice
     let onOpen: () -> Void
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 AgentStatusMark(agent: notice.agent)
-                Text(notice.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                Text(notice.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.strong).lineLimit(1)
             }
-            Text(notice.line).font(.system(size: 11)).foregroundStyle(Color(white: 0.85)).lineLimit(1)
+            Text(notice.line).font(.system(size: 11)).foregroundStyle(Ink.text).lineLimit(1)
             if let p = notice.preview {
                 Text(p).font(.system(size: 11)).foregroundStyle(dim).lineLimit(2)
             }
         }
         .frame(width: 340, alignment: .leading)
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.11)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.23), lineWidth: 1))
+        .themeSurface(settings.currentTheme, radius: min(settings.currentTheme.radius, 18))
+        .themed(settings.currentTheme)
         .contentShape(Rectangle())
         .onTapGesture(perform: onOpen)
         .help(ToastText.open)

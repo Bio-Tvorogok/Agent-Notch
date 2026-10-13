@@ -44,14 +44,14 @@ struct QuestionChoices: View {
     @ViewBuilder private func block(_ q: Question) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(q.header.isEmpty ? q.question : "\(q.header) · \(q.question)")
-                .foregroundStyle(Color(white: 0.92)).fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Ink.text).fixedSize(horizontal: false, vertical: true)
             ForEach(q.options, id: \.label) { o in
                 let on = picked[q.question]?.contains(o.label) == true
                 Button { choose(q, o.label) } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(q.multiSelect ? (on ? "☑" : "☐") : (on ? "●" : "○")).foregroundStyle(on ? AgentState.waiting.color : dim)
+                        Text(q.multiSelect ? (on ? "☑" : "☐") : (on ? "●" : "○")).foregroundStyle(on ? Ink.accent : dim)
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(o.label).foregroundStyle(.white)
+                            Text(o.label).foregroundStyle(Ink.strong)
                             if !o.description.isEmpty {
                                 Text(o.description).font(.system(size: 10.5)).foregroundStyle(dim)
                                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -60,7 +60,7 @@ struct QuestionChoices: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color(white: on ? 0.27 : 0.19)))
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Ink.optionOn : Ink.option))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -110,7 +110,7 @@ struct PlanChoices: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(AnswerText.plan).foregroundStyle(dim)
-            let text = Text(plan).font(.system(size: 11)).foregroundStyle(Color(white: 0.92))
+            let text = Text(plan).font(.system(size: 11)).foregroundStyle(Ink.text)
                 .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             // Longer than ~14 lines scrolls; a short plan is drawn plainly.
             if plan.split(separator: "\n", omittingEmptySubsequences: false).count > Self.maxLines || plan.count > 900 {

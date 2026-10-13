@@ -57,7 +57,7 @@ struct CardTabBody: View {
         ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             HStack(alignment: .top, spacing: 7) {
                 Text(item.status == .done ? "✓" : item.status == .active ? "●" : "○")
-                    .foregroundStyle(item.status == .done ? AgentState.working.color : dim)
+                    .foregroundStyle(item.status == .done ? Ink.working : dim)
                 Text(item.text).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
         }
@@ -67,7 +67,7 @@ struct CardTabBody: View {
         ForEach(Array(CardContent.commands(detail, limit: limit).enumerated()), id: \.offset) { _, command in
             HStack(alignment: .top, spacing: 7) {
                 Text(CardContent.result(command))
-                    .foregroundStyle(command.ok == true ? AgentState.working.color : command.ok == false ? AgentState.error.color : dim)
+                    .foregroundStyle(command.ok == true ? Ink.working : command.ok == false ? Ink.error : dim)
                 VStack(alignment: .leading, spacing: 3) {
                     if command.isTest { Text(CardText.test).font(.system(size: 10)).foregroundStyle(dim) }
                     Text(command.command).font(.system(size: 11, design: .monospaced))

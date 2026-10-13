@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot-themes"), i + 1 < args.count {
+            exit(Snapshot.runThemes(into: args[i + 1]) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot-card"), i + 1 < args.count {
             exit(Snapshot.runCard(to: args[i + 1]) ? 0 : 1)
         }

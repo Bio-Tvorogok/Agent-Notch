@@ -1,7 +1,7 @@
 import SwiftUI
 import NotchCore
 
-let dim = Color(white: 0.56)
+let dim = Ink.dim
 
 /// The list under the notch: summary, what needs you, then projects → sessions → subagents.
 struct PanelView: View {
@@ -11,6 +11,7 @@ struct PanelView: View {
     var scrolls = true
     var onHeight: (CGFloat) -> Void = { _ in }
     @State private var expanded: [String: Bool] = [:]
+    private var theme: Theme { settings.currentTheme }
 
     var body: some View {
         let list = VStack(alignment: .leading, spacing: 0) { content(store.projects) }
@@ -22,11 +23,10 @@ struct PanelView: View {
         .onPreferenceChange(HeightKey.self) { h in onHeight(h) }
         .onChange(of: settings.rows.subagentTree) { _, _ in expanded = [:] }
         .frame(width: 380)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.11)))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(white: 0.23), lineWidth: 0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .environment(\.colorScheme, .dark)
-        .font(.system(size: 12))
+        .themeSurface(theme)
+        .themed(theme)
+        .font(.system(size: 12, design: theme.design))
+        .foregroundStyle(Ink.text)
     }
 
     @ViewBuilder private func content(_ projects: [ProjectNode]) -> some View {
@@ -119,6 +119,7 @@ private struct AttentionRow: View {
     @ObservedObject var store: Store
     /// The first open request answers to the hotkeys; its row shows them.
     var first = false
+    @Environment(\.theme) private var theme
 
     var body: some View {
         let a = item.agent
@@ -142,7 +143,7 @@ private struct AttentionRow: View {
                     Choices(ask: ask, store: store, hint: first)
                 } else {
                     Text(waiting ? Loc.t("asks: ", "просит: ") + (a.ask ?? Loc.t("approval", "подтверждение")) : Loc.t("repeats the same error", "повторяет одну и ту же ошибку"))
-                        .foregroundStyle(waiting ? Color(white: 0.85) : dim).lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(waiting ? Ink.text : dim).lineLimit(1).truncationMode(.middle)
                         .font(.system(size: 11))
                 }
             }
@@ -152,8 +153,9 @@ private struct AttentionRow: View {
                     .buttonStyle(Pill(primary: waiting))
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 6)
-        .background(waiting ? Color(red: 0.17, green: 0.16, blue: 0.1) : Color(red: 0.17, green: 0.11, blue: 0.11))
+        .padding(.horizontal, 12 + theme.rowInset).padding(.vertical, 6 + (theme.rowInset > 0 ? 2 : 0))
+        .background(ThemeRowFill(style: waiting ? Ink.waitingBg : Ink.errorBg))
+        .padding(.vertical, theme.rowInset > 0 ? 2 : 0)
     }
 }
 
@@ -166,7 +168,7 @@ private struct Request: View {
             // The approval row shows exactly what gets approved, whole (up to 12 lines), never the shortened activity line.
             Text(event.full ?? Loc.t("no details", "без подробностей"))
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(event.isRisky ? AgentState.error.color : Color(white: 0.92))
+                .foregroundStyle(event.isRisky ? Ink.error : Ink.code)
                 .lineLimit(event.isLong ? 12 : 1).truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -189,7 +191,7 @@ private struct Choices: View {
                 .buttonStyle(Pill(primary: false))
             Button(Loc.t("In the agent window", "В окне агента")) { store.decide(ask, .pass) }
                 .buttonStyle(.plain).foregroundStyle(dim).font(.system(size: 11)).lineLimit(1)
-            if ask.event.isRisky { Text(Loc.t("dangerous", "опасно")).foregroundStyle(AgentState.error.color).font(.system(size: 10.5, weight: .medium)) }
+            if ask.event.isRisky { Text(Loc.t("dangerous", "опасно")).foregroundStyle(Ink.error).font(.system(size: 10.5, weight: .medium)) }
         }
         .padding(.top, 2)
     }
@@ -207,16 +209,16 @@ private struct Summary: View {
         HStack(spacing: 10) {
             VendorCount(vendor: .claude, n: live.filter { $0.vendor == .claude }.count, label: "Claude")
             VendorCount(vendor: .codex, n: live.filter { $0.vendor == .codex }.count, label: "Codex")
-            if waiting > 0 { Text(Loc.t("\(waiting) waiting", "\(waiting) ждёт")).foregroundStyle(AgentState.waiting.color) }
-            if errors > 0 { Text(Loc.t("\(errors) with errors", "\(errors) с ошибкой")).foregroundStyle(AgentState.error.color) }
+            if waiting > 0 { Text(Loc.t("\(waiting) waiting", "\(waiting) ждёт")).foregroundStyle(Ink.waiting) }
+            if errors > 0 { Text(Loc.t("\(errors) with errors", "\(errors) с ошибкой")).foregroundStyle(Ink.error) }
             Spacer()
             Text(projects.count > 1 ? Loc.t("projects: \(projects.count)", "проектов: \(projects.count)") : projects[0].name).foregroundStyle(dim)
         }
         }
         .font(.system(size: 11))
-        .foregroundStyle(Color(white: 0.68))
+        .foregroundStyle(Ink.secondary)
         .padding(.horizontal, 12).padding(.top, 4).padding(.bottom, 8)
-        .overlay(alignment: .bottom) { Rectangle().fill(Color(white: 0.17)).frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Rectangle().fill(Ink.rule).frame(height: 0.5) }
         .padding(.bottom, 4)
     }
 }
@@ -239,10 +241,12 @@ private struct VendorCount: View {
 private struct ProjectHeader: View {
     let project: ProjectNode
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.theme) private var theme
     var body: some View {
         let live = project.live
         HStack(spacing: 8) {
-            Text(project.name).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.white)
+            Text(theme.headingUppercase ? project.name.uppercased() : project.name)
+                .font(theme.headingFont).tracking(theme.headingUppercase ? 0.8 : 0).foregroundStyle(theme.headingUppercase ? Ink.dim : Ink.strong)
             Spacer()
             ForEach([Vendor.claude, .codex], id: \.self) { v in
                 let n = live.filter { $0.vendor == v }.count
@@ -254,7 +258,7 @@ private struct ProjectHeader: View {
                 }
             }
         }
-        .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 3)
+        .padding(.horizontal, 12).padding(.top, theme.headingUppercase ? 12 : 8).padding(.bottom, theme.headingUppercase ? 4 : 3)
     }
 }
 
@@ -283,15 +287,16 @@ private struct Row<Content: View>: View {
     var open: (() -> Void)?
     @ViewBuilder var content: () -> Content
     @State private var hover = false
+    @Environment(\.theme) private var theme
 
     var body: some View {
         HStack(spacing: 7) {
             if indent { TreeLine(last: last).frame(width: 12) }
             content()
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 12 + theme.rowInset)
         .frame(minHeight: 22)
-        .background(hover && action != nil ? Color(white: 0.15) : .clear)
+        .background { if hover && action != nil { ThemeRowFill(style: Ink.hover) } }
         .contentShape(Rectangle())
         .onHover { hover = $0 }
         .onTapGesture { if RowClick.isDouble, let open { open() } else { action?() } }
@@ -310,19 +315,28 @@ private struct TreeLine: View {
                 p.move(to: CGPoint(x: x, y: mid))
                 p.addLine(to: CGPoint(x: g.size.width, y: mid))
             }
-            .stroke(Color(white: 0.23), lineWidth: 1)
+            .stroke(Ink.faint, lineWidth: 1)
         }
     }
 }
 
 struct Pill: ButtonStyle {
     let primary: Bool
-    func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View { PillBody(configuration: configuration, primary: primary) }
+}
+
+private struct PillBody: View {
+    let configuration: ButtonStyleConfiguration
+    let primary: Bool
+    @Environment(\.theme) private var theme
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: .continuous)
         configuration.label
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 6).fill(primary ? AgentState.waiting.color : Color(white: 0.23)))
-            .foregroundStyle(primary ? .black : .white)
+            .font(.system(size: 11, weight: primary && theme.id != .terminal ? .semibold : .medium, design: theme.id == .console ? .monospaced : .default))
+            .padding(.horizontal, theme.pillRadius > 20 ? 10 : 8).padding(.vertical, theme.pillRadius > 20 ? 3 : 2)
+            .background(shape.fill(primary ? Ink.primary : Ink.pill))
+            .overlay { if !primary { shape.strokeBorder(Ink.pillStroke, lineWidth: 0.5) } }
+            .foregroundStyle(primary ? Ink.primaryText : Ink.pillText)
             .opacity(configuration.isPressed ? 0.7 : 1)
             .fixedSize()
     }

@@ -71,6 +71,35 @@ enum Snapshot {
         return ok
     }
 
+    /// `--snapshot-themes <dir>`: per theme, the list with requests, the list with projects and the card, over one wallpaper.
+    static func runThemes(into dir: String) -> Bool {
+        let suite = "AgentsNotch.snapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        var ok = true
+        for id in ThemeID.allCases {
+            settings.theme = id
+            let ask = Store(settings: settings), list = Store(settings: settings)
+            ask.useFixture(Fixtures.agents("ask") ?? [], asks: Fixtures.asks("ask"))
+            list.useFixture(Fixtures.agents("projects") ?? [], asks: [])
+            let scene = HStack(alignment: .top, spacing: 24) {
+                PanelView(store: ask, scrolls: false).fixedSize(horizontal: false, vertical: true).environmentObject(ask.usage)
+                PanelView(store: list, scrolls: false).fixedSize(horizontal: false, vertical: true).environmentObject(list.usage)
+                CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
+                         cost: SessionCost(tokens: 1, usd: 1.37)).frame(height: 430)
+            }
+            .padding(28)
+            .background(ThemeWallpaper())
+            .environmentObject(settings)
+            .environment(\.themeSnapshot, true)
+            ok = write(scene, to: url.appendingPathComponent("theme-\(id.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     static func runCard(to file: String) -> Bool {
         host(CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
                       cost: SessionCost(tokens: 1, usd: 1.37)).environmentObject(AppSettings.shared),

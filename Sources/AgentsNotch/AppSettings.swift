@@ -12,6 +12,8 @@ final class AppSettings: ObservableObject {
     var visibilityObservers: [ObjectIdentifier: () -> Void] = [:]
 
     @Published var appearance: AppearancePrefs { didSet { save(appearance, "appearance") } }
+    /// Kept apart from «appearance» so older saved appearance blobs keep decoding.
+    @Published var theme: ThemeID { didSet { save(theme, "theme") } }
     @Published var wing: WingPrefs { didSet { save(wing, "wing") } }
     @Published var rows: RowPrefs { didSet { save(rows, "rows") } }
     @Published var card: CardPrefs { didSet { save(card, "card") } }
@@ -43,6 +45,7 @@ final class AppSettings: ObservableObject {
             SettingsStorage.read(T.self, key: key, default: fallback, in: defaults)
         }
         appearance = load("appearance", AppearancePrefs())
+        theme = load("theme", ThemeID.terminal)
         wing = load("wing", WingPrefs())
         rows = load("rows", RowPrefs())
         card = load("card", CardPrefs())
@@ -80,6 +83,7 @@ final class AppSettings: ObservableObject {
         defer { resetting = false }
         let hidden = behavior.hiddenProjects
         appearance = AppearancePrefs()
+        theme = .terminal
         wing = WingPrefs()
         rows = RowPrefs()
         card = CardPrefs()
