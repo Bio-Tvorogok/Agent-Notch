@@ -285,11 +285,12 @@ extension ThemeMark {
 }
 
 extension ThemeMark {
-    // MARK: ducks — a rubber duck: Claude swims right, Codex swims left
+    // MARK: ducks — a rubber duck: Claude swims right, Codex swims left in dark shades
 
     func duck(t: Double) -> some View {
         let body: Color = switch state {
-        case .working: Color(red: 1, green: 0.84, blue: 0.1)
+        // A working Codex duck is blue, so the two vendors part even at the smallest size; alarms look the same for both.
+        case .working: claude ? Color(red: 1, green: 0.84, blue: 0.1) : Color(red: 0.3, green: 0.68, blue: 1)
         case .waiting: Color(red: 1, green: 0.55, blue: 0.1)
         case .error: Color(red: 0.95, green: 0.32, blue: 0.3)
         case .done: Color(red: 0.72, green: 0.77, blue: 0.82)
@@ -319,7 +320,13 @@ extension ThemeMark {
             for part in parts { ctx.fill(part, with: .color(isLight ? .white : body)) }
             for part in beaks { ctx.fill(part, with: .color(beak)) }
             let eye = pt(0.68, 0.3)
-            if state == .done {
+            if !claude {
+                // Codex is the hacker duck: dark shades with a strap, worn even asleep.
+                let shades = Path(roundedRect: CGRect(x: 0.54 * s, y: 0.23 * s, width: 0.3 * s, height: 0.14 * s), cornerRadius: 0.05 * s)
+                ctx.stroke(Path { p in p.move(to: pt(0.44, 0.27)); p.addLine(to: pt(0.56, 0.27)) }, with: .color(.black), lineWidth: max(0.6, s * 0.05))
+                ctx.fill(shades, with: .color(.black))
+                ctx.fill(Path(CGRect(x: 0.6 * s, y: 0.25 * s, width: max(0.6, 0.07 * s), height: max(0.6, 0.035 * s))), with: .color(.white.opacity(0.85)))
+            } else if state == .done {
                 ctx.stroke(Path { p in p.move(to: CGPoint(x: eye.x - s * 0.06, y: eye.y)); p.addLine(to: CGPoint(x: eye.x + s * 0.05, y: eye.y)) },
                            with: .color(line), lineWidth: max(0.8, s * 0.06))
             } else {
