@@ -113,11 +113,12 @@ enum Snapshot {
         return ok
     }
 
-    static func runCard(to file: String, tab: CardTab = .done) -> Bool {
+    static func runCard(to file: String, tab: CardTab = .done, log: String? = nil) -> Bool {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suite) else { return false }
         defer { defaults.removePersistentDomain(forName: suite) }
-        return host(CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
+        let detail = log.map { DetailReader.read(path: $0, vendor: $0.contains("/.codex/") ? .codex : .claude) } ?? CardFixture.detail
+        return host(CardView(agent: CardFixture.agent, detail: detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
                       cost: SessionCost(tokens: 1, usd: 1.37), tab: tab).environmentObject(AppSettings(defaults: defaults)),
              size: NSSize(width: 340, height: 480), to: URL(fileURLWithPath: file))
     }
