@@ -8,10 +8,11 @@ enum SettingsText {
     static var title: String { Loc.t("Settings", "Настройки") }
 
     // Внешний вид
-    static var presetHelp: String { Loc.t("A preset sets up the row, the list, limits and the card at once.", "Пресет сразу настраивает строку, список, лимиты и карточку.") }
-    static var own: String { Loc.t("Custom", "Своё") }
-    static var theme: String { Loc.t("Theme", "Тема") }
-    static var marks: String { Loc.t("Agent icons", "Значки агентов") }
+    static let presetHelp = "Пресет сразу настраивает строку, список, лимиты и карточку."
+    static let own = "Своё"
+    static let theme = "Тема"
+    static let themeMarks = "Как в теме"
+    static let marks = "Значки агентов"
     static func theme(_ id: ThemeID) -> String {
         switch id {
         case .terminal: Loc.t("Terminal", "Терминал")

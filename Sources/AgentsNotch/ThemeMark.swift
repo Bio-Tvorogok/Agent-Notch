@@ -273,7 +273,7 @@ struct ThemedVendorMark: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.theme) private var theme
     var body: some View {
-        if theme.id == .terminal {
+        if !settings.usesThemeMarks {
             StatusMark(vendor: vendor, state: .working, isLight: false, style: settings.appearance.markStyle, size: settings.appearance.markSize.points)
         } else {
             ThemeMark(theme: theme, vendor: vendor, state: .working, isLight: false, size: settings.appearance.markSize.points + 1)

@@ -68,6 +68,8 @@ enum Snapshot {
         settings.apply(.detailed)
         settings.appearance.finishedMinutes = 15
         ok = shot(.appearance, dir.appendingPathComponent("preset-own.png")) && ok
+        settings.theme = .pixel
+        ok = shot(.appearance, dir.appendingPathComponent("theme-pixel-marks.png"), height: 1500) && ok
         return ok
     }
 
@@ -85,11 +87,18 @@ enum Snapshot {
             let ask = Store(settings: settings), list = Store(settings: settings)
             ask.useFixture(Fixtures.agents("ask") ?? [], asks: Fixtures.asks("ask"))
             list.useFixture(Fixtures.agents("projects") ?? [], asks: [])
-            let scene = HStack(alignment: .top, spacing: 24) {
+            let scene = VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 0) {
+                    WingView(layout: list.layout).frame(height: 32)
+                    Color.clear.frame(width: 120, height: 32)
+                }
+                .background(UnevenRoundedRectangle(bottomLeadingRadius: 9, bottomTrailingRadius: 9).fill(.black))
+                HStack(alignment: .top, spacing: 24) {
                 PanelView(store: ask, scrolls: false).fixedSize(horizontal: false, vertical: true).environmentObject(ask.usage)
                 PanelView(store: list, scrolls: false).fixedSize(horizontal: false, vertical: true).environmentObject(list.usage)
                 CardView(agent: CardFixture.agent, detail: CardFixture.detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
                          cost: SessionCost(tokens: 1, usd: 1.37)).frame(height: 430)
+                }
             }
             .padding(28)
             .background(ThemeWallpaper())

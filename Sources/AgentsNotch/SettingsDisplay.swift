@@ -19,7 +19,13 @@ struct SettingsAppearance: View {
             Section(SettingsText.marks) {
                 HStack(spacing: 10) {
                     ForEach([MarkStyle.dots, .logos, .logosMono], id: \.self) { style in
-                        SettingsMarkCard(style: style, selected: settings.appearance.markStyle == style) { settings.appearance.markStyle = style }
+                        SettingsMarkCard(style: style, selected: !settings.usesThemeMarks && settings.appearance.markStyle == style) {
+                            settings.appearance.markStyle = style
+                            settings.themeMarks = false
+                        }
+                    }
+                    if settings.theme != .terminal {
+                        SettingsThemeMarkCard(theme: settings.currentTheme, selected: settings.usesThemeMarks) { settings.themeMarks = true }
                     }
                 }.padding(.vertical, 4)
                 Picker(SettingsText.markSize, selection: $settings.appearance.markSize) {
@@ -92,6 +98,35 @@ struct SettingsMarkCard: View {
                 .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
                 .environment(\.colorScheme, .dark)
                 Text(SettingsText.name(style.rawValue)).font(.system(size: 11)).multilineTextAlignment(.center)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true).frame(height: 28, alignment: .top)
+            }
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 9).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.1),
+                                                                    lineWidth: selected ? 2.5 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// «Как в теме»: the marks of the chosen theme, on a black wing like the other cards.
+struct SettingsThemeMarkCard: View {
+    let theme: Theme
+    let selected: Bool
+    let choose: () -> Void
+    var body: some View {
+        Button(action: choose) {
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    ThemeMark(theme: theme, vendor: .claude, state: .working, isLight: false, size: 14)
+                    ThemeMark(theme: theme, vendor: .codex, state: .working, isLight: false, size: 14)
+                }
+                .frame(maxWidth: .infinity).frame(height: 30)
+                .background(Color.black, in: RoundedRectangle(cornerRadius: 6))
+                .environment(\.colorScheme, .dark)
+                Text(SettingsText.themeMarks).font(.system(size: 11)).multilineTextAlignment(.center)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true).frame(height: 28, alignment: .top)
             }
             .padding(8)

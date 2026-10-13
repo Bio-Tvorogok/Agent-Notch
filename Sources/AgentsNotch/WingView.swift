@@ -71,8 +71,11 @@ private struct WingStatusMark: View {
     var small = false
     @EnvironmentObject private var settings: AppSettings
     var body: some View {
-        StatusMark(vendor: mark.vendor, state: mark.state, isLight: mark.light,
-                   style: settings.appearance.markStyle,
-                   size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)
+        let size = small ? settings.wingDisplay.childSize : settings.appearance.markSize.points
+        if settings.usesThemeMarks {
+            ThemeMark(theme: settings.currentTheme, vendor: mark.vendor, state: mark.state, isLight: mark.light, size: size + 1)
+        } else {
+            StatusMark(vendor: mark.vendor, state: mark.state, isLight: mark.light, style: settings.appearance.markStyle, size: size)
+        }
     }
 }

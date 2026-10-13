@@ -13,7 +13,16 @@ final class AppSettings: ObservableObject {
 
     @Published var appearance: AppearancePrefs { didSet { save(appearance, "appearance") } }
     /// Kept apart from «appearance» so older saved appearance blobs keep decoding.
-    @Published var theme: ThemeID { didSet { save(theme, "theme") } }
+    @Published var theme: ThemeID {
+        didSet {
+            save(theme, "theme")
+            // A new theme shows its own marks at once; «Значки агентов» can switch back.
+            if theme != oldValue && theme != .terminal { themeMarks = true }
+        }
+    }
+    /// The fourth mark style, «Как в теме»: kept apart from «markStyle», which «Терминал» falls back to.
+    @Published var themeMarks: Bool { didSet { save(themeMarks, "themeMarks") } }
+    var usesThemeMarks: Bool { themeMarks && theme != .terminal }
     @Published var wing: WingPrefs { didSet { save(wing, "wing") } }
     @Published var rows: RowPrefs { didSet { save(rows, "rows") } }
     @Published var card: CardPrefs { didSet { save(card, "card") } }
@@ -46,6 +55,7 @@ final class AppSettings: ObservableObject {
         }
         appearance = load("appearance", AppearancePrefs())
         theme = load("theme", ThemeID.terminal)
+        themeMarks = load("themeMarks", false)
         wing = load("wing", WingPrefs())
         rows = load("rows", RowPrefs())
         card = load("card", CardPrefs())
@@ -84,6 +94,7 @@ final class AppSettings: ObservableObject {
         let hidden = behavior.hiddenProjects
         appearance = AppearancePrefs()
         theme = .terminal
+        themeMarks = false
         wing = WingPrefs()
         rows = RowPrefs()
         card = CardPrefs()
