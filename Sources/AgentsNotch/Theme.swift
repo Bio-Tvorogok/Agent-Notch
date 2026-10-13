@@ -695,6 +695,8 @@ struct DevMemes: View {
     ]
     var body: some View {
         Canvas { ctx, size in
+            // Small surfaces (the picker swatch) would only get a jumble of letters.
+            guard size.height > 160 else { return }
             for line in Self.lines {
                 var c = ctx
                 c.translateBy(x: line.x * size.width, y: line.y * size.height)

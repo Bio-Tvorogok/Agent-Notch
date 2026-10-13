@@ -328,8 +328,9 @@ extension ThemeMark {
             }
         }
         .frame(width: side, height: side)
-        .scaleEffect(x: claude ? 1 : -1, y: 1)
-        .rotationEffect(.degrees(state == .error ? 180 : Double(bob) * 7))
+        // A capsized duck flips belly-up but keeps facing its own way.
+        .scaleEffect(x: claude ? 1 : -1, y: state == .error ? -1 : 1)
+        .rotationEffect(.degrees(Double(bob) * 7))
         .offset(y: bob * side * 0.07)
     }
 }

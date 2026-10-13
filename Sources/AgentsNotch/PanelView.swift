@@ -16,7 +16,7 @@ struct PanelView: View {
     var body: some View {
         let list = VStack(alignment: .leading, spacing: 0) { content(store.projects) }
             .padding(.vertical, 6)
-            .shadow(color: theme.glow ?? .clear, radius: theme.glow == nil ? 0 : 3)
+            .modifier(Glow(color: theme.glow))
             .background(GeometryReader { g in Color.clear.preference(key: HeightKey.self, value: g.size.height) })
         Group {
             if scrolls { ScrollView { list } } else { list }
@@ -371,5 +371,13 @@ private struct PillBody: View {
             .opacity(!theme.hardShadow && pressed ? 0.7 : 1)
             .padding(.trailing, theme.hardShadow ? 2 : 0).padding(.bottom, theme.hardShadow ? 2 : 0)
             .fixedSize()
+    }
+}
+
+/// Text that gives off light. Themes without it get no shadow at all: even a clear one moves the list offscreen and changes how it renders.
+private struct Glow: ViewModifier {
+    let color: Color?
+    func body(content: Content) -> some View {
+        if let color { content.shadow(color: color, radius: 3) } else { content }
     }
 }
