@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
 ### Added
 
 - Thirteen list themes: Terminal, Liquid Glass, Paper, Midnight, Console, Phosphor, Synthwave, Blueprint, Brutalism, Hologram, Wasteland, Pixel and Rubber Ducks. Every theme except Terminal can also restyle the marks in the wing.
@@ -35,5 +37,6 @@ First public release.
 - Finish toast, settings with presets, launch at login.
 - Homebrew cask, DMG and zip downloads.
 
+[0.3.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.1.0
