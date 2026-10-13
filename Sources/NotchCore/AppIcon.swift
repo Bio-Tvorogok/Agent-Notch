@@ -1,0 +1,29 @@
+import Foundation
+
+/// Logos come from the apps installed on this Mac; nothing is copied into the repository.
+public enum AppIcon {
+    public enum Source: Equatable, Sendable {
+        /// The app's own icon, as Finder shows it.
+        case bundle(URL)
+        /// A picture inside the app bundle.
+        case file(URL)
+    }
+
+    public static func bundleID(_ vendor: Vendor) -> String {
+        vendor == .claude ? "com.anthropic.claudefordesktop" : "com.openai.codex"
+    }
+
+    /// Codex lives inside ChatGPT.app, whose main icon is ChatGPT's; its Codex pictures are resources.
+    public static func resource(_ vendor: Vendor, dark: Bool) -> String? {
+        vendor == .claude ? nil : (dark ? "icon-codex-dark-color.png" : "icon-codex-light.png")
+    }
+
+    /// nil when the app or its picture is missing: the caller draws its own mark.
+    public static func source(for vendor: Vendor, dark: Bool, locate: (String) -> URL?,
+                              exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> Source? {
+        guard let app = locate(bundleID(vendor)), exists(app.path) else { return nil }
+        guard let name = resource(vendor, dark: dark) else { return .bundle(app) }
+        let file = app.appendingPathComponent("Contents/Resources").appendingPathComponent(name)
+        return exists(file.path) ? .file(file) : nil
+    }
+}

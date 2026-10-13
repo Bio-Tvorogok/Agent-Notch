@@ -1,0 +1,161 @@
+import Foundation
+import JavaScriptCore
+
+/// Adds and removes our entries in ~/.claude/settings.json and ~/.codex/hooks.json.
+/// Other hooks, keys and their order stay as they were (JSON is edited with JavaScript, which keeps key order);
+/// the previous file is kept next to it as `<name>.agents-notch-backup`.
+public struct HookInstaller: Sendable {
+    public let home: URL
+    /// Where the helper is copied, so the hooks keep working when the app moves.
+    public let helper: URL
+    /// How long a permission request waits for a click before the agent asks in its own window.
+    public static let wait = 100
+
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        self.home = home
+        helper = home.appendingPathComponent("Library/Application Support/AgentsNotch/notch-hook")
+    }
+
+    public func file(_ v: Vendor) -> URL {
+        home.appendingPathComponent(v == .claude ? ".claude/settings.json" : ".codex/hooks.json")
+    }
+
+    /// One hook entry: the event, its options, and for a matcher group the tools it covers.
+    struct Entry {
+        let event: String
+        var opts: [String: Any] = [:]
+        var matcher: String?
+        /// Appended to the command: `--wait` tells notch-hook this entry is the one that holds the call for a click.
+        var args = ""
+    }
+
+    /// Tools answered through PreToolUse: Claude takes `permissionDecision` + `updatedInput` there.
+    static let answerMatcher = AnswerTools.names.joined(separator: "|")
+
+    /// Everything except the permission request and the answer entry returns at once.
+    /// Claude keeps the async PreToolUse entry for activity and adds a synchronous one for the question and plan tools.
+    static func events(_ v: Vendor) -> [Entry] {
+        let ask: [String: Any] = ["timeout": wait + 10]
+        switch v {
+        case .claude:
+            let quick: [String: Any] = ["async": true]
+            return [Entry(event: "PermissionRequest", opts: ask), Entry(event: "Notification", opts: quick),
+                    Entry(event: "PreToolUse", opts: quick), Entry(event: "PreToolUse", opts: ask, matcher: answerMatcher, args: " --wait"),
+                    Entry(event: "PostToolUse", opts: quick), Entry(event: "UserPromptSubmit", opts: quick),
+                    Entry(event: "Stop", opts: quick), Entry(event: "SessionEnd", opts: quick)]
+        case .codex:
+            return [Entry(event: "PermissionRequest", opts: ask), Entry(event: "PreToolUse"), Entry(event: "PostToolUse"),
+                    Entry(event: "UserPromptSubmit"), Entry(event: "Stop"), Entry(event: "SessionEnd", opts: ["timeout": 1])]
+        }
+    }
+
+    public func isInstalled(_ v: Vendor) -> Bool {
+        guard let text = try? String(contentsOf: file(v), encoding: .utf8),
+              let object = HookDecision.object(text), let hooks = object["hooks"] as? Rec else { return false }
+        let commands = managedCommands
+        return hooks.values.contains { groups in
+            (groups as? [Rec] ?? []).contains { group in
+                (group["hooks"] as? [Rec] ?? []).contains { hook in
+                    (hook["command"] as? String).map(commands.contains) == true
+                }
+            }
+        }
+    }
+
+    private var managedCommands: [String] {
+        [Vendor.claude, .codex].flatMap { v in
+            let command = "\"\(helper.path)\" \(v.rawValue)"
+            return [command, command + " --wait"]
+        }
+    }
+
+    static let appPinName = "app-path"
+    /// The app executable the helper may answer to, written by the app that placed it.
+    public var appPin: URL { helper.deletingLastPathComponent().appendingPathComponent(Self.appPinName) }
+
+    /// Copies the helper from the app bundle when it is missing or differs, and pins the app that may answer it.
+    public func placeHelper(from bundled: URL, app: String) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: helper.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let pin = appPin.appendingPathExtension("new")
+        try? fm.removeItem(at: pin)
+        guard fm.createFile(atPath: pin.path, contents: Data((app + "\n").utf8), attributes: [.posixPermissions: 0o600]) else {
+            throw POSIXError(.EIO)
+        }
+        guard rename(pin.path, appPin.path) == 0 else { throw POSIXError(.EIO) }
+        if fm.contentsEqual(atPath: bundled.path, andPath: helper.path) { return }
+        let tmp = helper.appendingPathExtension("new")
+        try? fm.removeItem(at: tmp)
+        try fm.copyItem(at: bundled, to: tmp)
+        _ = try fm.replaceItemAt(helper, withItemAt: tmp)
+        chmod(helper.path, 0o755)
+    }
+
+    public func install(_ v: Vendor) throws { try edit(v, add: true) }
+    public func uninstall(_ v: Vendor) throws { try edit(v, add: false) }
+
+    private func edit(_ v: Vendor, add: Bool) throws {
+        // A symlinked settings file (dotfile managers) is edited where it really lives.
+        let url = file(v).resolvingSymlinksInPath()
+        let fm = FileManager.default
+        // A symlink pointing nowhere: leave it for the person to fix rather than replace it with a file.
+        if (try? fm.destinationOfSymbolicLink(atPath: file(v).path)) != nil && !fm.fileExists(atPath: url.path) {
+            throw POSIXError(.ENOENT)
+        }
+        // Only a missing file counts as empty: one that cannot be read must never be overwritten.
+        let entries = add ? Self.events(v).map { e in
+            ["event": e.event, "opts": e.opts, "matcher": e.matcher ?? "", "args": e.args] as [String: Any]
+        } : []
+        let spec: [String: Any] = ["command": "\"\(helper.path)\" \(v.rawValue)", "managedCommands": managedCommands, "entries": entries]
+        var mode = 0o644
+        try HookFileUpdate.apply(read: {
+            fm.fileExists(atPath: url.path) ? try String(contentsOf: url, encoding: .utf8) : ""
+        }, merge: { try Self.merge($0, spec: spec) }, prepare: { old in
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            mode = (try? fm.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) ?? 0o644
+            let backup = url.appendingPathExtension("agents-notch-backup")
+            if !old.isEmpty && !fm.fileExists(atPath: backup.path) {
+                try Data(old.utf8).write(to: backup)
+                chmod(backup.path, 0o600)
+            }
+        }, write: { _, next in
+            try Data(next.utf8).write(to: url, options: .atomic)
+            chmod(url.path, mode_t(mode))
+        })
+    }
+
+    static let script = """
+    function merge(text, spec) {
+      const d = text.trim() ? JSON.parse(text) : {};
+      const hooks = d.hooks || {};
+      let removed = false;
+      for (const ev of Object.keys(hooks)) {
+        hooks[ev] = hooks[ev].flatMap(g => {
+          const kept = (g.hooks || []).filter(h => !spec.managedCommands.includes(h.command));
+          if (kept.length === (g.hooks || []).length) return [g];
+          removed = true;
+          return kept.length ? [Object.assign({}, g, { hooks: kept })] : [];
+        });
+        if (!hooks[ev].length) delete hooks[ev];
+      }
+      if (!removed && !spec.entries.length) return text;
+      for (const e of spec.entries) {
+        const h = Object.assign({ type: 'command', command: spec.command + e.args }, e.opts);
+        (hooks[e.event] = hooks[e.event] || []).push(e.matcher ? { matcher: e.matcher, hooks: [h] } : { hooks: [h] });
+      }
+      if (Object.keys(hooks).length) d.hooks = hooks; else delete d.hooks;
+      return JSON.stringify(d, null, 2) + '\\n';
+    }
+    """
+
+    static func merge(_ text: String, spec: [String: Any]) throws -> String {
+        guard let ctx = JSContext() else { throw POSIXError(.ENOMEM) }
+        var failure: String?
+        ctx.exceptionHandler = { _, e in failure = e?.toString() }
+        ctx.evaluateScript(script)
+        let out = ctx.objectForKeyedSubscript("merge")?.call(withArguments: [text, spec])
+        if let failure { throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: failure]) }
+        guard let s = out?.toString() else { throw POSIXError(.EINVAL) }
+        return s
+    }
+}
