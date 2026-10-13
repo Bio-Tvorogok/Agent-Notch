@@ -104,7 +104,7 @@ struct PromptBubble: View {
     let prompt: UserPrompt
     @State private var expanded = false
     @State private var clipped = false
-    static let tint = Color(red: 0.29, green: 0.55, blue: 1)
+    @Environment(\.theme) private var theme
 
     /// Keys survive a refresh that puts a new prompt on top, so an open bubble stays open.
     static func keyed(_ newestFirst: [UserPrompt]) -> [(key: String, prompt: UserPrompt)] {
@@ -141,14 +141,14 @@ struct PromptBubble: View {
                 .onPreferenceChange(Clipped.self) { clipped = $0 }
             if clipped || expanded {
                 Button(expanded ? CardText.less : CardText.more) { expanded.toggle() }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Self.tint)
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Ink.accent)
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Self.tint.opacity(0.16)))
-        .overlay(alignment: .leading) { Rectangle().fill(Self.tint).frame(width: 3) }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .background(RoundedRectangle(cornerRadius: min(theme.pillRadius, 10)).fill(Ink.accent.opacity(0.16)))
+        .overlay(alignment: .leading) { Rectangle().fill(Ink.accent).frame(width: 3) }
+        .clipShape(RoundedRectangle(cornerRadius: min(theme.pillRadius, 10)))
     }
 }
 

@@ -65,11 +65,14 @@ struct PromptChecks {
             user("<system-reminder>\nworktree\n</system-reminder>\nпочини сборку"),
             user("<ide_opened_file>The user opened a.swift</ide_opened_file>"),
             user("<bash-input>git status</bash-input><bash-stdout>clean</bash-stdout>"),
-            user("поясни, что значит <command-name>/x</command-name> в логе")
+            user("поясни, что значит <command-name>/x</command-name> в логе"),
+            user("<new-harness-insert kind=\"x\">\nкакой-то служебный текст\n</new-harness-insert>"),
+            user("<Button> в настройках съехала, поправь")
         ]) { path in
             let d = try XCTUnwrap(DetailReader.read(path: path, vendor: .claude))
             XCTAssertEqual(d.prompts.map(\.text), ["КАРТОЧКА: X-1\nсделай\n\nвот задача", "/decide выбор макета", "Задача: карточка",
-                                                    "почини сборку", "поясни, что значит <command-name>/x</command-name> в логе"])
+                                                    "почини сборку", "поясни, что значит <command-name>/x</command-name> в логе",
+                                                    "<Button> в настройках съехала, поправь"])
         }
     }
 

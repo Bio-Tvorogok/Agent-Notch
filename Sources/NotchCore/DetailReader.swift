@@ -143,7 +143,7 @@ struct DetailState {
                 .compactMap { $0["text"] as? String }
         }
         let own = parts.map(ownText).filter { text in
-            !text.isEmpty && !["<", "[Request interrupted", "# AGENTS.md instructions"].contains { text.hasPrefix($0) }
+            !text.isEmpty && !wrapped(text) && !["[Request interrupted", "# AGENTS.md instructions"].contains { text.hasPrefix($0) }
         }
         guard !own.isEmpty else { return nil }
         let text = own.joined(separator: "\n")
@@ -152,6 +152,11 @@ struct DetailState {
 
     private static let harness = try! NSRegularExpression(
         pattern: #"<(system-reminder|ide_[a-z_]+|bash-[a-z]+|local-command-[a-z]+|cross-session-message|task-notification)\b[^>]*>[\s\S]*?</\1>"#)
+    /// A whole text inside one tag is a harness insert; "<Button> is misaligned" is the owner's.
+    private static let wrapper = try! NSRegularExpression(pattern: #"^<([a-zA-Z][\w-]*)\b[^>]*>[\s\S]*</\1>$"#)
+    static func wrapped(_ text: String) -> Bool {
+        wrapper.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
     private static let pasted = try! NSRegularExpression(pattern: #"<pasted_content\b[^>]*>([\s\S]*?)</pasted_content\b[^>]*>"#)
 
     /// Drops what the harness wrapped around the owner's text, unwraps pasted text, spells slash commands as typed.
