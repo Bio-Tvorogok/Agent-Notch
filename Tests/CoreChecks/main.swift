@@ -67,6 +67,11 @@ run("hookInstaller") { try h.testInstallerKeepsOtherHooksAndRemovesOnlyOurs() }
 let detail = DetailChecks()
 run("detailClaude") { try detail.claude() }
 run("detailCodex") { try detail.codex() }
+run("codexExecCardLog") { try CodexCardLogChecks().execCardLog() }
+run("codexExecCardCompletionOnly") { try CodexCardLogChecks().execCompletionWithoutStart() }
+run("codexRolloutCardWebSearch") { try CodexCardLogChecks().rolloutWebSearch() }
+run("codexExecCardWebActions") { try CodexCardLogChecks().execWebActionsAndDeclinedCommand() }
+run("codexCardRunErrors") { try CodexCardLogChecks().codexRunErrors() }
 run("detailWorktrees") { try detail.worktrees() }
 run("detailTasksAndBounds") { try detail.tasksAndBounds() }
 run("detailCodexOutputs") { try detail.codexOutputs() }

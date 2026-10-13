@@ -55,6 +55,8 @@ struct DetailState {
     var rejected: Set<String> = []
     var failedCommands: Set<Int> = []
     var sessions: [String: Int] = [:]
+    /// Exec repeats the last stream error in its terminal turn.failed summary.
+    var execStreamError: String?
     /// Only the tail was read: its first prompt is not where the session began.
     var tailed = false
     /// A subagent's "user" turns are its parent's brief and follow-ups, not the owner's words.
@@ -178,7 +180,7 @@ struct DetailState {
         detail.prompts = subagent ? [] : Array(detail.prompts.suffix(50))
         for (id, entry) in fileEvents where id.map({ !rejected.contains($0) }) ?? true { aggregate(entry) }
         detail.commands = Array(detail.commands.suffix(30))
-        detail.errors = failures.filter { $0.value > 1 }.map { DetailError(text: $0.key, count: $0.value) }
+        detail.errors = failures.filter { log.vendor == .codex || $0.value > 1 }.map { DetailError(text: $0.key, count: $0.value) }
             .sorted { $0.count == $1.count ? $0.text < $1.text : $0.count > $1.count }
         detail.errors = Array(detail.errors.prefix(3))
         if let cwd = log.cwd {

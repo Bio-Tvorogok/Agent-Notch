@@ -161,7 +161,7 @@ struct DetailChecks {
         ]) { path in
             let d = try XCTUnwrap(DetailReader.read(path: path, vendor: .codex, agentId: nil))
             XCTAssertTrue(d.files.isEmpty); XCTAssertEqual(d.commands.first?.ok, false)
-            XCTAssertTrue(d.errors.isEmpty)
+            XCTAssertEqual(d.errors, [DetailError(text: "patch failed", count: 1), DetailError(text: "tests failed", count: 1)])
         }
         try fixture([
             item(["type": "custom_tool_call", "name": "exec", "call_id": "nested",
@@ -187,7 +187,8 @@ struct DetailChecks {
             ["type": "event_msg", "payload": ["type": "exec_command_end", "call_id": "c", "exit_code": 1, "output": "failed"]],
             ["type": "response_item", "payload": ["type": "function_call_output", "call_id": "c", "output": "{\"exit_code\":1,\"output\":\"failed\"}"]]
         ]) { path in
-            XCTAssertTrue(try XCTUnwrap(DetailReader.read(path: path, vendor: .codex)).errors.isEmpty)
+            XCTAssertEqual(try XCTUnwrap(DetailReader.read(path: path, vendor: .codex)).errors,
+                           [DetailError(text: "failed", count: 1)], "duplicate outcomes count as one failure")
         }
         try fixture([
             ["type": "assistant", "message": ["content": [["type": "tool_use", "name": "Edit", "id": "e", "input":
