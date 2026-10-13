@@ -59,6 +59,28 @@ Thirteen themes for the list, from plain Terminal to Phosphor, Blueprint, Pixel 
 
 Sounds are set per event: an agent waits for permission, asks a question, proposes a plan, finishes, fails, or a limit runs low. Out of the box only "waiting for permission" makes a sound. Change it in **Settings → Sounds**.
 
+## Keep the Mac awake with the lid closed
+
+The **Keep awake** switch sits at the top right of the agent list. It uses macOS's `pmset disablesleep` setting and shows the state read back from the system. The setting applies to the whole Mac and stays on after you quit Agent Notch, until you switch it off. Switch it off before putting the Mac in a bag.
+
+To switch without entering a password each time:
+
+1. Right-click the wing and open **Settings → General → Keep awake**.
+2. Click **Set up** next to **Passwordless switching** and confirm the permission.
+3. Enter an administrator password in the macOS dialog once.
+
+This installs `/private/etc/sudoers.d/agent-notch-keep-awake-<UID>`, a rule for your user that allows exactly `/usr/bin/pmset disablesleep 0` and `/usr/bin/pmset disablesleep 1` as root without a password. Any process running as your user can use this permission. The app validates the rule with `visudo`; it leaves the main sudoers file unchanged.
+
+The settings section shows whether the rule is installed and the result of the last access check. **Check access** verifies the permission using the current sleep setting. If another sudo policy requires a password, the app reports that the rule is ineffective.
+
+Click **Remove permission** in the same settings section to remove the rule. macOS asks for an administrator password to remove it. Removing the permission does not change the current sleep mode: use the panel's **Keep awake** switch to turn that off. The permission also survives uninstalling the app, so remove it in Settings before uninstalling. If the app is already gone, remove the rule in Terminal:
+
+```bash
+sudo rm "/private/etc/sudoers.d/agent-notch-keep-awake-$(id -u)"
+```
+
+Without this permission, the panel switch still works through the usual macOS administrator dialog. An external `caffeinate` process is not needed.
+
 ## Install
 
 ```bash

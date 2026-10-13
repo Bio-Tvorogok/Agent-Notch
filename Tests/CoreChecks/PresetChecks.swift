@@ -89,14 +89,13 @@ struct PresetChecks {
         let resources = chatgpt.appendingPathComponent("Contents/Resources")
         try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
-        try Data([1]).write(to: resources.appendingPathComponent("icon-codex-light.png"))
-        try Data([1]).write(to: resources.appendingPathComponent("icon-codex-dark-color.png"))
+        try Data([1]).write(to: resources.appendingPathComponent("icon-chatgpt.png"))
         let apps = ["com.anthropic.claudefordesktop": claude, "com.openai.codex": chatgpt]
         let locate: (String) -> URL? = { apps[$0] }
         XCTAssertEqual(AppIcon.source(for: .claude, dark: false, locate: locate), .bundle(claude))
         XCTAssertEqual(AppIcon.source(for: .claude, dark: true, locate: locate), .bundle(claude))
-        XCTAssertEqual(AppIcon.source(for: .codex, dark: false, locate: locate), .file(resources.appendingPathComponent("icon-codex-light.png")))
-        XCTAssertEqual(AppIcon.source(for: .codex, dark: true, locate: locate), .file(resources.appendingPathComponent("icon-codex-dark-color.png")))
+        XCTAssertEqual(AppIcon.source(for: .codex, dark: false, locate: locate), .file(resources.appendingPathComponent("icon-chatgpt.png")))
+        XCTAssertEqual(AppIcon.source(for: .codex, dark: true, locate: locate), .file(resources.appendingPathComponent("icon-chatgpt.png")))
     }
 
     func iconAppMissing() {
@@ -114,10 +113,11 @@ struct PresetChecks {
         let resources = chatgpt.appendingPathComponent("Contents/Resources")
         try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
         XCTAssertNil(AppIcon.source(for: .codex, dark: false, locate: { _ in chatgpt }))
-        try Data([1]).write(to: resources.appendingPathComponent("icon-codex-light.png"))
+        try Data([1]).write(to: resources.appendingPathComponent("icon-chatgpt.png"))
         XCTAssertNotNil(AppIcon.source(for: .codex, dark: false, locate: { _ in chatgpt }))
-        // The dark file is missing: no silent swap to a light icon on a dark background.
-        XCTAssertNil(AppIcon.source(for: .codex, dark: true, locate: { _ in chatgpt }))
+        // The reference Dock icon is the same in either appearance.
+        XCTAssertEqual(AppIcon.source(for: .codex, dark: true, locate: { _ in chatgpt }),
+                       .file(resources.appendingPathComponent("icon-chatgpt.png")))
     }
 
     // MARK: copy

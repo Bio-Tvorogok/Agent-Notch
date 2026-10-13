@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.start()
         }
         store.forceCramped = args.contains("--cramped")
+        KeepAwakeModel.shared.startMonitoring()
         let notch = NotchController(store: store)
         self.notch = notch
         store.onNewAsk = { [weak notch] in

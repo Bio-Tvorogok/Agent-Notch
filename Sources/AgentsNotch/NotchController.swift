@@ -100,6 +100,7 @@ final class NotchController {
 
     func showList() {
         if listPanel.isVisible { return }
+        KeepAwakeModel.shared.refresh()
         placeList()
         listPanel.orderFrontRegardless()
         SoundPlayer.shared.play(.listOpened, settings: store.settings)

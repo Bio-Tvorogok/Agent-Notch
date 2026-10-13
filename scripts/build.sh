@@ -2,9 +2,13 @@
 # Builds build/AgentsNotch.app with plain swiftc (no SwiftPM, no Xcode project).
 # Needs a working toolchain: Xcode selected via xcode-select (or DEVELOPER_DIR), license accepted.
 set -eu
-VERSION="${VERSION:-0.3.0}"
+VERSION="${VERSION:-0.4.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 cd "$(dirname "$0")/.."
+SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo unversioned)
+BASE_REVISION=$(git rev-parse origin/HEAD 2>/dev/null || echo unknown)
+SOURCE_DIRTY=true
+if [ -z "$(git status --porcelain 2>/dev/null)" ]; then SOURCE_DIRTY=false; fi
 TARGET="arm64-apple-macos14.0"
 OUT=build
 APP="$OUT/AgentsNotch.app"
@@ -33,6 +37,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>AgentNotchSourceRevision</key><string>$SOURCE_REVISION</string>
+  <key>AgentNotchBaseRevision</key><string>$BASE_REVISION</string>
+  <key>AgentNotchSourceDirty</key><$SOURCE_DIRTY/>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -45,4 +52,5 @@ PLIST
 
 codesign --force --sign - "$APP/Contents/Helpers/notch-hook"
 codesign --force --sign - "$APP"
+sh scripts/test-app-features.sh
 echo "built $APP"

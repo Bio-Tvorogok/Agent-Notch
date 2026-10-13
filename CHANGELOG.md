@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-14
+
+### Added
+
+- Keep awake switch at the top right of the agent list, with a highlighted On state and explicit On/Off labels. It controls macOS sleep prevention, including when the lid is closed; the mode stays on after quitting the app until switched off.
+- Optional passwordless switching in Settings → General → Keep awake. One administrator confirmation grants only `pmset disablesleep 0` and `pmset disablesleep 1` for the current user. Settings can check and remove the permission; both READMEs cover setup and removal.
+- Prompts card tab with the first user prompt and later prompts, newest first (#4).
+- Sound presets and a library for importing and selecting custom sounds (#5, #7).
+- Original Claude and OpenAI glyphs for logo marks when the desktop app is missing (#3).
+
+### Fixed
+
+- Codex cards show commands, web searches and errors in Log (#8).
+- Confirmed Codex automatic reviews stay in Codex rather than reopening as permission requests (#6).
+- Sleep-mode changes wait for system confirmation before reporting failure. The switch keeps showing the state read from macOS.
+- Passwordless setup rejects inaccessible sudoers directories so the installed rule remains discoverable for removal in Settings.
+- Builds check for the Prompts tab before producing an app and record their source revision.
+- CI runs on the renamed default branch, master (#3).
+
 ## [0.3.0] - 2026-10-13
 
 ### Added
@@ -37,6 +56,7 @@ First public release.
 - Finish toast, settings with presets, launch at login.
 - Homebrew cask, DMG and zip downloads.
 
+[0.4.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.1.0

@@ -33,7 +33,7 @@ struct PanelView: View {
 
     @ViewBuilder private func content(_ projects: [ProjectNode]) -> some View {
         if projects.isEmpty {
-            LimitChips(usage: store.usage).padding(.horizontal, 12)
+            PanelHeader(usage: store.usage).padding(.horizontal, 12)
             UsageInline(usage: store.usage)
             Note(text: SettingsListText.empty(minutes: settings.appearance.finishedMinutes))
         } else {
@@ -207,7 +207,7 @@ private struct Summary: View {
         let waiting = live.filter { $0.state == .waiting }.count
         let errors = live.filter { $0.state == .error }.count
         VStack(alignment: .leading, spacing: 6) {
-            LimitChips(usage: usage)
+            PanelHeader(usage: usage)
         HStack(spacing: 10) {
             VendorCount(vendor: .claude, n: live.filter { $0.vendor == .claude }.count, label: "Claude")
             VendorCount(vendor: .codex, n: live.filter { $0.vendor == .codex }.count, label: "Codex")
