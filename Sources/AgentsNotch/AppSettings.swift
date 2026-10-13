@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import NotchCore
@@ -32,6 +33,8 @@ final class AppSettings: ObservableObject {
     @Published var general: GeneralPrefs { didSet { save(general, "general") } }
     @Published var answerFromNotch: Bool { didSet { save(answerFromNotch, "answerFromNotch") } }
     @Published var sounds: Bool { didSet { if !sounds { SoundPlayer.shared.stop() }; save(sounds, "sounds") } }
+    let soundLibrary: SoundLibrary
+    @Published private(set) var customSounds: [CustomSound]
     @Published var soundEvents: SoundPrefs { didSet { save(soundEvents, "soundEvents") } }
     /// A small toast under the notch when an agent finishes.
     @Published var finishToast: Bool { didSet { save(finishToast, "finishToast") } }
@@ -48,8 +51,13 @@ final class AppSettings: ObservableObject {
     }
 
     /// Tests and snapshots supply an isolated suite, never the user's real preferences.
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, soundLibraryDirectory: URL? = nil) {
         self.defaults = defaults
+        let libraryDirectory = soundLibraryDirectory ?? (defaults === UserDefaults.standard
+            ? SoundLibrary.defaultDirectory
+            : FileManager.default.temporaryDirectory.appendingPathComponent("notch-sounds-" + UUID().uuidString))
+        soundLibrary = SoundLibrary(directory: libraryDirectory)
+        customSounds = soundLibrary.sounds
         func load<T: Codable>(_ key: String, _ fallback: T) -> T {
             SettingsStorage.read(T.self, key: key, default: fallback, in: defaults)
         }
@@ -140,6 +148,29 @@ final class AppSettings: ObservableObject {
     var preset: DisplayPreset? { DisplayPreset.matching(presetValues) }
     func apply(_ preset: DisplayPreset) { presetValues = preset.apply(to: presetValues) }
 
+    @discardableResult func importSound(_ source: URL) throws -> CustomSound {
+        let file = source.resolvingSymlinksInPath()
+        guard file.isFileURL, let decoded = NSSound(contentsOf: file, byReference: false), decoded.duration.isFinite, decoded.duration > 0 else {
+            throw SoundImportError.unsupportedFile
+        }
+        let sound = try soundLibrary.importFile(file)
+        guard let copied = soundLibrary.url(for: sound.id), NSSound(contentsOf: copied, byReference: false) != nil else {
+            try soundLibrary.remove(id: sound.id)
+            throw SoundImportError.unsupportedFile
+        }
+        customSounds = soundLibrary.sounds
+        return sound
+    }
+
+    func removeCustomSound(_ id: String) throws {
+        try soundLibrary.remove(id: id)
+        SoundPlayer.shared.stop()
+        var next = soundEvents
+        for event in SoundEvent.allCases where next[event] == id { next[event] = "" }
+        if next != soundEvents { soundEvents = next }
+        customSounds = soundLibrary.sounds
+    }
+
     var soundPreset: SoundPreset? { SoundPreset.matching(soundEvents) }
     func applySoundPreset(_ preset: SoundPreset) { soundEvents = preset.apply(to: soundEvents) }
 
@@ -169,5 +200,13 @@ final class AppSettings: ObservableObject {
         let unchanged = defaults.object(forKey: key) != nil && SettingsStorage.read(T.self, key: key, default: value, in: defaults) == value
         SettingsStorage.write(value, key: key, in: defaults)
         if ready, !resetting, !unchanged { SoundPlayer.shared.play(.settingsChanged, settings: self) }
+    }
+}
+
+private enum SoundImportError: LocalizedError {
+    case unsupportedFile
+    var errorDescription: String? {
+        Loc.t("This file could not be read as audio. Choose another audio file.",
+              "Не удалось прочитать этот файл как звук. Выберите другой аудиофайл.")
     }
 }

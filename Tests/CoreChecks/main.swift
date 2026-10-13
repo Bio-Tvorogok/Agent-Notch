@@ -207,6 +207,14 @@ let language = LanguageChecks()
 run("languageDetect") { language.detect() }
 run("languageEnglish") { language.english() }
 
+let libraryChecks = SoundLibraryChecks()
+run("soundLibraryStartupAndReplacedManifestLinks") { try libraryChecks.rejectsStartupDirectoryAndReplacedManifestLinks() }
+run("soundLibraryOwnedCopy") { try libraryChecks.persistsOwnedCopy() }
+run("soundLibraryDuplicatesAndRemoval") { try libraryChecks.duplicateNamesAndRemoval() }
+run("soundLibraryBadManifest") { try libraryChecks.rejectsBadManifestAndPaths() }
+run("soundLibraryRollback") { try libraryChecks.rollsBackPersistenceFailure() }
+run("soundLibraryNonFiles") { try libraryChecks.rejectsSymlinkAndNonFile() }
+run("soundLibraryDanglingAndReplacedDirectory") { try libraryChecks.rejectsDanglingManifestAndReplacedDirectory() }
 let soundChecks = SoundChecks()
 run("soundPresets") { try soundChecks.presets() }
 run("soundPreferences") { try soundChecks.preferences() }
