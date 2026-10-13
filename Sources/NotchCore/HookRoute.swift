@@ -9,7 +9,7 @@ public enum AnswerTools {
 extension HookEvent {
     /// The hook holds the call open for a click: a permission request, or the synchronous PreToolUse of a question or plan.
     public var waitsForAnswer: Bool {
-        isPermission || (vendor == .claude && name == "PreToolUse" && AnswerTools.names.contains(tool ?? ""))
+        (isPermission && !isAutomaticReview) || (vendor == .claude && name == "PreToolUse" && AnswerTools.names.contains(tool ?? ""))
     }
 }
 

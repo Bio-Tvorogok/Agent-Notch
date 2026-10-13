@@ -37,6 +37,7 @@ func run(_ name: String, _ body: () throws -> Void) {
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
 Loc.forced = .ru
+run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("claudeProcessStatus") { try l.testClaudeProcessStatusWins() }

@@ -22,6 +22,9 @@ public struct HookEvent: Sendable, Equatable {
     /// The tool input as JSON, kept only for a question or a plan: the reply sends it back with the answer.
     public var toolInput: String?
 
+    /// Confirmed automatic review for this Codex Bash request; the hook must leave that decision to Codex.
+    public private(set) var isAutomaticReview = false
+
     /// The id LogScanner gives the agent this event belongs to.
     public var agentKey: String { agentId.map { "\(sessionId)/\($0)" } ?? sessionId }
 
@@ -68,6 +71,9 @@ public struct HookEvent: Sendable, Equatable {
                   questions: tool == "AskUserQuestion" ? Question.parse(input) : [],
                   plan: tool == "ExitPlanMode" ? (input as? Rec)?["plan"] as? String : nil,
                   toolInput: interactive ? (input as? Rec).flatMap(HookDecision.json) : nil)
+        if vendor == .codex, name == "PermissionRequest", tool == "Bash", agentId == nil {
+            isAutomaticReview = CodexApprovalContext.isAutomatic(payload: p)
+        }
     }
 
     /// "Bash · pnpm test", "Edit · src/app.ts".
