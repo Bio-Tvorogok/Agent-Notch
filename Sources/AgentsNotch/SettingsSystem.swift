@@ -72,6 +72,7 @@ struct SettingsGeneral: View {
                 })).toggleStyle(.switch)
                 if loginStatus == .requiresApproval { Text(SettingsText.loginApproval).font(.caption).foregroundStyle(.secondary) }
             }
+            SettingsKeepAwake()
             Section {
                 LabeledContent {
                     Button(SettingsText.resetButton) { confirmReset = true }
