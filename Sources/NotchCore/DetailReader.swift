@@ -9,11 +9,16 @@ public enum DetailReader {
         let budget: UInt64 = 8 << 20
         var state = DetailState(vendor: vendor)
         if size > budget {
+            state.tailed = true
             guard (try? h.seek(toOffset: 0)) != nil,
                   let header = try? h.read(upToCount: 64 << 10) else { return nil }
             for line in header.split(separator: 10).dropLast() {
                 if let r = try? JSONSerialization.jsonObject(with: Data(line)) as? Rec {
+                    if vendor == .claude && agentId == nil && r["isSidechain"] as? Bool == true { continue }
                     state.metadata(r, subagent: agentId != nil)
+                    if state.detail.startPrompt == nil, let text = DetailState.prompt(r, vendor: vendor) {
+                        state.detail.startPrompt = UserPrompt(text: text, at: LogText.time(r["timestamp"]))
+                    }
                 }
             }
         }
@@ -28,6 +33,7 @@ public enum DetailReader {
             if vendor == .claude && agentId == nil && r["isSidechain"] as? Bool == true { continue }
             parsed = true
             state.metadata(r, subagent: agentId != nil)
+            state.prompt(r)
             if vendor == .claude { state.claude(r) } else { state.codex(r) }
         }
         guard parsed else { return nil }
@@ -44,6 +50,8 @@ struct DetailState {
     var rejected: Set<String> = []
     var failedCommands: Set<Int> = []
     var sessions: [String: Int] = [:]
+    /// Only the tail was read: its first prompt is not where the session began.
+    var tailed = false
     var fileCallId: String?
     /// Timestamp of the record being read, stamped on the files it changes.
     var fileAt: Double?
@@ -105,7 +113,38 @@ struct DetailState {
         if !text.isEmpty { detail.lastMessage = String(text.prefix(600)) }
     }
 
+    mutating func prompt(_ r: Rec) {
+        guard let text = Self.prompt(r, vendor: log.vendor) else { return }
+        detail.prompts.append(UserPrompt(text: text, at: LogText.time(r["timestamp"])))
+    }
+
+    /// Harness inserts open with a tag or a fixed header; what is left is the owner's own text.
+    static func prompt(_ r: Rec, vendor: Vendor) -> String? {
+        let parts: [String]
+        if vendor == .claude {
+            guard r["type"] as? String == "user", r["isMeta"] as? Bool != true,
+                  r["isCompactSummary"] as? Bool != true else { return nil }
+            if let kind = (r["origin"] as? Rec)?["kind"] as? String, kind != "human" { return nil }
+            let content = (r["message"] as? Rec)?["content"]
+            parts = (content as? String).map { [$0] }
+                ?? (content as? [Rec] ?? []).filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
+        } else {
+            let p = r["payload"] as? Rec ?? [:]
+            guard r["type"] as? String == "response_item", p["type"] as? String == "message",
+                  p["role"] as? String == "user" else { return nil }
+            parts = (p["content"] as? [Rec] ?? []).filter { $0["type"] as? String == "input_text" }
+                .compactMap { $0["text"] as? String }
+        }
+        let own = parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { text in
+            !text.isEmpty && !["<", "[Request interrupted", "# AGENTS.md instructions"].contains { text.hasPrefix($0) }
+        }
+        guard !own.isEmpty else { return nil }
+        return String(own.joined(separator: "\n").prefix(4000))
+    }
+
     mutating func finish() -> AgentDetail {
+        if !tailed { detail.startPrompt = detail.startPrompt ?? detail.prompts.first }
+        detail.prompts = Array(detail.prompts.suffix(50))
         for (id, entry) in fileEvents where id.map({ !rejected.contains($0) }) ?? true { aggregate(entry) }
         detail.commands = Array(detail.commands.suffix(30))
         detail.errors = failures.filter { $0.value > 1 }.map { DetailError(text: $0.key, count: $0.value) }

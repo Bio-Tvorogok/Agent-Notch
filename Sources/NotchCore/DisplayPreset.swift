@@ -51,11 +51,11 @@ public enum DisplayPreset: String, CaseIterable, Sendable {
     }
     public var limitChips: LimitChipMode { self == .brief ? .nearLimit : .always }
     public var limitWindows: [LimitPeriod] { self == .everything ? [.short, .weekly] : [.short] }
-    /// "All four tabs" includes commands and errors: without them the log tab is empty.
+    /// "All tabs" includes commands and errors: without them the log tab is empty.
     public var cardBlocks: Set<CardBlock> {
         switch self {
         case .brief: [.done, .remaining]
-        case .detailed: [.done, .remaining, .files, .log, .commands, .errors]
+        case .detailed: [.done, .remaining, .files, .log, .prompts, .commands, .errors]
         case .everything: Set(CardBlock.allCases)
         }
     }

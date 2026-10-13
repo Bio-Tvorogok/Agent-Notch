@@ -2,7 +2,7 @@ import AppKit
 import NotchCore
 
 /// Flags: `--fixture <scene>` shows a made-up scene instead of the real logs, `--cramped` forces the one-summary wing,
-/// `--open-list` opens the list on start, `--snapshot <dir>` writes PNGs of every scene and quits,
+/// `--snapshot-card <png> [--card-tab prompts]` draws the agent card on one tab, `--open-list` opens the list on start, `--snapshot <dir>` writes PNGs of every scene and quits,
 /// `--install-hooks` / `--uninstall-hooks` edit the Claude Code and Codex hook files and quit.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -17,7 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(Snapshot.runThemes(into: args[i + 1]) ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--snapshot-card"), i + 1 < args.count {
-            exit(Snapshot.runCard(to: args[i + 1]) ? 0 : 1)
+            let tab = args.firstIndex(of: "--card-tab").flatMap { $0 + 1 < args.count ? CardTab(rawValue: args[$0 + 1]) : nil }
+            exit(Snapshot.runCard(to: args[i + 1], tab: tab ?? .done) ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--snapshot-usage"), i + 1 < args.count {
             exit(Snapshot.runUsage(to: args[i + 1]) ? 0 : 1)

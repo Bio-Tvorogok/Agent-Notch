@@ -14,12 +14,19 @@ enum CardText {
     static var message: String { Loc.t("Last message", "Последнее сообщение") }
     static var errors: String { Loc.t("Errors and repeats", "Ошибки и повторы") }
     static var test: String { Loc.t("test", "тест") }
+    static var start: String { Loc.t("How it started", "С чего начали") }
+    static var later: String { Loc.t("Later", "Дальше") }
+    static var noPrompts: String { Loc.t("None of your prompts in the log yet", "Ваших запросов в журнале пока нет") }
+    static var startLost: String { Loc.t("The start of the session is outside the part of the log that was read", "Начало сессии не попало в прочитанную часть журнала") }
+    static var more: String { Loc.t("Show all", "Показать целиком") }
+    static var less: String { Loc.t("Collapse", "Свернуть") }
     static func cost(_ amount: String) -> String { Loc.t("session cost ", "цена сессии ") + amount }
     static var costHelp: String { Loc.t("Approximate cost at public model prices, not a bill", "Примерная цена по публичным ценам моделей, это не счёт") }
     static func tab(_ tab: CardTab) -> String {
         switch tab {
         case .done: Loc.t("Done", "Сделано"); case .remaining: Loc.t("Remaining", "Осталось")
         case .files: Loc.t("Files", "Файлы"); case .log: Loc.t("Log", "Лог")
+        case .prompts: Loc.t("Prompts", "Запросы")
         }
     }
 }
@@ -32,8 +39,15 @@ struct CardView: View {
     var context: ContextUsage?
     var cost: SessionCost?
     var onOpen: () -> Void = {}
-    @State private var tab: CardTab = .done
+    @State private var tab: CardTab
     @EnvironmentObject private var settings: AppSettings
+
+    init(agent: Agent, detail: AgentDetail?, loading: Bool = false, blocks: [CardBlock] = CardBlock.allCases,
+         context: ContextUsage? = nil, cost: SessionCost? = nil, tab: CardTab = .done, onOpen: @escaping () -> Void = {}) {
+        self.agent = agent; self.detail = detail; self.loading = loading; self.blocks = blocks
+        self.context = context; self.cost = cost; self.onOpen = onOpen
+        _tab = State(initialValue: tab)
+    }
 
     private var tabs: [CardTab] { CardContent.tabs(blocks: blocks) }
     private var visibleTab: CardTab? { tabs.contains(tab) ? tab : tabs.first }

@@ -31,6 +31,19 @@ struct CardTabBody: View {
                         Text("−\(file.removed)").foregroundStyle(Ink.error)
                     }
                 }
+            case .prompts:
+                let prompts = CardContent.prompts(detail)
+                if prompts.start == nil && prompts.later.isEmpty { Text(CardText.noPrompts).foregroundStyle(dim) }
+                if let start = prompts.start {
+                    section(CardText.start) { PromptBubble(prompt: start) }
+                } else if !prompts.later.isEmpty {
+                    Text(CardText.startLost).font(.system(size: 10.5)).foregroundStyle(dim)
+                }
+                if !prompts.later.isEmpty {
+                    section(CardText.later) {
+                        ForEach(Array(prompts.later.enumerated()), id: \.offset) { _, prompt in PromptBubble(prompt: prompt) }
+                    }
+                }
             case .log:
                 if (!blocks.contains(.commands) || detail.commands.isEmpty) && (!blocks.contains(.errors) || detail.errors.isEmpty) {
                     Text(CardText.noLog).foregroundStyle(dim)
@@ -82,5 +95,34 @@ struct CardTabBody: View {
             Text(title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(dim)
             content()
         }
+    }
+}
+
+/// The owner's own words stand out from the agent's: a tinted block with a bar on the left.
+struct PromptBubble: View {
+    let prompt: UserPrompt
+    @State private var expanded = false
+    static let tint = Color(red: 0.29, green: 0.55, blue: 1)
+
+    private var long: Bool { prompt.text.count > 160 || prompt.text.filter { $0 == "\n" }.count > 2 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let at = prompt.at {
+                Text(Date(timeIntervalSince1970: at), format: .dateTime.hour().minute())
+                    .font(.system(size: 10)).foregroundStyle(dim).monospacedDigit()
+            }
+            Text(prompt.text).lineLimit(expanded ? nil : 3).fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            if long {
+                Button(expanded ? CardText.less : CardText.more) { expanded.toggle() }
+                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Self.tint)
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Self.tint.opacity(0.16)))
+        .overlay(alignment: .leading) { Rectangle().fill(Self.tint).frame(width: 3) }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }
