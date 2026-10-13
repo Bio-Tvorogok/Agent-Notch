@@ -9,7 +9,6 @@ See who is working, who is stuck and who is waiting for you. Approve their comma
 
 [![Release](https://img.shields.io/github/v/release/Forichok/Agent-Notch?style=flat-square&color=orange)](https://github.com/Forichok/Agent-Notch/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Forichok/Agent-Notch/total?style=flat-square&color=blue)](https://github.com/Forichok/Agent-Notch/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/Forichok/Agent-Notch/ci.yml?style=flat-square&label=checks)](https://github.com/Forichok/Agent-Notch/actions/workflows/ci.yml)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?style=flat-square&logo=apple)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
@@ -46,8 +45,6 @@ Past six live agents in a project, the marks fold into counters like `● 6 ■ 
 
 ## Answer agents from the notch
 
-<img src="assets/screens/ask.png" width="640" align="right" alt="Two permission requests in the list with Allow and Deny buttons; rm -rf is highlighted in red">
-
 Install the hooks once, and a permission request stops waiting silently in a terminal you can't see. The list opens, a sound plays, and the full command is shown exactly as the agent will run it.
 
 - **Allow** — click, or press <kbd>⌃</kbd><kbd>⌥</kbd><kbd>Y</kbd>
@@ -61,11 +58,9 @@ Questions (`AskUserQuestion`) get their options as buttons plus a free-text answ
 
 Nothing is ever approved without a human click. If no one answers in 100 seconds, or the app isn't running, the hook steps aside and the agent asks in its own window as usual. Every decision is appended to `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
 
-<br clear="right">
+<p align="center"><img src="assets/screens/ask.png" width="720" alt="Two permission requests in the list with Allow and Deny buttons; rm -rf is highlighted in red"></p>
 
 ## Everything else
-
-<img src="assets/screens/heavy.png" width="640" align="right" alt="The list with three projects, sessions and folded subagent trees">
 
 - **Projects → sessions → subagents**, grouped by git root, so worktrees land in their repo. Big calm families of subagents fold away.
 - **What each agent is doing right now**, under its name: `Bash · pnpm test`, `Edit · src/app.ts`.
@@ -75,7 +70,7 @@ Nothing is ever approved without a human click. If no one answers in 100 seconds
 - **Finish toast** under the notch when an agent is done.
 - **Settings** with three presets: brief, detailed, everything.
 
-<br clear="right">
+<p align="center"><img src="assets/screens/heavy.png" width="720" alt="The list with three projects, sessions and folded subagent trees"></p>
 
 ## Install
 
