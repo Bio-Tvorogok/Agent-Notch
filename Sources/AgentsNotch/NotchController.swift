@@ -10,6 +10,7 @@ final class NotchController {
     private let store: Store
     private let wingPanel = NotchController.makePanel()
     private let listPanel = NotchController.makePanel()
+    private let listActivity = SurfaceActivity()
     private let toast = FinishToast()
     private lazy var cardPanel = CardPanel(store: store, list: listPanel) { [weak self] in self?.hideList() }
     private let wingHost: ClickHost
@@ -24,7 +25,10 @@ final class NotchController {
         wingHost = ClickHost(rootView: AnyView(EmptyView()))
         wingHost.onClick = { [weak self] in self?.toggleList() }
         wingHost.onRightClick = { [weak self] event in self?.showMenu(event) }
-        let list = NSHostingView(rootView: PanelView(store: store) { [weak self] h in self?.resizeList(h) }.environmentObject(store.settings).environmentObject(store.usage))
+        let list = NSHostingView(rootView: ActiveSurface(activity: listActivity) {
+            PanelView(store: store) { [weak self] h in self?.resizeList(h) }
+                .environmentObject(store.settings).environmentObject(store.usage)
+        })
         listPanel.contentView = list
         store.finisher.onNotice = { [weak self] n in self?.showToast(n) }
         _ = cardPanel
@@ -102,6 +106,7 @@ final class NotchController {
         if listPanel.isVisible { return }
         KeepAwakeModel.shared.refresh()
         placeList()
+        listActivity.setActive(true)
         listPanel.orderFrontRegardless()
         SoundPlayer.shared.play(.listOpened, settings: store.settings)
         settingsShortcut = SettingsListShortcut(panel: listPanel)
@@ -114,6 +119,7 @@ final class NotchController {
     private func hideList() {
         guard listPanel.isVisible else { return }
         listPanel.orderOut(nil)
+        listActivity.setActive(false)
         SoundPlayer.shared.play(.listClosed, settings: store.settings)
         cardPanel.close()
         store.selected = nil

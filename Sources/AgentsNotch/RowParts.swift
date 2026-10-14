@@ -54,8 +54,8 @@ struct RowParts: View {
         case .runningTime:
             if agent.state.isLive, agent.startedAt > 0 {
                 // Seconds are shown under a minute, so tick every second until then.
-                TimelineView(.periodic(from: .now, by: Date().timeIntervalSince1970 - agent.startedAt < 60 ? 1 : 60)) { context in
-                    let now = context.date.timeIntervalSince1970
+                SurfaceTimeline(every: Date().timeIntervalSince1970 - agent.startedAt < 60 ? 1 : 60) { date in
+                    let now = date.timeIntervalSince1970
                     // Over two days is a start time from somewhere else, not a run: show nothing rather than nonsense.
                     if now - agent.startedAt < 2 * 86_400, let text = CardFormat.duration(startedAt: agent.startedAt, now: now) {
                         metadata(text, width: 70)

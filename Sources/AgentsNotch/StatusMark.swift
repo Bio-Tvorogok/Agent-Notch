@@ -14,12 +14,12 @@ struct StatusMark: View {
     var body: some View {
         Group {
             if state == .working {
-                TimelineView(.periodic(from: .now, by: 0.25)) { context in
-                    drawing.opacity(0.86 + 0.14 * sin(context.date.timeIntervalSinceReferenceDate * 2))
+                SurfaceTimeline(every: 0.25) { date in
+                    drawing.opacity(0.86 + 0.14 * sin(date.timeIntervalSinceReferenceDate * 2))
                 }
             } else if state == .waiting {
-                TimelineView(.periodic(from: .now, by: 0.5)) { context in
-                    drawing.opacity(Int(context.date.timeIntervalSinceReferenceDate * 2) % 2 == 0 ? 1 : 0.4)
+                SurfaceTimeline(every: 0.5) { date in
+                    drawing.opacity(Int(date.timeIntervalSinceReferenceDate * 2) % 2 == 0 ? 1 : 0.4)
                 }
             } else { drawing }
         }

@@ -40,12 +40,22 @@ Loc.forced = .ru
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
+run("scannerRewrittenLog") { try ScannerRewriteChecks().rewrittenLogClearsThePreviousTurn() }
+run("scannerPartialLines") { try ScannerRewriteChecks().partialLinesWaitForTheirNewline() }
+run("logTimeValues") { LogTimeChecks().datesKeepTheirValues() }
+run("logTimeInvalidDoesNotExtendSession") { try LogTimeChecks().invalidTimeDoesNotExtendSession() }
 run("claudeProcessStatus") { try l.testClaudeProcessStatusWins() }
 run("stateRules") { l.testStateRules() }
 run("subagentHandback") { try l.testSubagentHandbackEndsTheSubagent() }
 run("execArgs") { ExecChecks().testReadsExecRunArguments() }
 run("execShell") { ExecChecks().testShellWrapperIsStripped() }
 run("execRun") { try ExecChecks().testExecRunIsWorkingUntilItsProcessEnds() }
+run("execRelativeCwd") { ExecIdentityChecks().relativeDirectoryUsesTheRunningProcess() }
+run("execResumeCwd") { ExecIdentityChecks().resumedRunUsesTheRunningProcessDirectory() }
+run("execSessionIdentity") { try ExecIdentityChecks().retainedSessionAndExecStreamMakeOneRow() }
+run("execDistinctIdentity") { try ExecIdentityChecks().distinctThreadsInOneDirectoryStaySeparate() }
+run("execRetainedLifecycle") { try ExecIdentityChecks().retainedSessionUsesExecLifecycle() }
+run("execLongIdentity") { try ExecIdentityChecks().longExecStreamKeepsThreadIdentity() }
 run("lineageNearest") { LineageChecks().testPicksTheNearestKnownParent() }
 run("lineageEnv") { LineageChecks().testReadsBothVendorIdsFromTheEnvironment() }
 run("claudeQuestion") { try l.testClaudeQuestionWaitsUntilAnswered() }

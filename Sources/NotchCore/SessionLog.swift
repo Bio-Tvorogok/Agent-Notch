@@ -31,6 +31,8 @@ public struct SessionLog: Sendable {
 
     var customTitle: String?
     var prompt: String?
+    /// Latest Codex turn, so a retained exec stream cannot override a later interactive turn.
+    var turnStartedAt: Double?
     var subTitle: String?
     var pendingTools: [String: String] = [:]
 
@@ -53,7 +55,7 @@ public struct SessionLog: Sendable {
         if let live {
             // The process is gone, or (for a main session) it says outright what it is doing.
             if !live.alive { return age < finishedRetention ? .done : nil }
-            if parentId == nil {
+            if parentId == nil || vendor == .codex {
                 switch live.status {
                 case "waiting": return .waiting
                 case "busy": return errorStreak >= Self.stuckAfter && age < Self.quietWorking ? .error : .working
@@ -143,10 +145,50 @@ enum LogText {
         return f
     }()
     private nonisolated(unsafe) static let isoPlain = ISO8601DateFormatter()
+    private static let utcFractional = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+    private static let utcPlain = Date.ISO8601FormatStyle()
 
     static func time(_ v: Any?) -> Double? {
         guard let s = v as? String else { return nil }
+        let count = s.utf8.count
+        if (count == 20 || count == 24), commonUTC(s),
+           let date = try? (count == 24 ? utcFractional : utcPlain).parse(s) {
+            // Keep the existing millisecond precision and avoid reference-date conversion
+            // noise when comparing a turn with a file date.
+            return (date.timeIntervalSince1970 * 1000).rounded() / 1000
+        }
         return (iso.date(from: s) ?? isoPlain.date(from: s))?.timeIntervalSince1970
+    }
+
+    /// Only canonical modern log dates use the fast parser; preserve legacy handling otherwise.
+    private static func commonUTC(_ text: String) -> Bool {
+        var text = text
+        return text.withUTF8 { b in
+            guard b.count == 20 || b.count == 24, b.last == 90,
+                  b[4] == 45, b[7] == 45, b[10] == 84, b[13] == 58, b[16] == 58 else { return false }
+            func number(_ start: Int, _ length: Int) -> Int? {
+                var value = 0
+                for i in start..<(start + length) {
+                    guard b[i] >= 48, b[i] <= 57 else { return nil }
+                    value = value * 10 + Int(b[i] - 48)
+                }
+                return value
+            }
+            guard let year = number(0, 4), year >= 1970,
+                  let month = number(5, 2), (1...12).contains(month),
+                  let day = number(8, 2), day >= 1,
+                  let hour = number(11, 2), hour < 24,
+                  let minute = number(14, 2), minute < 60,
+                  let second = number(17, 2), second < 60 else { return false }
+            let days: Int
+            switch month {
+            case 2: days = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) ? 29 : 28
+            case 4, 6, 9, 11: days = 30
+            default: days = 31
+            }
+            guard day <= days else { return false }
+            return b.count == 20 || (b[19] == 46 && number(20, 3) != nil)
+        }
     }
 }
 

@@ -66,10 +66,10 @@ final class CardDetailModel: ObservableObject {
             let cost = readsUsage ? agent.logPath.flatMap { SessionSpend.shared.read(path: $0, vendor: agent.vendor) } : nil
             Task { @MainActor [weak self] in
                 guard let self, self.generation == generation else { return }
-                self.detail = detail
+                if self.detail != detail { self.detail = detail }
                 if self.context != context { self.context = context }
                 if self.cost != cost { self.cost = cost }
-                self.loading = false
+                if self.loading { self.loading = false }
                 self.reading = false
             }
         }

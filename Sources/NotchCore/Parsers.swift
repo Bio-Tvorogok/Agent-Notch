@@ -120,7 +120,9 @@ enum CodexLine {
         }
         s.ask = nil
         switch t {
-        case "task_started", "user_message": s.turnEnded = false
+        case "task_started", "user_message":
+            s.turnEnded = false
+            s.turnStartedAt = at ?? s.turnStartedAt
         case "task_complete", "turn_aborted":
             s.turnEnded = true
             s.activity = nil
