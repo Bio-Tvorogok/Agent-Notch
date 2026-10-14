@@ -19,3 +19,5 @@ jobs:
         run: ./scripts/test.sh
       - name: Build
         run: ./scripts/build.sh
+      - name: Performance regression checks
+        run: ./scripts/test-app-performance.sh

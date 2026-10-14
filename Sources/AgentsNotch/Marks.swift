@@ -19,8 +19,8 @@ struct MarkView: View {
 
     var body: some View {
         if mark.state == .waiting {
-            TimelineView(.periodic(from: .now, by: 0.5)) { ctx in
-                shape.opacity(Int(ctx.date.timeIntervalSinceReferenceDate * 2) % 2 == 0 ? 1 : 0.25)
+            SurfaceTimeline(every: 0.5) { date in
+                shape.opacity(Int(date.timeIntervalSinceReferenceDate * 2) % 2 == 0 ? 1 : 0.25)
             }
         } else {
             shape

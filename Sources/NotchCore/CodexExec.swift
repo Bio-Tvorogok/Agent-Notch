@@ -41,6 +41,12 @@ public struct ExecRun: Equatable, Sendable {
             }
             i += 1
         }
+        // Resume omits -C, and relative paths belong to the running process, not this app.
+        if run.cwd == nil || run.cwd?.hasPrefix("/") == false {
+            run.cwd = Proc.cwd(pid).map { base in
+                URL(fileURLWithPath: base).appendingPathComponent(run.cwd ?? ".").standardizedFileURL.path
+            }
+        }
         return run
     }
 
@@ -144,6 +150,14 @@ enum Proc {
         let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
         guard proc_pidfdinfo(pid, 1, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return nil }
         let path = withUnsafeBytes(of: &info.pvip.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
+        return path.isEmpty ? nil : path
+    }
+
+    static func cwd(_ pid: Int32) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
         return path.isEmpty ? nil : path
     }
 }

@@ -1,3 +1,7 @@
+# GitHub Actions billing exception
+
+Owner instruction: ignore GitHub Actions failures caused solely by an account billing lock when deciding whether to merge. Confirm the billing cause in the check annotations, and require the corresponding local checks and independent review to pass. Actual test or build failures still block merging. Keep branch approval requirements; if GitHub refuses the merge, stop and report without bypassing protection.
+
 # Updating the installed app
 
 Before replacing `/Applications/Agent Notch.app`, fetch `origin` and check that the build's source includes the fresh remote default branch. Resolve the default branch through `origin/HEAD`; do not assume the current checkout is up to date. If `git merge-base --is-ancestor origin/HEAD HEAD` fails, integrate the missing changes in the feature branch and verify them before installing.
