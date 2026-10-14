@@ -42,6 +42,7 @@ enum SettingsText {
     static var cardBlocks: String { Loc.t("Blocks…", "Блоки…") }
     static var rowHints: [RowPart: String] { Loc.isRussian ? [
         .model: "Например, opus или gpt-6.1",
+        .effort: "Полоски: насколько глубоко агент размышляет",
         .activity: "Последняя команда или файл",
         .branch: "Ветка git, в которой работает агент",
         .runningTime: "Сколько агент уже работает",
@@ -49,6 +50,7 @@ enum SettingsText {
         .cost: "Примерная цена сессии",
     ] : [
         .model: "For example, opus or gpt-6.1",
+        .effort: "Bars: how deeply the agent thinks",
         .activity: "The latest command or file",
         .branch: "The git branch the agent works in",
         .runningTime: "How long the agent has been working",
