@@ -5,7 +5,7 @@ struct SettingsAppearance: View {
     @ObservedObject var settings: AppSettings
     @State private var rowOrder = false
     @State private var cardOrder = false
-    private let rowSwitches: [RowPart] = [.model, .activity, .branch, .runningTime, .context, .cost]
+    private let rowSwitches: [RowPart] = [.model, .effort, .activity, .branch, .runningTime, .context, .cost]
 
     var body: some View {
         Form {
