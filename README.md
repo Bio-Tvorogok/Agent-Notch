@@ -12,15 +12,17 @@ See who's working and who's waiting for you. Approve commands without switching 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?style=flat-square&logo=apple)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-<img src="assets/demo.gif" width="820" alt="Agents appear beside the notch, one starts waiting, the list drops down and the command is approved">
+<a href="https://github.com/user-attachments/assets/e0233797-1f4f-46ff-a82c-b08d428b05c9"><img src="assets/promo.gif" width="820" alt="From the launch film: a laptop on a desk with the agent list in the notch, the lid opening at dawn, the theme recolouring the room"></a>
 
 ```bash
 brew install --cask forichok/tap/agent-notch
 ```
 
-[Download DMG](https://github.com/Forichok/Agent-Notch/releases/latest) · [Watch the video](assets/agent-notch-promo.mp4) · [Русский](README.ru.md)
+[Download DMG](https://github.com/Forichok/Agent-Notch/releases/latest) · [Watch the film (72 s)](https://github.com/user-attachments/assets/e0233797-1f4f-46ff-a82c-b08d428b05c9) · [Русский](README.ru.md)
 
 </div>
+
+https://github.com/user-attachments/assets/e0233797-1f4f-46ff-a82c-b08d428b05c9
 
 ## Why
 
@@ -35,6 +37,8 @@ Agent Notch puts one mark per agent beside the notch. A glance shows who is busy
 | Claude or Codex | Full for big models, dimmed for haiku and luna | 🟢 working · 🟡 waiting for you · 🔴 stuck · ⚪ done |
 
 Subagents are smaller and sit next to their parent. Past six agents in a project, the marks fold into counters.
+
+<img src="assets/demo.gif" width="820" alt="Agents appear beside the notch, one starts waiting, the list drops down and the command is approved">
 
 ## Answer from the notch
 
