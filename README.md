@@ -22,6 +22,8 @@ brew install --cask forichok/tap/agent-notch
 
 </div>
 
+https://github.com/user-attachments/assets/e0233797-1f4f-46ff-a82c-b08d428b05c9
+
 ## Why
 
 You run three Claude Code sessions and a couple of Codex workers. One of them has been sitting on `rm -rf dist?` for twenty minutes, and you find out only when you switch windows.
