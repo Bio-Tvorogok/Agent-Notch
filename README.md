@@ -5,7 +5,7 @@
   <img src="assets/readme/hero-light.svg" width="820" alt="Agent Notch. Agent marks sit beside the notch; one turns yellow, a permission card drops down and a click on Allow sends it back to work">
 </picture>
 
-**Claude Code and Codex sessions in the MacBook notch.**<br>
+**Your Claude Code and Codex agents, live in the MacBook notch.**<br>
 See who's working and who's waiting for you. Approve commands without switching windows.
 
 [![Release](https://img.shields.io/github/v/release/Forichok/Agent-Notch?style=flat-square&color=orange)](https://github.com/Forichok/Agent-Notch/releases/latest)
@@ -23,17 +23,19 @@ brew install --cask forichok/tap/agent-notch
 
 </div>
 
-## What it shows
+## Why
 
-Agent Notch puts one mark per agent beside the notch. A glance shows the reported state, and permission requests can be answered from the list. It reads the logs Claude Code and Codex already keep on your Mac and makes no network requests.
+You run three Claude Code sessions and a couple of Codex workers. One of them has been sitting on `rm -rf dist?` for twenty minutes, and you find out only when you switch windows.
+
+Agent Notch puts one mark per agent beside the notch. A glance shows who is busy, and a click answers whoever is waiting. It reads the logs Claude Code and Codex already keep on your Mac and makes no network requests.
 
 ## How to read the wing
 
 | Logo | Brightness | Dot |
 |---|---|---|
-| Claude or Codex | Full for big models, dimmed for haiku, luna and mini models | 🟢 working · 🟡 waiting for you · 🔴 stuck · ⚪ done |
+| Claude or Codex | Full for big models, dimmed for haiku and luna | 🟢 working · 🟡 waiting for you · 🔴 stuck · ⚪ done |
 
-By default, subagents are smaller and sit next to their parent. Past six live agents in a project, working agents fold into counters; waiting and failed agents keep separate marks. These display settings can be changed.
+Subagents are smaller and sit next to their parent. Past six agents in a project, the marks fold into counters.
 
 <img src="assets/demo.gif" width="820" alt="Agents appear beside the notch, one starts waiting, the list drops down and the command is approved">
 
@@ -45,12 +47,12 @@ By default, subagents are smaller and sit next to their parent. Past six live ag
 <td width="50%"><img src="assets/screens/heavy.png" alt="Projects, sessions and subagent trees"></td>
 </tr>
 <tr>
-<td valign="top"><b>Permissions for Claude Code and Codex.</b> Allow with <kbd>⌃⌥Y</kbd> or deny with <kbd>⌃⌥N</kbd>. Risky commands like <code>rm -rf</code> and <code>git push --force</code> turn red and require a click to allow. Answering questions and accepting or returning plans are Claude Code only.</td>
-<td valign="top"><b>Projects and subagents.</b> The latest reported tool, subscription limits, context and approximate cost where data is available. A click opens the card; a double-click tries to open the session’s app or window, then falls back to its folder.</td>
+<td valign="top"><b>Permissions, questions, plans.</b> Allow with <kbd>⌃⌥Y</kbd>, deny with <kbd>⌃⌥N</kbd>, or pick an answer. Answering questions and accepting or returning plans are Claude Code only. Risky commands like <code>rm -rf</code> and <code>git push --force</code> turn red and need a click.</td>
+<td valign="top"><b>Every project and subagent.</b> What each agent is running right now, plan limits, context and cost. A double-click jumps back to its chat or folder.</td>
 </tr>
 </table>
 
-Allow and Deny shortcuts act on the oldest request after the open list has shown it for half a second. Risky, multiline, long or missing command details require a click to allow. Eligible Claude Code requests also offer “Always allow” for the displayed project rule. If nobody answers in 100 seconds, the hook hands the request back to the agent.
+Approve with a click or a shortcut. “Always allow” is Claude Code only. If nobody answers in 100 seconds, the agent asks in its own window as usual.
 
 ## Prompts and skills on a hotkey
 
@@ -61,7 +63,7 @@ Allow and Deny shortcuts act on the oldest request after the open list has shown
 </tr>
 <tr>
 <td valign="top"><b>Saved prompts.</b> <kbd>⌃⌥P</kbd> opens a search box over any app; <kbd>↩</kbd> pastes the prompt where the cursor is, <kbd>⌘↩</kbd> only copies it, <kbd>⌘1</kbd>–<kbd>⌘9</kbd> picks by row. What you used most lately comes first.</td>
-<td valign="top"><b>Installed skills.</b> <kbd>⇥</kbd> switches to discovered Claude Code and Codex skills: yours, built in, from plugins and from your projects. <kbd>↩</kbd> pastes the call: <code>/name</code>, <code>/plugin:name</code> or <code>$name</code>.</td>
+<td valign="top"><b>Installed skills.</b> <kbd>⇥</kbd> switches to every skill Claude Code and Codex can load: yours, built in, from plugins and from your projects. <kbd>↩</kbd> pastes the call: <code>/name</code>, <code>/plugin:name</code> or <code>$name</code>.</td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/prompts-stats.png" alt="Settings, Prompts and skills, Statistics: totals, a bar per day for 14 days and the most used prompts"></td>
@@ -73,7 +75,7 @@ Allow and Deny shortcuts act on the oldest request after the open list has shown
 </tr>
 </table>
 
-Pasting goes through the clipboard and a ⌘V the app presses, so it needs Accessibility access; without it the prompt is copied. By default, the clipboard is restored after a short delay, unless another app has changed it; restoration can be disabled in Settings. Prompts live in `~/Library/Application Support/AgentsNotch/prompts.json`.
+Pasting goes through the clipboard and a ⌘V the app presses, so it needs Accessibility access; without it the prompt is copied. By default, the clipboard is put back after a short delay, unless another app has changed it. Prompts live in `~/Library/Application Support/AgentsNotch/prompts.json`.
 
 ## Themes and sounds
 
@@ -140,17 +142,17 @@ Requires macOS 14+ on Apple Silicon.
 <details>
 <summary>FAQ</summary>
 
-**Terminal, VS Code, desktop app?** Discovery reads local session logs rather than a particular app window. Opening the exact session depends on its recorded origin; a folder may open instead.
+**Terminal, VS Code, desktop app?** All of them. Agent Notch reads the session logs, so it doesn't matter where the agent runs.
 
-**Do I need the hooks?** Only to answer from the notch. Without them you can still see sessions found in the logs. Codex discovery currently checks only today’s and yesterday’s dated folders, so older resumed threads may be missing. States are inferred and can become “done” after silence; this does not prove success.
+**Do I need the hooks?** Only to answer from the notch. Without them you still see every agent and its state.
 
 **Language?** English, or Russian on a Russian system. Force one with `AGENT_NOTCH_LANG=en` or `ru`.
 
-**What does it read?** Session and status files under `~/.claude` and `~/.codex`, running Codex exec logs, plus the Claude app's plan-usage file. The Skills tab also reads user, system and plugin skill folders, including `~/.agents/skills`, and project skills from live sessions and projects listed in `~/.claude.json` and `~/.codex/config.toml`. Hook decisions are logged to `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
+**What does it read?** Files under `~/.claude` and `~/.codex`, plus the Claude app's plan-usage file. The Skills tab also reads `SKILL.md` files in the projects listed in `~/.claude.json` and `~/.codex/config.toml`. Hook decisions are logged to `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
 
-**Why Accessibility?** To read menu geometry for wing compression and press ⌘V when you paste a prompt.
+**Why Accessibility?** To shrink the wing when a menu reaches it and to press ⌘V when you paste a prompt. Nothing else.
 
-**Uninstall?** `brew uninstall --zap agent-notch` attempts to remove the hooks before deleting app data. The script currently ignores cleanup errors; uninstall the hooks from the app first if you need to confirm they were removed.
+**Uninstall?** `brew uninstall --zap agent-notch` also removes the hooks.
 </details>
 
 <details>
