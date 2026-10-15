@@ -12,7 +12,7 @@ The app code is the same as in 0.4.1, which was built after these changes landed
 
 ### Added
 
-- Answer delivery is confirmed. A notch answer counts as delivered only after the hook passes it to the agent and reports back. Otherwise the row turns red with "Delivery unconfirmed", "Open terminal" and "Dismiss". If the agent stops waiting before you answer (Esc, Ctrl-C, its own timeout), the row clears quietly. The countdown appears only in the last 30 seconds (#22).
+- Answer delivery is confirmed. A notch answer counts as delivered only after the hook passes it to the agent and reports back. Otherwise the row turns red with "delivery unconfirmed", "Open terminal" and "Dismiss". If the agent stops waiting before you answer (Esc, Ctrl-C, its own timeout), the row clears quietly. The countdown appears only in the last 30 seconds (#22).
 - Settings show where a connection stops, per agent: config written, helper alive, first hook received, Codex waiting for trust in `/hooks`. "Test request" checks the path end to end without creating an approvable prompt. `notch-hook doctor` prints the same states (#25).
 - `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected for hooks, sessions, skills and logs. Hooks installed under a custom folder are removed even when the variable is no longer set (#24).
 - Codex workers started from a Claude chat sit under that chat (#19).
