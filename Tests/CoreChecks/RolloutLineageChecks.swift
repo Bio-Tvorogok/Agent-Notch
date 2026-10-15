@@ -7,10 +7,12 @@ struct RolloutLineageChecks {
         let root = URL(fileURLWithPath: "/home/test/.codex/sessions")
         let name = "rollout-2026-10-15T12-00-00-\(thread).jsonl"
         XCTAssertEqual(Proc.rolloutThread(root.appendingPathComponent("2026/10/15/" + name).path, in: root), thread)
-        for path in ["/tmp/" + name, root.path + "-other/" + name, root.path + "/" + name + ".bak",
-                     root.path + "/other-\(thread).jsonl", root.path + "/rollout-short.jsonl",
-                     root.path + "/rollout-019abcde-1234-7000-8000-0123456789az.jsonl",
-                     root.path + "/../" + name] {
+        let base: String = root.path
+        let outside: [String] = ["/tmp/\(name)", "\(base)-other/\(name)", "\(base)/\(name).bak",
+                                 "\(base)/other-\(thread).jsonl", "\(base)/rollout-short.jsonl",
+                                 "\(base)/rollout-019abcde-1234-7000-8000-0123456789az.jsonl",
+                                 "\(base)/../\(name)"]
+        for path in outside {
             XCTAssertNil(Proc.rolloutThread(path, in: root), path)
         }
     }
@@ -33,7 +35,7 @@ struct RolloutLineageChecks {
         var reported = [thread: ["claude"]]
         let scanner = LogScanner(home: f.home, execRuns: { [] }, rolloutParents: { reported })
         func check(_ at: Date, state: AgentState) throws {
-            let agents = scanner.poll(now: at)
+            let agents = scanner.poll(now: at)!
             let worker = try XCTUnwrap(agents.first { $0.id == thread })
             XCTAssertEqual(worker.parentId, "claude")
             XCTAssertEqual(worker.state, state)
@@ -49,9 +51,9 @@ struct RolloutLineageChecks {
         try check(f.now.addingTimeInterval(7), state: .done)
         try check(f.now.addingTimeInterval(12), state: .done)
         // Once the thread is no longer tracked, rediscovery must not reuse its former ancestry.
-        XCTAssertEqual(scanner.poll(now: f.now.addingTimeInterval(3601)).count, 0)
+        XCTAssertEqual(scanner.poll(now: f.now.addingTimeInterval(3601))!.count, 0)
         try f.rollout(thread, at: f.now.addingTimeInterval(3607))
-        let rediscovered = scanner.poll(now: f.now.addingTimeInterval(3607))
+        let rediscovered = scanner.poll(now: f.now.addingTimeInterval(3607))!
         XCTAssertNil(rediscovered.first { $0.id == thread }?.parentId)
     }
 
@@ -62,7 +64,7 @@ struct RolloutLineageChecks {
         try f.rollout("native-parent")
         try f.rollout(thread, parent: "native-parent")
         let scanner = LogScanner(home: f.home, execRuns: { [] }, rolloutParents: { [thread: ["claude"]] })
-        XCTAssertEqual(scanner.poll(now: f.now).first { $0.id == thread }?.parentId, "native-parent")
+        XCTAssertEqual(scanner.poll(now: f.now)!.first { $0.id == thread }?.parentId, "native-parent")
     }
 
     func nearestParentAcrossVendors() throws {
@@ -81,7 +83,7 @@ struct RolloutLineageChecks {
         try f.write([["pid": process.processIdentifier, "sessionId": "claude", "status": "busy"]], to: live)
         // The worker inherits both ids; CODEX_THREAD_ID appears first but is the more distant ancestor.
         let scanner = LogScanner(home: f.home, execRuns: { [] }, rolloutParents: { [thread: ["root", "claude"]] })
-        let agents = scanner.poll(now: f.now)
+        let agents = scanner.poll(now: f.now)!
         XCTAssertEqual(agents.first { $0.id == "claude" }?.parentId, "root")
         XCTAssertEqual(agents.first { $0.id == thread }?.parentId, "claude")
         let sessions = Tree.build(agents).flatMap(\.sessions)
@@ -98,7 +100,7 @@ struct RolloutLineageChecks {
         try f.write([["type": "thread.started", "thread_id": thread], ["type": "turn.started"]], to: stream)
         let run = ExecRun(pid: 7, log: stream.path, cwd: "/tmp/project", model: nil, effort: nil, parents: ["claude"])
         let scanner = LogScanner(home: f.home, execRuns: { [run] }, rolloutParents: { [thread: ["claude"]] })
-        let agents = scanner.poll(now: f.now)
+        let agents = scanner.poll(now: f.now)!
         XCTAssertEqual(agents.count, 2)
         let worker = try XCTUnwrap(agents.first { $0.id == thread })
         XCTAssertEqual(worker.parentId, "claude")
