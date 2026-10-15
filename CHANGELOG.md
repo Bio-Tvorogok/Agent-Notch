@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 Nothing yet.
 
+## [0.5.0] - 2026-10-15
+
+The app code is the same as in 0.4.1, which was built after these changes landed. This release names them.
+
+### Added
+
+- Answer delivery is confirmed. A notch answer counts as delivered only after the hook passes it to the agent and reports back. Otherwise the row turns red with "Delivery unconfirmed", "Open terminal" and "Dismiss". If the agent stops waiting before you answer (Esc, Ctrl-C, its own timeout), the row clears quietly. The countdown appears only in the last 30 seconds (#22).
+- Settings show where a connection stops, per agent: config written, helper alive, first hook received, Codex waiting for trust in `/hooks`. "Test request" checks the path end to end without creating an approvable prompt. `notch-hook doctor` prints the same states (#25).
+- `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are respected for hooks, sessions, skills and logs. Hooks installed under a custom folder are removed even when the variable is no longer set (#24).
+- Codex workers started from a Claude chat sit under that chat (#19).
+
+### Fixed
+
+- Resumed or old Codex sessions are found again: discovery follows file changes, not folder dates (#17).
+- Uninstalling cleans both agents even if one config cannot be read, and never rewrites a config with comments (#18).
+- README matches what the app does: questions, plans and "Always allow" are Claude Code only (#16).
+
 ## [0.4.1] - 2026-10-15
 
 ### Added
