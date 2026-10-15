@@ -61,6 +61,25 @@ public enum HookClient {
         return written && flushed == 0 && ferror(stdout) == 0
     }
 
+    /// A diagnostic acknowledgement never enters the session or permission route.
+    public static func probe(path: String = HookServer.defaultPath,
+                             pathCheck: (String) -> Bool = HookClient.isPlacingApp) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        guard var addr = try? HookServer.address(path) else { return false }
+        let connected = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard connected == 0, trustedPeer(fd, pathCheck: pathCheck) else { return false }
+        Socket.configure(fd, readTimeout: 0.5)
+        let nonce = UUID().uuidString
+        let request = Data(("{\"diagnostic\":\"" + nonce + "\"}\n").utf8)
+        guard Socket.write(fd, request), let reply = Socket.readLine(fd, limit: 1024),
+              let object = try? JSONSerialization.jsonObject(with: reply) as? Rec else { return false }
+        return object["diagnostic"] as? String == nonce
+    }
+
     /// Require the app bundle layout before trusting a socket decision.
     public static func isAppExecutable(_ path: String) -> Bool {
         let parts = URL(fileURLWithPath: path).standardized.pathComponents

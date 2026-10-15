@@ -159,6 +159,7 @@ final class Store: ObservableObject {
     }
 
     private func receive(_ e: HookEvent, ticket: Int?) {
+        try? ConnectionReceipt(installer: HookInstaller()).record(e.vendor)
         let receivedTicket = ticket
         var ticket = ticket
         let now = Date().timeIntervalSince1970

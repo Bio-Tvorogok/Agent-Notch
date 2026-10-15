@@ -142,8 +142,15 @@ public final class HookServer: @unchecked Sendable {
     }
 
     private func handle(_ fd: Int32, _ line: Data?) {
-        guard let line, let r = try? JSONSerialization.jsonObject(with: line) as? Rec,
-              let vendor = Vendor(rawValue: r["vendor"] as? String ?? ""), let payload = r["payload"] as? Rec,
+        guard let line, let r = try? JSONSerialization.jsonObject(with: line) as? Rec else { close(fd); return }
+        if let nonce = r["diagnostic"] as? String, nonce.count <= 64 {
+            if let reply = try? JSONSerialization.data(withJSONObject: ["diagnostic": nonce]) {
+                Socket.write(fd, reply + [0x0A])
+            }
+            close(fd)
+            return
+        }
+        guard let vendor = Vendor(rawValue: r["vendor"] as? String ?? ""), let payload = r["payload"] as? Rec,
               let event = HookEvent(vendor: vendor, payload: payload) else { close(fd); return }
         // Older helpers may still send these while the newly built app is running.
         guard !event.isAutomaticReview else { close(fd); return }

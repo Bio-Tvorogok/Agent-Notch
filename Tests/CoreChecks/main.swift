@@ -125,6 +125,14 @@ run("deliveryDelayedAck") { try SecurityDeliveryChecks().receiptAndFailure("dela
 run("deliveryLateAndDuplicate") { try SecurityDeliveryChecks().lateAndDuplicate() }
 run("deliveryNoClick") { try SecurityDeliveryChecks().noClick() }
 run("deliveryStateAndIdentity") { try SecurityDeliveryChecks().stateAndIdentity() }
+let connectionChecks = ConnectionChecks()
+run("connectionPartialSetRefreshesHelper") { try connectionChecks.partialSetRefreshesHelper() }
+run("connectionFullSet") { try connectionChecks.fullSet() }
+run("connectionStates") { try connectionChecks.states() }
+run("connectionDiagnostic") { try connectionChecks.diagnostic() }
+run("connectionDoctor") { try connectionChecks.doctor() }
+run("connectionTrust") { try connectionChecks.trust() }
+run("connectionDoctorCLI") { try connectionChecks.doctorCLI() }
 let h = HookTests()
 run("hookParseReply") { try h.testParsesEventAndRepliesOnlyWithAClick() }
 run("hookRoundTrip") { try h.testPermissionWaitsForTheClickAndNothingWithoutTheApp() }

@@ -84,6 +84,25 @@ enum Snapshot {
         let libraryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("notch-snapshot-library-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: libraryDirectory) }
         let settings = AppSettings(defaults: defaults, soundLibraryDirectory: libraryDirectory)
+        if ProcessInfo.processInfo.environment["AN_CONNECTION_SHOT"] == "1" {
+            let home = URL(fileURLWithPath: "/tmp/nc-" + UUID().uuidString.prefix(8))
+            defer { try? FileManager.default.removeItem(at: home) }
+            let installer = HookInstaller(home: home)
+            do {
+                try installer.install(.claude)
+                try installer.install(.codex)
+                try FileManager.default.copyItem(at: AppActions.bundledHelper, to: installer.helper)
+                chmod(installer.helper.path, 0o755)
+                try Data((AppActions.appExecutable + "\n").utf8).write(to: installer.appPin)
+                chmod(installer.appPin.path, 0o600)
+            } catch { return false }
+            let server = HookServer(path: ConnectionReport.socketPath(installer))
+            do { try server.start() } catch { return false }
+            defer { server.stop() }
+            return host(SettingsConnection(settings: settings, installer: installer)
+                .formStyle(.grouped).environment(\.colorScheme, .light),
+                size: NSSize(width: 570, height: 850), to: URL(fileURLWithPath: path))
+        }
         let prompts = promptFixture()
         let skills = skillFixture()
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {

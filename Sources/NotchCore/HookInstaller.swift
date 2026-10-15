@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 import JavaScriptCore
 
@@ -49,14 +50,43 @@ public struct HookInstaller: Sendable {
         }
     }
 
+    /// Remaining managed hooks still need the helper refreshed after the app moves.
+    public func hasManagedHook(_ v: Vendor) -> Bool {
+        guard let text = try? String(contentsOf: file(v), encoding: .utf8),
+              let object = HookDecision.object(text), let hooks = object["hooks"] as? Rec else { return false }
+        let command = "\"\(helper.path)\" \(v.rawValue)"
+        return hooks.values.contains { value in
+            (value as? [Rec] ?? []).contains { group in
+                (group["hooks"] as? [Rec] ?? []).contains { hook in
+                    guard hook["type"] as? String == "command", let text = hook["command"] as? String else { return false }
+                    return text == command || text == command + " --wait"
+                }
+            }
+        }
+    }
+
     public func isInstalled(_ v: Vendor) -> Bool {
         guard let text = try? String(contentsOf: file(v), encoding: .utf8),
               let object = HookDecision.object(text), let hooks = object["hooks"] as? Rec else { return false }
-        let commands = managedCommands
-        return hooks.values.contains { groups in
-            (groups as? [Rec] ?? []).contains { group in
-                (group["hooks"] as? [Rec] ?? []).contains { hook in
-                    (hook["command"] as? String).map(commands.contains) == true
+        return Self.events(v).allSatisfy { entry in
+            (hooks[entry.event] as? [Rec] ?? []).contains { group in
+                if let value = group["matcher"], !(value is String) { return false }
+                let matcher = (group["matcher"] as? String)?.nilIfEmpty
+                guard matcher == entry.matcher else { return false }
+                return (group["hooks"] as? [Rec] ?? []).contains { hook in
+                    if let value = hook["async"] {
+                        guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else { return false }
+                    }
+                    if let value = hook["timeout"] {
+                        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+                              number.doubleValue >= 1, number.doubleValue.rounded() == number.doubleValue else { return false }
+                    }
+                    guard hook["type"] as? String == "command",
+                          hook["command"] as? String == "\"\(helper.path)\" \(v.rawValue)" + entry.args,
+                          (hook["async"] as? Bool ?? false) == (entry.opts["async"] as? Bool ?? false) else { return false }
+                    return entry.opts.allSatisfy { key, value in
+                        (hook[key] as? NSObject)?.isEqual(value) == true
+                    }
                 }
             }
         }
@@ -111,7 +141,10 @@ public struct HookInstaller: Sendable {
         chmod(record.path, 0o600)
     }
 
-    public func install(_ v: Vendor) throws { try edit(v, at: file(v), add: true) }
+    public func install(_ v: Vendor) throws {
+        try ConnectionReceipt(installer: self).reset(v)
+        try edit(v, at: file(v), add: true)
+    }
     public func uninstall(_ v: Vendor) throws {
         var paths = [file(v).path]
         var failures: [String] = []
@@ -126,6 +159,7 @@ public struct HookInstaller: Sendable {
             throw NSError(domain: "HookInstaller", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")])
         }
+        try ConnectionReceipt(installer: self).reset(v)
     }
 
     /// Edits both vendors even when one config cannot be changed.
