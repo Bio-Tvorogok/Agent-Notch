@@ -6,8 +6,10 @@ public enum HookClient {
     /// Sends one hook event. With `wait` > 0 blocks up to that long for the human's decision.
     /// Nil when the app is not running or did not answer: the agent then carries on as if there were no hook.
     public static func send(vendor: Vendor, payload: Data, wait: Double, path: String = HookServer.defaultPath,
-                            pathCheck: (String) -> Bool = HookClient.isPlacingApp) -> HookDecision? {
+                            pathCheck: (String) -> Bool = HookClient.isPlacingApp,
+                            deliver: (HookDecision) -> Bool = { _ in false }) -> HookDecision? {
         guard let p = try? JSONSerialization.jsonObject(with: payload) as? Rec,
+              (HookEvent.toolIdentity(vendor: vendor, payload: p)?.utf8.count ?? 0) <= HookServer.maxToolIdentityBytes,
               let line = try? JSONSerialization.data(withJSONObject: ["vendor": vendor.rawValue, "wait": wait > 0, "payload": p])
         else { return nil }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -22,7 +24,41 @@ public enum HookClient {
         guard Socket.write(fd, line + [0x0A]) else { return nil }
         guard wait > 0, let reply = Socket.readLine(fd, limit: HookServer.maxLine),
               let r = try? JSONSerialization.jsonObject(with: reply) as? Rec else { return nil }
-        return HookDecision(wire: r)
+        let toolUseID = HookEvent.toolIdentity(vendor: vendor, payload: p)
+        guard let ticket = r["ticket"] as? Int, ticket > 0,
+              HookReceipt.matchesTool(r, toolUseID: toolUseID),
+              let decision = HookDecision(wire: r) else { return nil }
+        // Keep the socket until stdout has accepted and flushed the decision.
+        guard deliver(decision) else { return decision }
+        // One nonblocking receipt write: acknowledgement must never extend the agent's wait.
+        let receipt = HookReceipt.ack(ticket: ticket, toolUseID: toolUseID) + [10]
+        _ = receipt.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, MSG_DONTWAIT) }
+        return decision
+    }
+
+    /// A full or closed agent pipe cannot extend the hook wait or earn a receipt.
+    public static func writeStdout(_ output: String) -> Bool {
+        let flags = fcntl(STDOUT_FILENO, F_GETFL)
+        guard flags >= 0, fcntl(STDOUT_FILENO, F_SETFL, flags | O_NONBLOCK) == 0 else { return false }
+        defer { _ = fcntl(STDOUT_FILENO, F_SETFL, flags) }
+        let data = Data((output + "\n").utf8)
+        // Direct writes leave no buffered bytes for exit() to retry on a full pipe.
+        let deadline = ProcessInfo.processInfo.systemUptime + 0.1
+        let written = data.withUnsafeBytes { bytes -> Bool in
+            var offset = 0
+            while offset < bytes.count {
+                let n = Darwin.write(STDOUT_FILENO, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                if n > 0 { offset += n; continue }
+                guard n < 0, errno == EAGAIN || errno == EINTR else { return false }
+                let left = deadline - ProcessInfo.processInfo.systemUptime
+                guard left > 0 else { return false }
+                var ready = pollfd(fd: STDOUT_FILENO, events: Int16(POLLOUT), revents: 0)
+                guard poll(&ready, 1, Int32(ceil(left * 1000))) > 0 else { return false }
+            }
+            return true
+        }
+        let flushed = fflush(stdout)
+        return written && flushed == 0 && ferror(stdout) == 0
     }
 
     /// Require the app bundle layout before trusting a socket decision.
