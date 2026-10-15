@@ -4,11 +4,15 @@ import NotchCore
 // notch-hook <claude|codex>: Claude Code or Codex runs this for every hook event, with the event JSON on stdin.
 // It hands the event to Agents Notch. For a permission request it waits for a click in the notch and prints the
 // decision; when the app is not running or nobody clicks, it prints nothing and the agent asks as usual.
-// It always exits 0: a broken notch must never break an agent.
-// notch-hook --uninstall-hooks: takes our entries out of the Claude Code and Codex hook files, like the app flag.
+// Hook events always exit 0: a broken notch must never break an agent.
+// notch-hook --uninstall-hooks removes our entries from both vendors, like the app flag.
 // `brew uninstall --zap` runs it from this copy, because by then the app bundle is already gone.
 
 let args = CommandLine.arguments
+if args.count == 2 && args[1] == "--install-hooks" {
+    FileHandle.standardError.write(Data("Run the app with --install-hooks to place the helper and pin the app path.\n".utf8))
+    exit(1)
+}
 if args.count == 2 && args[1] == "--uninstall-hooks" {
     // The home is where this copy lives, so the paths match the installed commands exactly; $HOME is the fallback.
     let suffix = "/Library/Application Support/AgentsNotch/notch-hook"
@@ -17,18 +21,7 @@ if args.count == 2 && args[1] == "--uninstall-hooks" {
     let home = me.hasSuffix(suffix) ? String(me.dropLast(suffix.count))
         : ProcessInfo.processInfo.environment["HOME"].flatMap { $0.isEmpty ? nil : $0 }
     let inst = home.map { HookInstaller(home: URL(fileURLWithPath: $0)) } ?? HookInstaller()
-    // One vendor failing must not leave the other's hooks behind: zap trashes this helper right after.
-    var failed = false
-    for v in [Vendor.claude, .codex] {
-        do {
-            try inst.uninstall(v)
-            print("\(v.rawValue): \(inst.isInstalled(v) ? "installed" : "removed") in \(inst.file(v).path)")
-        } catch {
-            print("\(v.rawValue): \(error.localizedDescription)")
-            failed = true
-        }
-    }
-    exit(failed ? 1 : 0)
+    exit(inst.editHooks(install: false))
 }
 guard args.count > 1, let vendor = Vendor(rawValue: args[1]) else { exit(0) }
 let input = FileHandle.standardInput.readDataToEndOfFile()

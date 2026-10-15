@@ -94,6 +94,21 @@ public struct HookInstaller: Sendable {
     public func install(_ v: Vendor) throws { try edit(v, add: true) }
     public func uninstall(_ v: Vendor) throws { try edit(v, add: false) }
 
+    /// Edits both vendors even when one config cannot be changed.
+    public func editHooks(install: Bool) -> Int32 {
+        var failed = false
+        for v in [Vendor.claude, .codex] {
+            do {
+                try install ? self.install(v) : uninstall(v)
+                print("\(v.rawValue): \(isInstalled(v) ? "installed" : "removed") in \(file(v).path)")
+            } catch {
+                FileHandle.standardError.write(Data("\(v.rawValue): \(error.localizedDescription)\n".utf8))
+                failed = true
+            }
+        }
+        return failed ? 1 : 0
+    }
+
     private func edit(_ v: Vendor, add: Bool) throws {
         // A symlinked settings file (dotfile managers) is edited where it really lives.
         let url = file(v).resolvingSymlinksInPath()
@@ -110,7 +125,13 @@ public struct HookInstaller: Sendable {
         var mode = 0o644
         try HookFileUpdate.apply(read: {
             fm.fileExists(atPath: url.path) ? try String(contentsOf: url, encoding: .utf8) : ""
-        }, merge: { try Self.merge($0, spec: spec) }, prepare: { old in
+        }, merge: { text in
+            do { return try Self.merge(text, spec: spec) }
+            catch {
+                throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "Cannot edit \(url.path); file left unchanged. \(error.localizedDescription)"])
+            }
+        }, prepare: { old in
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             mode = (try? fm.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) ?? 0o644
             let backup = url.appendingPathExtension("agents-notch-backup")
@@ -127,6 +148,7 @@ public struct HookInstaller: Sendable {
     static let script = """
     function merge(text, spec) {
       const d = text.trim() ? JSON.parse(text) : {};
+      if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('Expected a JSON object');
       const hooks = d.hooks || {};
       let removed = false;
       for (const ev of Object.keys(hooks)) {
@@ -150,11 +172,17 @@ public struct HookInstaller: Sendable {
 
     static func merge(_ text: String, spec: [String: Any]) throws -> String {
         guard let ctx = JSContext() else { throw POSIXError(.ENOMEM) }
-        var failure: String?
-        ctx.exceptionHandler = { _, e in failure = e?.toString() }
+        var failure: (message: String, syntax: Bool)?
+        ctx.exceptionHandler = { _, e in
+            if let e { failure = (e.toString(), e.forProperty("name")?.toString() == "SyntaxError") }
+        }
         ctx.evaluateScript(script)
         let out = ctx.objectForKeyedSubscript("merge")?.call(withArguments: [text, spec])
-        if let failure { throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: failure]) }
+        if let failure {
+            let hint = failure.syntax ? "Strict JSON object required; comments and trailing commas are not supported. " : ""
+            throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                hint + failure.message])
+        }
         guard let s = out?.toString() else { throw POSIXError(.EINVAL) }
         return s
     }
