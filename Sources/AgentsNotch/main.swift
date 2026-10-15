@@ -54,6 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.start()
         }
         store.forceCramped = args.contains("--cramped")
+        if UpdateLaunchPolicy.shouldStart(arguments: args) {
+            AppUpdates.shared.start()
+            if args.contains("--check-updates") { AppUpdates.shared.checkForUpdates() }
+        }
         KeepAwakeModel.shared.startMonitoring()
         let notch = NotchController(store: store)
         self.notch = notch

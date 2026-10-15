@@ -170,6 +170,8 @@ final class NotchController {
         prompts.target = run
         prompts.representedObject = run
         menu.addItem(prompts)
+        let updateItem = menu.addItem(withTitle: UpdateText.check, action: #selector(AppUpdates.checkForUpdates(_:)), keyEquivalent: "")
+        updateItem.target = AppUpdates.shared
         let inst = HookInstaller()
         item(inst.isInstalled(.claude) ? Loc.t("Claude Code hooks installed — remove", "Хуки Claude Code установлены — удалить")
              : Loc.t("Install Claude Code hooks", "Установить хуки Claude Code"),
