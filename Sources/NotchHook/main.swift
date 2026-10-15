@@ -9,6 +9,18 @@ import NotchCore
 // `brew uninstall --zap` runs it from this copy, because by then the app bundle is already gone.
 
 let args = CommandLine.arguments
+if args.dropFirst().first == "doctor" || args.dropFirst().first == "--test-request" {
+    let home = args.firstIndex(of: "--home").flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil }
+    let installer = home.map { HookInstaller(home: $0) } ?? HookInstaller()
+    signal(SIGPIPE, SIG_IGN)
+    if args[1] == "doctor" { print(ConnectionReport.doctor(installer: installer)) }
+    else {
+        let valid = args.count > 2 && Vendor(rawValue: args[2]) != nil
+        let passed = valid && HookClient.probe(path: ConnectionReport.socketPath(installer))
+        print(passed ? "PASS" : "FAIL")
+    }
+    exit(0)
+}
 if args.count == 2 && args[1] == "--install-hooks" {
     FileHandle.standardError.write(Data("Run the app with --install-hooks to place the helper and pin the app path.\n".utf8))
     exit(1)
