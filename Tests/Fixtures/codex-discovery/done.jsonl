@@ -1,0 +1,2 @@
+{"type":"session_meta","timestamp":"2026-10-15T12:00:00Z","payload":{"id":"reset","cwd":"/tmp"}}
+{"type":"event_msg","timestamp":"2026-10-15T12:00:00Z","payload":{"type":"task_complete"}}

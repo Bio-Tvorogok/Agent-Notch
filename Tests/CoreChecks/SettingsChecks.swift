@@ -78,9 +78,9 @@ struct SettingsChecks {
         ])
         try FileManager.default.setAttributes([.modificationDate: logs.now.addingTimeInterval(-2_000)], ofItemAtPath: file.path)
         let scanner = LogScanner(home: home, execRuns: { [] })
-        XCTAssertFalse(scanner.poll(now: logs.now, finishedRetention: 300).contains { $0.id == "finished" })
-        XCTAssertTrue(scanner.poll(now: logs.now, finishedRetention: 3_600).contains { $0.id == "finished" })
-        XCTAssertFalse(scanner.poll(now: logs.now.addingTimeInterval(1_601), finishedRetention: 3_600).contains { $0.id == "finished" })
+        XCTAssertFalse(scanner.poll(now: logs.now, finishedRetention: 300)!.contains { $0.id == "finished" })
+        XCTAssertTrue(scanner.poll(now: logs.now, finishedRetention: 3_600)!.contains { $0.id == "finished" })
+        XCTAssertFalse(scanner.poll(now: logs.now.addingTimeInterval(1_601), finishedRetention: 3_600)!.contains { $0.id == "finished" })
     }
 
     func rowRenderingOrder() {

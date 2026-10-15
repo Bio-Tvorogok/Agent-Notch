@@ -45,7 +45,7 @@ struct ExecChecks {
         try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: parentLog.path)
         var running = [ExecRun(pid: 7, log: log.path, cwd: "/tmp/wt/usage", model: "gpt-6.1-sol", effort: .medium, parents: ["claude-1"])]
         let scanner = LogScanner(home: home, execRuns: { running })
-        func agent(_ at: Date? = nil) -> Agent? { scanner.poll(now: at ?? now).first { $0.logPath == log.path } }
+        func agent(_ at: Date? = nil) -> Agent? { scanner.poll(now: at ?? now)!.first { $0.logPath == log.path } }
 
         XCTAssertEqual(agent()?.state, .working)
         XCTAssertEqual(agent()?.vendor, .codex)
@@ -55,7 +55,7 @@ struct ExecChecks {
         XCTAssertEqual(agent()?.parentId, "claude-1", "nests under the Claude session that started it")
         // An ephemeral run keeps no session: codex://threads/<id> fails with "no rollout found".
         XCTAssertNil(agent()?.chatId, "nothing to resume")
-        let all = scanner.poll(now: now)
+        let all = scanner.poll(now: now)!
         let run = try XCTUnwrap(agent())
         XCTAssertEqual(JumpResolver.owner(of: run, in: all).id, "claude-1", "opens the session that started it")
         let orphan = Agent(id: "t9", vendor: .codex, title: "x", state: .working, project: "p", parentId: nil, cwd: "/tmp/p")

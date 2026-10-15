@@ -43,11 +43,11 @@ run("fixtureCodexLegacy") { try sessionFixtures.codexLegacy() }
 run("fixtureResumedReaders") { try sessionFixtures.resumedReaders() }
 run("fixtureTruncatedRecovery") { try sessionFixtures.truncatedRecovery() }
 run("fixtureRotation") { try sessionFixtures.rotation() }
+run("fixtureResumedDiscovery") { try sessionFixtures.resumedDiscoveryExpectedFail() }
 if ProcessInfo.processInfo.environment["NOTCH_EXPECTED_FAIL"] == "1" {
-    run("EXPECTED-FAIL fixtureResumedDiscovery") { try sessionFixtures.resumedDiscoveryExpectedFail() }
     run("EXPECTED-FAIL fixtureTruncatedTail") { try sessionFixtures.truncatedTailExpectedFail() }
 } else {
-    print("SKIP EXPECTED-FAIL fixtureResumedDiscovery, fixtureTruncatedTail (NOTCH_EXPECTED_FAIL=1 to run)")
+    print("SKIP EXPECTED-FAIL fixtureTruncatedTail (NOTCH_EXPECTED_FAIL=1 to run)")
 }
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
@@ -56,6 +56,14 @@ run("updateLaunchModes") { UpdateChecks().launchModes() }
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 run("codexAutomaticMCPRoundTrip") { try HookTests().testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
+let discovery = CodexDiscoveryChecks()
+run("codexResumedOldFolder") { try discovery.resumedOldFolderAndAppendedTail() }
+run("codexTruncatedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: false) }
+run("codexReplacedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: true) }
+run("codexColdFolderStats") { try discovery.coldFoldersBoundStats() }
+run("codexTodayListing") { try discovery.recentListingsAreNeverTrusted(today: true) }
+run("codexRecentListing") { try discovery.recentListingsAreNeverTrusted(today: false) }
+run("scannerCoalesces") { try discovery.overlappingPollsCoalesce() }
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("scannerRewrittenLog") { try ScannerRewriteChecks().rewrittenLogClearsThePreviousTurn() }
 run("scannerPartialLines") { try ScannerRewriteChecks().partialLinesWaitForTheirNewline() }
@@ -264,6 +272,17 @@ run("soundRequests") { soundChecks.requests() }
 run("soundRequestsEn") { Loc.forced = .en; defer { Loc.forced = .ru }; soundChecks.requests() }
 run("soundLimits") { soundChecks.limits() }
 run("soundNativeRequests") { soundChecks.nativeRequests() }
+
+let safeUninstall = SafeUninstallChecks()
+run("appContinuesAfterClaudeComment") { try safeUninstall.appContinuesAfterClaudeComment() }
+run("helperRejectsInstall") { try safeUninstall.helperRejectsInstall() }
+run("auditHonorsProcessLock") { try safeUninstall.auditHonorsProcessLock() }
+run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-hooks") }
+run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
+run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
+run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
+run("safeAuditRotation") { try safeUninstall.auditRotates() }
+if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

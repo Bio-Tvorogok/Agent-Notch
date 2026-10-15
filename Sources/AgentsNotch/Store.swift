@@ -37,6 +37,8 @@ final class Store: ObservableObject {
     private let scanner = LogScanner()
     private let names = ProjectNames()
     private let queue = DispatchQueue(label: "agents-notch.scan", qos: .utility)
+    private var polling = false
+    private var pollCompletions: [() -> Void] = []
     private var timer: Timer?
     private var server: HookServer?
     private var fakeTicket = 1_000_000
@@ -75,16 +77,24 @@ final class Store: ObservableObject {
 
     /// One scan now; the callback runs on the main actor after the agents are published.
     func poll(then done: (() -> Void)? = nil) {
+        if let done { pollCompletions.append(done) }
+        guard !polling else { return }
+        polling = true
         let scanner = scanner
         let retention = Double(settings.appearance.finishedMinutes) * 60
         queue.async {
             let next = scanner.poll(finishedRetention: retention)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
-                self.finisher.check(self.settings.listFilter.apply(next))
-                for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
-                done?()
+                self.polling = false
+                if let next {
+                    if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
+                    self.finisher.check(self.settings.listFilter.apply(next))
+                    for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
+                }
+                let completions = self.pollCompletions
+                self.pollCompletions.removeAll()
+                for completion in completions { completion() }
             }
         }
     }
@@ -221,6 +231,9 @@ final class Store: ObservableObject {
 
 /// Every decision made in the notch, one JSON line each, in ~/Library/Application Support/AgentsNotch/decisions.jsonl.
 enum Audit {
+    private static let lock = NSLock()
+    private static let maxBytes = 1_048_576
+
     static func record(_ e: HookEvent, _ d: HookDecision) {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
@@ -229,12 +242,34 @@ enum Audit {
                                   "cwd": e.cwd ?? ""]
         guard var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
         line.append(0x0A)
-        if let h = try? FileHandle(forWritingTo: url) {
-            defer { try? h.close() }
-            _ = try? h.seekToEnd()
-            try? h.write(contentsOf: line)
-        } else {
-            try? line.write(to: url)
+        guard line.count <= maxBytes else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Keep the lock on a separate inode: rotation replaces the log itself.
+            let fd = open(url.appendingPathExtension("lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            guard flock(fd, LOCK_EX) == 0 else { return }
+            defer { flock(fd, LOCK_UN) }
+            if fm.fileExists(atPath: url.path) {
+                let h = try FileHandle(forWritingTo: url)
+                defer { try? h.close() }
+                let size = try h.seekToEnd()
+                if size <= UInt64(maxBytes - line.count) {
+                    try h.write(contentsOf: line)
+                    return
+                }
+                try h.close()
+                let backup = url.appendingPathExtension("1")
+                if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
+                try fm.moveItem(at: url, to: backup)
+            }
+            try line.write(to: url, options: .atomic)
+        } catch {
+            // Logging must not prevent the decision from reaching the agent.
         }
     }
 }

@@ -86,14 +86,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let inst = HookInstaller()
         do {
             if install { try inst.placeHelper(from: AppActions.bundledHelper, app: AppActions.appExecutable) }
-            for v in [Vendor.claude, .codex] {
-                try install ? inst.install(v) : inst.uninstall(v)
-                print("\(v.rawValue): \(inst.isInstalled(v) ? "installed" : "removed") in \(inst.file(v).path)")
-            }
-            if install { print(AppActions.codexTrustNote) }
-            return 0
+            let status = inst.editHooks(install: install)
+            if install && status == 0 { print(AppActions.codexTrustNote) }
+            return status
         } catch {
-            print("hooks: \(error.localizedDescription)")
+            FileHandle.standardError.write(Data("hooks: \(error.localizedDescription)\n".utf8))
             return 1
         }
     }

@@ -50,7 +50,7 @@ struct SessionLogFixtureChecks {
             let parent = try install("claude/parent.jsonl", at: base + "parent.jsonl", in: root)
             let child = try install("claude/agent-inspect.jsonl", at: base + "parent/subagents/agent-inspect.jsonl", in: root)
             try install("claude/agent-plan.jsonl", at: base + "parent/subagents/workflows/sample/agent-plan.jsonl", in: root)
-            let agents = LogScanner(home: root, execRuns: { [] }).poll(now: now)
+            let agents = LogScanner(home: root, execRuns: { [] }).poll(now: now)!
             XCTAssertEqual(agents.count, 3)
             let main = try XCTUnwrap(agents.first { $0.id == "parent" })
             XCTAssertEqual(main.state, .done)
@@ -86,7 +86,7 @@ struct SessionLogFixtureChecks {
     func codexCurrent() throws {
         try home { root in
             let file = try install("codex/current.jsonl", at: codexPath(), in: root)
-            let agent = try XCTUnwrap(LogScanner(home: root, execRuns: { [] }).poll(now: now).first)
+            let agent = try XCTUnwrap(LogScanner(home: root, execRuns: { [] }).poll(now: now)!.first)
             XCTAssertEqual(agent.id, "fixture-current")
             XCTAssertEqual(agent.state, .waiting)
             XCTAssertEqual(agent.ask, "echo approved")
@@ -108,7 +108,7 @@ struct SessionLogFixtureChecks {
     func codexLegacy() throws {
         try home { root in
             let file = try install("codex/legacy.jsonl", at: codexPath(), in: root)
-            let agent = try XCTUnwrap(LogScanner(home: root, execRuns: { [] }).poll(now: now).first)
+            let agent = try XCTUnwrap(LogScanner(home: root, execRuns: { [] }).poll(now: now)!.first)
             XCTAssertEqual(agent.id, "fixture-legacy")
             XCTAssertEqual(agent.state, .done)
             XCTAssertEqual(agent.model, "gpt-5-codex")
@@ -147,7 +147,7 @@ struct SessionLogFixtureChecks {
         try home { root in
             let file = try install("codex/resumed.jsonl", at: codexPath(daysAgo: 12), in: root)
             XCTAssertEqual(try file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate, now)
-            let agents = LogScanner(home: root, execRuns: { [] }).poll(now: now)
+            let agents = LogScanner(home: root, execRuns: { [] }).poll(now: now)!
             XCTAssertEqual(agents.map(\.id), ["fixture-resumed"], "EXPECTED-FAIL: fresh mtime must outweigh the old date folder")
         }
     }
@@ -163,15 +163,15 @@ struct SessionLogFixtureChecks {
         try home { root in
             let file = try install("codex/truncated.jsonl", at: codexPath(), in: root)
             let scanner = LogScanner(home: root, execRuns: { [] })
-            XCTAssertEqual(scanner.poll(now: now).map(\.state), [.working])
+            XCTAssertEqual(scanner.poll(now: now)!.map(\.state), [.working])
             XCTAssertEqual(DetailReader.read(path: file.path, vendor: .codex)?.lastMessage, "Complete message before tail.")
             let log = try session("codex/truncated.jsonl", vendor: .codex, id: "filename")
             XCTAssertEqual(log.lastAt, LogText.time("2026-10-13T10:00:02Z"))
             try append(data("codex/truncated-suffix.txt"), to: file)
             // Valid JSON is still pending until the writer commits its newline.
-            XCTAssertNil(scanner.poll(now: now).first?.activity)
+            XCTAssertNil(scanner.poll(now: now)!.first?.activity)
             try append(Data([10]), to: file)
-            XCTAssertEqual(scanner.poll(now: now).first?.activity, "exec_command · echo recovered")
+            XCTAssertEqual(scanner.poll(now: now)!.first?.activity, "exec_command · echo recovered")
             XCTAssertEqual(DetailReader.read(path: file.path, vendor: .codex)?.commands.map(\.command), ["echo recovered"])
         }
     }
@@ -189,7 +189,7 @@ struct SessionLogFixtureChecks {
         try home { root in
             let file = try install("codex/current.jsonl", at: codexPath(), in: root)
             let scanner = LogScanner(home: root, execRuns: { [] })
-            XCTAssertEqual(scanner.poll(now: now).map(\.state), [.waiting])
+            XCTAssertEqual(scanner.poll(now: now)!.map(\.state), [.waiting])
             let inode = try fm.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber
             XCTAssertTrue(try data("codex/rotated.jsonl").count > data("codex/current.jsonl").count)
             // Keep the original inode alive while replacing the path with a larger file.
@@ -197,7 +197,7 @@ struct SessionLogFixtureChecks {
             try install("codex/rotated.jsonl", at: codexPath(), in: root)
             let replacement = try fm.attributesOfItem(atPath: file.path)[.systemFileNumber] as? NSNumber
             XCTAssertTrue(inode != nil && replacement != nil && inode != replacement)
-            let agents = scanner.poll(now: now.addingTimeInterval(1))
+            let agents = scanner.poll(now: now.addingTimeInterval(1))!
             XCTAssertEqual(agents.count, 1)
             let agent = try XCTUnwrap(agents.first)
             XCTAssertEqual(agent.id, "fixture-rotated")
