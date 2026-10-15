@@ -4,9 +4,15 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+Nothing yet.
+
+## Changes without a recorded release
+
+These changes are present in source; no release version is recorded here.
+
 ### Added
 
-- Prompts and skills on ⌃⌥P: a search box under the notch over any app. ↩ pastes a saved prompt where the cursor is (through the clipboard, which is put back), ⌘↩ copies, ⌘1–9 picks by row; most used lately first. ⇥ switches to installed skills of Claude Code and Codex and pastes their call.
+- Prompts and skills on ⌃⌥P: a search box under the notch over any app. ↩ pastes a saved prompt where the cursor is (through the clipboard, restored by default after a delay if unchanged), ⌘↩ copies, ⌘1–9 picks by row; most used lately first. ⇥ switches to installed skills of Claude Code and Codex and pastes their call.
 - Settings → Prompts & skills: the prompt library, insertion statistics (totals, last 14 days, most used) and a Skills tab with each skill's description, front matter, files, SKILL.md and how often Claude Code called it.
 
 ### Fixed
@@ -58,10 +64,10 @@ First public release.
 
 - The wing beside the notch: one mark per Claude Code or Codex agent, with vendor, model weight and state; subagents next to their parent; counters past six agents; one-line summary when the menu bar is crowded; menu bar item on Macs without a notch.
 - The list: projects, sessions and subagent trees, the current tool of each agent, a "needs attention" block on top.
-- Answers from the notch through hooks: Allow, Deny, Always and hand-back for permission requests, with ⌃⌥Y / ⌃⌥N; buttons and free text for `AskUserQuestion`; accept or return a plan. Risky commands need a click.
+- Answers from the notch through hooks: Allow, Deny and hand-back for Claude Code and Codex permission requests, with ⌃⌥Y / ⌃⌥N. Claude Code also supports Always rules, buttons and free text for `AskUserQuestion`, and accepting or returning a plan. Risky commands need a click.
 - Agent card with done, remaining, files and log tabs.
 - Plan limits for Claude and Codex, a context ring per agent, approximate session cost and today's spend.
-- Click or double-click to jump back to the chat in the Claude or Codex app, or resume in Terminal.
+- Click a row to open its card; double-click to try the recorded app or terminal, with a project-folder fallback.
 - Finish toast, settings with presets, launch at login.
 - Homebrew cask, DMG and zip downloads.
 
