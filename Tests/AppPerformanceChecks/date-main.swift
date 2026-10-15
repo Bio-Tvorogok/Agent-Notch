@@ -24,7 +24,7 @@ import NotchCore
         let now = Date(timeIntervalSince1970: 1_791_959_047)
         try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
         let start = ProcessInfo.processInfo.systemUptime
-        let agents = LogScanner(home: home, execRuns: { [] }).poll(now: now)
+        let agents = LogScanner(home: home, execRuns: { [] }).poll(now: now)!
         let seconds = ProcessInfo.processInfo.systemUptime - start
         guard agents.count == 1, agents[0].state == .working,
               abs(agents[0].startedAt - 1_791_959_044.123) < 0.000001 else { print("FAIL scanner timestamp result changed"); exit(1) }
