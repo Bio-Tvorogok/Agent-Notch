@@ -20,6 +20,8 @@ struct SettingsConnection: View {
                 hook(.codex)
             } footer: {
                 Text(SettingsText.connectHelp).font(.caption).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             Section {
                 LabeledContent {

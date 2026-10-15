@@ -3,6 +3,37 @@ import Foundation
 struct ConnectionChecks {
     func home() -> URL { URL(fileURLWithPath: "/tmp/ct-" + UUID().uuidString.prefix(8)) }
 
+    func partialSetRefreshesHelper() throws {
+        let root = home(), inst = HookInstaller(home: root)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundled = root.appendingPathComponent("bundled-hook")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: bundled)
+        for vendor in [Vendor.claude, .codex] {
+            XCTAssertFalse(inst.hasManagedHook(vendor))
+            try inst.install(vendor)
+            XCTAssertTrue(inst.hasManagedHook(vendor))
+            let object = try XCTUnwrap(HookDecision.object(String(contentsOf: inst.file(vendor), encoding: .utf8)))
+            let hooks = try XCTUnwrap(object["hooks"] as? Rec)
+            let groups = try XCTUnwrap(hooks["PreToolUse"] as? [Rec])
+            for group in groups {
+                try JSONSerialization.data(withJSONObject: ["hooks": ["PreToolUse": [group]]]).write(to: inst.file(vendor))
+                XCTAssertFalse(inst.isInstalled(vendor))
+                try Data("/old/Agent Notch.app/Contents/MacOS/AgentsNotch\n".utf8).write(to: inst.appPin)
+                if inst.hasManagedHook(vendor) {
+                    try inst.placeHelper(from: bundled, app: "/moved/Agent Notch.app/Contents/MacOS/AgentsNotch")
+                }
+                XCTAssertEqual(try String(contentsOf: inst.appPin, encoding: .utf8),
+                               "/moved/Agent Notch.app/Contents/MacOS/AgentsNotch\n")
+                XCTAssertFalse(inst.isInstalled(vendor))
+            }
+            try Data(#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo unrelated"}]}]}}"#.utf8).write(to: inst.file(vendor))
+            XCTAssertFalse(inst.hasManagedHook(vendor))
+            try Data("broken".utf8).write(to: inst.file(vendor))
+            XCTAssertFalse(inst.hasManagedHook(vendor))
+        }
+    }
+
     func fullSet() throws {
         let root = home(), inst = HookInstaller(home: root)
         defer { try? FileManager.default.removeItem(at: root) }

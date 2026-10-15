@@ -91,6 +91,7 @@ run("busyProjectCounters") { w.testBusyProjectSwitchesToCountersAndKeepsExceptio
 run("crampedSummary") { w.testCrampedOrTooWideCollapsesIntoOneSummary() }
 run("nothingLive") { w.testNothingLiveDrawsNothing() }
 let connectionChecks = ConnectionChecks()
+run("connectionPartialSetRefreshesHelper") { try connectionChecks.partialSetRefreshesHelper() }
 run("connectionFullSet") { try connectionChecks.fullSet() }
 run("connectionStates") { try connectionChecks.states() }
 run("connectionDiagnostic") { try connectionChecks.diagnostic() }

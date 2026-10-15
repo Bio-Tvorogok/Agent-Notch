@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(Self.editHooks(install: args.contains("--install-hooks")))
         }
         let inst = HookInstaller()
-        if inst.isInstalled(.claude) || inst.isInstalled(.codex) { try? inst.placeHelper(from: AppActions.bundledHelper, app: AppActions.appExecutable) }
+        if inst.hasManagedHook(.claude) || inst.hasManagedHook(.codex) { try? inst.placeHelper(from: AppActions.bundledHelper, app: AppActions.appExecutable) }
         if let i = args.firstIndex(of: "--fixture"), i + 1 < args.count, let scene = Fixtures.agents(args[i + 1]) {
             store.useFixture(scene, asks: Fixtures.asks(args[i + 1]))
         } else {

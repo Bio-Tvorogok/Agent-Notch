@@ -50,6 +50,21 @@ public struct HookInstaller: Sendable {
         }
     }
 
+    /// Remaining managed hooks still need the helper refreshed after the app moves.
+    public func hasManagedHook(_ v: Vendor) -> Bool {
+        guard let text = try? String(contentsOf: file(v), encoding: .utf8),
+              let object = HookDecision.object(text), let hooks = object["hooks"] as? Rec else { return false }
+        let command = "\"\(helper.path)\" \(v.rawValue)"
+        return hooks.values.contains { value in
+            (value as? [Rec] ?? []).contains { group in
+                (group["hooks"] as? [Rec] ?? []).contains { hook in
+                    guard hook["type"] as? String == "command", let text = hook["command"] as? String else { return false }
+                    return text == command || text == command + " --wait"
+                }
+            }
+        }
+    }
+
     public func isInstalled(_ v: Vendor) -> Bool {
         guard let text = try? String(contentsOf: file(v), encoding: .utf8),
               let object = HookDecision.object(text), let hooks = object["hooks"] as? Rec else { return false }
