@@ -244,7 +244,10 @@ final class AppActions: NSObject {
                 try inst.placeHelper(from: Self.bundledHelper, app: Self.appExecutable)
                 try inst.install(vendor)
                 SoundPlayer.shared.play(.connected)
-                if vendor == .codex { Self.say(Loc.t("Codex hooks written to ~/.codex/hooks.json", "Хуки Codex записаны в ~/.codex/hooks.json"), Self.codexTrustNote) }
+                if vendor == .codex {
+                    let path = CardFormat.path(inst.file(vendor).path, cwd: nil, home: inst.home.path)
+                    Self.say(Loc.t("Codex hooks written to \(path)", "Хуки Codex записаны в \(path)"), Self.codexTrustNote)
+                }
             }
         } catch {
             SoundPlayer.shared.play(.operationFailed)

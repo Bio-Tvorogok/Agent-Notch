@@ -5,6 +5,10 @@ if CommandLine.arguments.contains("--lineage-child") {
     exit(0)
 }
 
+// Existing fixtures use temporary homes; ignore the developer’s real config roots.
+unsetenv("CLAUDE_CONFIG_DIR")
+unsetenv("CODEX_HOME")
+
 // Minimal XCTest stand-in: Command Line Tools ship no XCTest, and scripts/test.sh builds with plain swiftc.
 var failures = 0
 var ran = 0
@@ -311,9 +315,18 @@ run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-h
 run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
 run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
 run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
+run("safeCustomRootsWithoutEnvironment") { try safeUninstall.customRootsWithoutEnvironment() }
 run("safeAuditRotation") { try safeUninstall.auditRotates() }
 run("auditDeliveryResult") { try safeUninstall.auditDelivery() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
+
+let configRoots = ConfigRootChecks()
+run("configClaudeHooks") { try configRoots.hooks(.claude) }
+run("configCodexHooks") { try configRoots.hooks(.codex) }
+run("configClaudeDiscovery") { try configRoots.discovery(.claude) }
+run("configCodexDiscovery") { try configRoots.discovery(.codex) }
+run("configClaudeProjects") { try configRoots.claudeProjects() }
+run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

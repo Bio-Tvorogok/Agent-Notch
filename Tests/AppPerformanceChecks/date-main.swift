@@ -3,6 +3,8 @@ import NotchCore
 
 @main struct DatePerformanceChecks {
     static func main() throws {
+        unsetenv("CLAUDE_CONFIG_DIR")
+        unsetenv("CODEX_HOME")
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let plain = ISO8601DateFormatter()
