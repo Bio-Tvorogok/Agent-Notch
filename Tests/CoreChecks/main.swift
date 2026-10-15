@@ -1,5 +1,10 @@
 import Foundation
 
+if CommandLine.arguments.contains("--lineage-child") {
+    Thread.sleep(forTimeInterval: 60)
+    exit(0)
+}
+
 // Minimal XCTest stand-in: Command Line Tools ship no XCTest, and scripts/test.sh builds with plain swiftc.
 var failures = 0
 var ran = 0
@@ -52,6 +57,7 @@ if ProcessInfo.processInfo.environment["NOTCH_EXPECTED_FAIL"] == "1" {
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
 Loc.forced = .ru
+run("updateLaunchModes") { UpdateChecks().launchModes() }
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 run("codexAutomaticMCPRoundTrip") { try HookTests().testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
@@ -82,6 +88,12 @@ run("execRetainedLifecycle") { try ExecIdentityChecks().retainedSessionUsesExecL
 run("execLongIdentity") { try ExecIdentityChecks().longExecStreamKeepsThreadIdentity() }
 run("lineageNearest") { LineageChecks().testPicksTheNearestKnownParent() }
 run("lineageEnv") { LineageChecks().testReadsBothVendorIdsFromTheEnvironment() }
+run("rolloutPaths") { RolloutLineageChecks().rolloutPaths() }
+run("rolloutOpenFile") { try RolloutLineageChecks().openRolloutFile() }
+run("rolloutLineageRetention") { try RolloutLineageChecks().workerKeepsItsParentAfterExitAndReset() }
+run("rolloutNativeParent") { try RolloutLineageChecks().nativeParentWins() }
+run("rolloutNearestParent") { try RolloutLineageChecks().nearestParentAcrossVendors() }
+run("rolloutExecMerge") { try RolloutLineageChecks().execStreamStillMerges() }
 run("claudeQuestion") { try l.testClaudeQuestionWaitsUntilAnswered() }
 run("nestsGrandchildren") { t.testNestsGrandchildrenUnderTheRootAndOrphansBecomeRoots() }
 run("dropsFinishedProjects") { t.testProjectsWithOnlyFinishedAgentsAreDropped() }

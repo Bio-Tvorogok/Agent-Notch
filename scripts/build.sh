@@ -2,24 +2,27 @@
 # Builds build/AgentsNotch.app with plain swiftc (no SwiftPM, no Xcode project).
 # Needs a working toolchain: Xcode selected via xcode-select (or DEVELOPER_DIR), license accepted.
 set -eu
-VERSION="${VERSION:-0.4.0}"
-BUILD_NUMBER="${BUILD_NUMBER:-1}"
+VERSION="${VERSION:-0.4.1}"
+BUILD_NUMBER="$VERSION"
 cd "$(dirname "$0")/.."
 SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo unversioned)
 BASE_REVISION=$(git rev-parse origin/HEAD 2>/dev/null || echo unknown)
 SOURCE_DIRTY=true
 if [ -z "$(git status --porcelain 2>/dev/null)" ]; then SOURCE_DIRTY=false; fi
+SPARKLE=$(./scripts/fetch-sparkle.sh)
 TARGET="arm64-apple-macos14.0"
 OUT=build
 APP="$OUT/AgentsNotch.app"
 rm -rf "$OUT/obj" "$APP"
-mkdir -p "$OUT/obj" "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
+mkdir -p "$OUT/obj" "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 
 xcrun swiftc -O -target "$TARGET" -parse-as-library -module-name NotchCore \
   -emit-module -emit-module-path "$OUT/obj/NotchCore.swiftmodule" \
   -emit-library -static -o "$OUT/obj/libNotchCore.a" Sources/NotchCore/*.swift
 
-xcrun swiftc -O -target "$TARGET" -module-name AgentsNotch -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
+ditto "$SPARKLE/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+
+xcrun swiftc -O -target "$TARGET" -F "$SPARKLE" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks -module-name AgentsNotch -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
   -o "$APP/Contents/MacOS/AgentsNotch" Sources/AgentsNotch/*.swift
 
 xcrun swiftc -O -target "$TARGET" -module-name NotchHook -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
@@ -48,11 +51,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
+python3 scripts/update-config.py "$APP/Contents/Info.plist"
+
 [ -f assets/AppIcon.icns ] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 codesign --force --sign - "$APP/Contents/Helpers/notch-hook"
 # An ad-hoc signature is pinned by its hash, and macOS ties Accessibility to that hash: every new build would
 # lose the permission while System Settings keeps showing it on. Requiring only the bundle id keeps it.
-codesign --force --sign - -r='designated => identifier "com.forichok.agents-notch"' "$APP"
+BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
+codesign --force --sign - -r="designated => identifier \"$BUNDLE_ID\"" "$APP"
 sh scripts/test-app-features.sh
 echo "built $APP"

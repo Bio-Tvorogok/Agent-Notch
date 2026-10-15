@@ -106,8 +106,47 @@ enum ExecLine {
     }
 }
 
-/// Reading other processes of the same user: pid list, name, argv, where stdout goes.
+/// Reading other processes of the same user: pid list, name, argv and open files.
 enum Proc {
+    /// Rollout thread → inherited parent ids, including detached exec runs and interactive sessions.
+    static func rolloutParents(in root: URL) -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for pid in all() where name(pid) == "codex" {
+            let parents = Lineage.parents(env: argsAndEnv(pid).1)
+            guard !parents.isEmpty else { continue }
+            for path in openPaths(pid) {
+                guard let id = rolloutThread(path, in: root) else { continue }
+                for parent in parents where !out[id, default: []].contains(parent) {
+                    out[id, default: []].append(parent)
+                }
+            }
+        }
+        return out
+    }
+
+    static func rolloutThread(_ path: String, in root: URL) -> String? {
+        let file = URL(fileURLWithPath: path).standardizedFileURL
+        let base = file.deletingPathExtension().lastPathComponent
+        guard file.path.hasPrefix(root.standardizedFileURL.path + "/"), file.pathExtension == "jsonl",
+              base.hasPrefix("rollout-"), base.count > 36,
+              base[base.index(base.endIndex, offsetBy: -37)] == "-" else { return nil }
+        let id = String(base.suffix(36))
+        return UUID(uuidString: id) == nil ? nil : id
+    }
+
+    static func openPaths(_ pid: Int32) -> [String] {
+        let bytes = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard bytes > 0 else { return [] }
+        let stride = MemoryLayout<proc_fdinfo>.stride
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(bytes) / stride + 32)
+        let got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, Int32(fds.count * stride))
+        guard got > 0 else { return [] }
+        return fds.prefix(Int(got) / stride).compactMap { fd in
+            guard fd.proc_fdtype == PROX_FDTYPE_VNODE else { return nil }
+            return vnodePath(pid, fd: fd.proc_fd)
+        }
+    }
+
     static func all() -> [Int32] {
         let n = proc_listallpids(nil, 0)
         guard n > 0 else { return [] }
@@ -146,9 +185,13 @@ enum Proc {
     }
 
     static func stdoutPath(_ pid: Int32) -> String? {
+        vnodePath(pid, fd: 1)
+    }
+
+    private static func vnodePath(_ pid: Int32, fd: Int32) -> String? {
         var info = vnode_fdinfowithpath()
         let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
-        guard proc_pidfdinfo(pid, 1, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return nil }
+        guard proc_pidfdinfo(pid, fd, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return nil }
         let path = withUnsafeBytes(of: &info.pvip.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
         return path.isEmpty ? nil : path
     }
