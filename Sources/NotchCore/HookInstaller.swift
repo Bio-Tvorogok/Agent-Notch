@@ -1,7 +1,7 @@
 import Foundation
 import JavaScriptCore
 
-/// Adds and removes our entries in ~/.claude/settings.json and ~/.codex/hooks.json.
+/// Adds and removes our entries in the vendors’ settings.json and hooks.json.
 /// Other hooks, keys and their order stay as they were (JSON is edited with JavaScript, which keeps key order);
 /// the previous file is kept next to it as `<name>.agents-notch-backup`.
 public struct HookInstaller: Sendable {
@@ -17,7 +17,7 @@ public struct HookInstaller: Sendable {
     }
 
     public func file(_ v: Vendor) -> URL {
-        home.appendingPathComponent(v == .claude ? ".claude/settings.json" : ".codex/hooks.json")
+        ConfigRoots(home: home).root(v).appendingPathComponent(v == .claude ? "settings.json" : "hooks.json")
     }
 
     /// One hook entry: the event, its options, and for a matcher group the tools it covers.

@@ -9,9 +9,9 @@ public enum CodexRules {
             throw POSIXError(.EINVAL)
         }
         let fm = FileManager.default
-        var dir = home
-        for component in [".codex", "rules"] {
-            dir.appendPathComponent(component)
+        var dir = ConfigRoots(home: home).root(.codex)
+        for folder in [dir, dir.appendingPathComponent("rules")] {
+            dir = folder
             if (try? fm.destinationOfSymbolicLink(atPath: dir.path)) != nil { throw POSIXError(.ELOOP) }
             try fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         }

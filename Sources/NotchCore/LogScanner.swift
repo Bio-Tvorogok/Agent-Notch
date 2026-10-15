@@ -56,9 +56,9 @@ public final class LogScanner: @unchecked Sendable {
 
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, execRuns: @escaping () -> [ExecRun] = ExecRun.running) {
         self.execRuns = execRuns
-        claudeRoot = home.appendingPathComponent(".claude/projects")
-        claudeSessions = home.appendingPathComponent(".claude/sessions")
-        codexRoot = home.appendingPathComponent(".codex/sessions")
+        claudeRoot = ConfigRoots(home: home).logs(.claude)
+        claudeSessions = ConfigRoots(home: home).root(.claude).appendingPathComponent("sessions")
+        codexRoot = ConfigRoots(home: home).logs(.codex)
     }
 
     public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent]? {
