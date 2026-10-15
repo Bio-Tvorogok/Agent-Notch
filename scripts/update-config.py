@@ -37,7 +37,7 @@ def configure(path):
         raise ValueError("production feed must use the stable Agent Notch GitHub Releases URL")
     # Marketing versions, rather than CI run numbers, order local and release builds identically.
     info.update(CFBundleVersion=version, SUPublicEDKey=key, SUFeedURL=feed,
-                SUEnableAutomaticChecks=True, SUScheduledCheckInterval=86400,
+                SUEnableAutomaticChecks=False,
                 SUAllowsAutomaticUpdates=False, SUAutomaticallyUpdate=False,
                 SUVerifyUpdateBeforeExtraction=True, SUEnableSystemProfiling=False)
     path.write_bytes(plistlib.dumps(info, sort_keys=False))

@@ -134,7 +134,6 @@ struct SettingsGeneral: View {
         .confirmationDialog(SettingsText.resetConfirm, isPresented: $confirmReset) {
             Button(SettingsText.resetConfirmButton, role: .destructive) {
                 settings.resetAll()
-                AppUpdates.shared.setAutomaticChecks(true)
                 SettingsSystem.setLogin(false, settings: settings)
                 refreshLogin()
             }

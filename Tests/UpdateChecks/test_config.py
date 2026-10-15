@@ -25,13 +25,12 @@ class UpdateConfigChecks(unittest.TestCase):
             result, _ = self.run_config(UPDATE_PUBLIC_KEY=key)
             self.assertNotEqual(result.returncode, 0)
 
-    def test_user_initiates_download_even_with_daily_checks(self):
+    def test_updates_only_run_after_user_action(self):
         result, info = self.run_config()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(info["SUFeedURL"], "https://github.com/Forichok/Agent-Notch/releases/latest/download/appcast.xml")
         self.assertEqual(info["SUPublicEDKey"], KEY)
-        self.assertTrue(info["SUEnableAutomaticChecks"])
-        self.assertEqual(info["SUScheduledCheckInterval"], 86400)
+        self.assertFalse(info["SUEnableAutomaticChecks"])
         self.assertFalse(info["SUAllowsAutomaticUpdates"])
         self.assertFalse(info["SUAutomaticallyUpdate"])
         self.assertTrue(info["SUVerifyUpdateBeforeExtraction"])
