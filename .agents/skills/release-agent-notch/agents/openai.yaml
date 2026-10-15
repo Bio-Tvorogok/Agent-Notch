@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Notch Release"
+  short_description: "Локальный релиз, GitHub, Homebrew и проверка загрузок"
+  default_prompt: "Используй $release-agent-notch: выпусти указанную версию Agent Notch, опубликуй GitHub Release в Forichok/Agent-Notch и cask в Forichok/homebrew-tap, обнови установленную копию и проверь публичные загрузки и ручную кнопку обновления."
