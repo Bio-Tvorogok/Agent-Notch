@@ -91,8 +91,42 @@ public struct HookInstaller: Sendable {
         chmod(helper.path, 0o755)
     }
 
-    public func install(_ v: Vendor) throws { try edit(v, add: true) }
-    public func uninstall(_ v: Vendor) throws { try edit(v, add: false) }
+    private func pathRecord(_ v: Vendor) -> URL {
+        helper.deletingLastPathComponent().appendingPathComponent("hook-paths-\(v.rawValue).json")
+    }
+
+    private func recordedPaths(_ v: Vendor) throws -> [String] {
+        let record = pathRecord(v)
+        guard FileManager.default.fileExists(atPath: record.path) else { return [] }
+        return try JSONDecoder().decode([String].self, from: Data(contentsOf: record))
+    }
+
+    private func remember(_ url: URL, for v: Vendor) throws {
+        var paths = try recordedPaths(v)
+        guard !paths.contains(url.path) else { return }
+        paths.append(url.path)
+        let record = pathRecord(v)
+        try FileManager.default.createDirectory(at: record.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(paths).write(to: record, options: .atomic)
+        chmod(record.path, 0o600)
+    }
+
+    public func install(_ v: Vendor) throws { try edit(v, at: file(v), add: true) }
+    public func uninstall(_ v: Vendor) throws {
+        var paths = [file(v).path]
+        var failures: [String] = []
+        do { paths += try recordedPaths(v) }
+        catch { failures.append("\(pathRecord(v).path): \(error.localizedDescription)") }
+        for path in Set(paths).sorted() {
+            do { try edit(v, at: URL(fileURLWithPath: path), add: false) }
+            catch { failures.append("\(path): \(error.localizedDescription)") }
+        }
+        // Retain the history so failed paths can be retried on the next uninstall.
+        if !failures.isEmpty {
+            throw NSError(domain: "HookInstaller", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")])
+        }
+    }
 
     /// Edits both vendors even when one config cannot be changed.
     public func editHooks(install: Bool) -> Int32 {
@@ -109,12 +143,12 @@ public struct HookInstaller: Sendable {
         return failed ? 1 : 0
     }
 
-    private func edit(_ v: Vendor, add: Bool) throws {
+    private func edit(_ v: Vendor, at file: URL, add: Bool) throws {
         // A symlinked settings file (dotfile managers) is edited where it really lives.
-        let url = file(v).resolvingSymlinksInPath()
+        let url = file.resolvingSymlinksInPath()
         let fm = FileManager.default
         // A symlink pointing nowhere: leave it for the person to fix rather than replace it with a file.
-        if (try? fm.destinationOfSymbolicLink(atPath: file(v).path)) != nil && !fm.fileExists(atPath: url.path) {
+        if (try? fm.destinationOfSymbolicLink(atPath: file.path)) != nil && !fm.fileExists(atPath: url.path) {
             throw POSIXError(.ENOENT)
         }
         // Only a missing file counts as empty: one that cannot be read must never be overwritten.
@@ -140,6 +174,8 @@ public struct HookInstaller: Sendable {
                 chmod(backup.path, 0o600)
             }
         }, write: { _, next in
+            // Record first: a state-write failure must not leave an untracked hook behind.
+            if add { try remember(url, for: v) }
             try Data(next.utf8).write(to: url, options: .atomic)
             chmod(url.path, mode_t(mode))
         })

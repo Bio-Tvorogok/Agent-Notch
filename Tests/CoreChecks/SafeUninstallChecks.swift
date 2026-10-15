@@ -83,6 +83,33 @@ struct SafeUninstallChecks {
         try body(home, helper, writer)
     }
 
+    func customRootsWithoutEnvironment() throws {
+        try fixture { home, helper, _ in
+            let keys = ["CLAUDE_CONFIG_DIR", "CODEX_HOME"]
+            defer { for key in keys { unsetenv(key) } }
+            var files: [URL] = []
+            for root in ["first config", "second config"] {
+                for (vendor, key) in zip([Vendor.claude, .codex], keys) {
+                    setenv(key, home.appendingPathComponent(root + "/" + vendor.rawValue).path, 1)
+                    let inst = HookInstaller(home: home)
+                    try inst.install(vendor)
+                    files.append(inst.file(vendor))
+                }
+            }
+            for key in keys { unsetenv(key) }
+            let defaults = HookInstaller(home: home)
+            for vendor in [Vendor.claude, .codex] {
+                try defaults.install(vendor)
+                files.append(defaults.file(vendor))
+            }
+            let (status, message) = try Self.process(helper, ["--uninstall-hooks"], home: home)
+            XCTAssertEqual(status, 0, message)
+            for file in files {
+                XCTAssertFalse(try String(contentsOf: file, encoding: .utf8).contains("notch-hook"))
+            }
+        }
+    }
+
     func vendorFailures(_ flag: String) throws {
         try fixture { home, helper, _ in
             let inst = HookInstaller(home: home)

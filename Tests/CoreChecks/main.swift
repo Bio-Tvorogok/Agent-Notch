@@ -284,6 +284,7 @@ run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-h
 run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
 run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
 run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
+run("safeCustomRootsWithoutEnvironment") { try safeUninstall.customRootsWithoutEnvironment() }
 run("safeAuditRotation") { try safeUninstall.auditRotates() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
 
