@@ -1,0 +1,4 @@
+{"type":"session_meta","timestamp":"2026-10-13T10:00:00Z","payload":{"id":"fixture-truncated","cwd":"/tmp/notch-fixture-project"}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:01Z","payload":{"type":"task_started"}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:02Z","payload":{"type":"agent_message","message":"Complete message before tail."}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:03Z","payload":{"type":"function_call","call_id":"tail-command","name":"exec_command","arguments":"{\"cmd\":\"echo recovered
