@@ -39,6 +39,11 @@ func run(_ name: String, _ body: () throws -> Void) {
 Loc.forced = .ru
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
+let discovery = CodexDiscoveryChecks()
+run("codexResumedOldFolder") { try discovery.resumedOldFolderAndAppendedTail() }
+run("codexTruncatedFullRead") { try discovery.resetReadsFromStart(replaced: false) }
+run("codexReplacedFullRead") { try discovery.resetReadsFromStart(replaced: true) }
+run("scannerCoalesces") { try discovery.overlappingPollsCoalesce() }
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("scannerRewrittenLog") { try ScannerRewriteChecks().rewrittenLogClearsThePreviousTurn() }
 run("scannerPartialLines") { try ScannerRewriteChecks().partialLinesWaitForTheirNewline() }

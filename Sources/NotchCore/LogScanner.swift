@@ -1,7 +1,7 @@
 import Foundation
 
 /// Finds recently written Claude Code and Codex session logs under a home folder and tails them.
-/// Read-only. Not thread-safe: call `poll` from one serial queue.
+/// Read-only. Overlapping polls share one pending scan and return the last published snapshot.
 public final class LogScanner: @unchecked Sendable {
     private struct Tracked {
         var log: SessionLog
@@ -28,6 +28,16 @@ public final class LogScanner: @unchecked Sendable {
     private let names = ProjectNames()
     private let fm = FileManager.default
     private var files: [String: Tracked] = [:]
+    private let scanLock = NSLock()
+    private var scanning = false
+    private var pending: (Date, Double)?
+    private var published: [Agent] = []
+    private struct DirectoryStamp: Equatable {
+        let modified: Date
+        let inode: UInt64
+        let device: UInt64
+    }
+    private var codexDirectories: [String: (DirectoryStamp, [URL])] = [:]
     private var lastDiscovery: Double = 0
     private var lastRetention: Double?
     private let execRuns: () -> [ExecRun]
@@ -47,6 +57,33 @@ public final class LogScanner: @unchecked Sendable {
     }
 
     public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent] {
+        scanLock.lock()
+        if scanning {
+            pending = (now, finishedRetention)
+            let result = published
+            scanLock.unlock()
+            return result
+        }
+        scanning = true
+        scanLock.unlock()
+        var request = (now, finishedRetention)
+        while true {
+            let result = scan(now: request.0, finishedRetention: request.1)
+            scanLock.lock()
+            published = result
+            if let next = pending {
+                pending = nil
+                scanLock.unlock()
+                request = next
+            } else {
+                scanning = false
+                scanLock.unlock()
+                return result
+            }
+        }
+    }
+
+    private func scan(now: Date, finishedRetention: Double) -> [Agent] {
         let t = now.timeIntervalSince1970
         // Retention affects finished rows, never the lifetime of a waiting request or a running tool.
         let window = max(finishedRetention, SessionLog.longTool, 3_600)
@@ -130,13 +167,48 @@ public final class LogScanner: @unchecked Sendable {
                 }
             }
         }
-        for day in [now, now - 86_400] {
-            let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: day))
-            let dir = codexRoot.appendingPathComponent(String(format: "%04d/%02d/%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0))
-            for f in children(dir) where f.pathExtension == "jsonl" && files[f.path] == nil && mtime(f) > fresh {
-                track(codex: f)
+        var visited: Set<String> = []
+        func directories(_ dir: URL, digits: Int) -> [URL] {
+            visited.insert(dir.path)
+            return codexChildren(dir).filter {
+                $0.lastPathComponent.count == digits && $0.lastPathComponent.allSatisfy(\.isNumber)
+            }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        }
+        for year in directories(codexRoot, digits: 4) {
+            for month in directories(year, digits: 2) {
+                for day in directories(month, digits: 2) {
+                    visited.insert(day.path)
+                    // An append does not touch the date folder's mtime. Check the files even
+                    // in old folders; only their own sorted modification times allow a stop.
+                    let logs = codexChildren(day).filter { $0.pathExtension == "jsonl" }.map {
+                        ($0, mtime($0.path))
+                    }.sorted { $0.1 > $1.1 }
+                    for (file, modified) in logs {
+                        if modified <= fresh { break }
+                        if files[file.path] == nil { track(codex: file) }
+                    }
+                }
             }
         }
+        codexDirectories = codexDirectories.filter { visited.contains($0.key) }
+    }
+
+    private func codexChildren(_ dir: URL) -> [URL] {
+        guard let attributes = try? fm.attributesOfItem(atPath: dir.path),
+              let modified = attributes[.modificationDate] as? Date,
+              let inode = attributes[.systemFileNumber] as? UInt64,
+              let device = attributes[.systemNumber] as? UInt64 else {
+            codexDirectories.removeValue(forKey: dir.path)
+            return []
+        }
+        let stamp = DirectoryStamp(modified: modified, inode: inode, device: device)
+        if let cached = codexDirectories[dir.path], cached.0 == stamp { return cached.1 }
+        guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
+            codexDirectories.removeValue(forKey: dir.path)
+            return []
+        }
+        codexDirectories[dir.path] = (stamp, items)
+        return items
     }
 
     private func subagentLogs(in session: URL) -> [URL] {
@@ -213,12 +285,7 @@ public final class LogScanner: @unchecked Sendable {
         let size = UInt64(max(0, info.st_size))
         if size < f.offset || (f.inode != nil && (f.inode != info.st_ino || f.device != info.st_dev)) {
             f.log = f.initial
-            f.offset = size > Self.tailBytes ? size - Self.tailBytes : 0
-            if f.log.vendor == .codex, let first = firstLine(path),
-               let r = try? JSONSerialization.jsonObject(with: first) as? Rec {
-                if f.isExec { ExecLine.apply(r, to: &f.log, at: now) }
-                else { CodexLine.apply(r, to: &f.log) }
-            }
+            f.offset = f.log.vendor == .codex ? 0 : (size > Self.tailBytes ? size - Self.tailBytes : 0)
         }
         f.inode = info.st_ino
         f.device = info.st_dev
@@ -266,7 +333,9 @@ public final class LogScanner: @unchecked Sendable {
     }
 
     private func mtime(_ path: String) -> Double {
-        mtime(URL(fileURLWithPath: path))
+        var info = stat()
+        guard stat(path, &info) == 0 else { return 0 }
+        return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000
     }
 
     private func mtime(_ url: URL) -> Double {
