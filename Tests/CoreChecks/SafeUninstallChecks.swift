@@ -44,7 +44,8 @@ struct SafeUninstallChecks {
         var event = HookEvent(vendor: .claude, payload: ["session_id": "audit-check", "hook_event_name": "PermissionRequest",
             "tool_name": "Bash", "tool_input": ["command": String(repeating: "x", count: Int(CommandLine.arguments[1])!)]])!
         event.detail = String(repeating: "x", count: Int(CommandLine.arguments[1])!)
-        Audit.record(event, .allow)
+        let delivery = CommandLine.arguments.count > 2 ? AnswerDelivery(rawValue: CommandLine.arguments[2]) : nil
+        Audit.record(event, .allow, delivery: delivery)
         """.write(to: main, atomically: true, encoding: .utf8)
         let writer = dir.appendingPathComponent("audit-writer")
         try compile(link + ["-o", writer.path, audit.path, main.path])
@@ -268,6 +269,23 @@ struct SafeUninstallChecks {
             let before = try Data(contentsOf: url)
             XCTAssertEqual(try Self.process(writer, ["2000000"], home: home).0, 0)
             XCTAssertEqual(try Data(contentsOf: url), before, "an oversized row must not grow the log or discard retained rows")
+        }
+    }
+
+    func auditDelivery() throws {
+        try fixture { home, _, writer in
+            for args in [["1"], ["1", "delivered"], ["1", "notDelivered"]] {
+                XCTAssertEqual(try Self.process(writer, args, home: home).0, 0)
+            }
+            let url = home.appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
+            let rows = try Data(contentsOf: url).split(separator: 10).map {
+                try XCTUnwrap(try JSONSerialization.jsonObject(with: Data($0)) as? [String: Any])
+            }
+            XCTAssertEqual(rows.count, 3)
+            XCTAssertNil(rows[0]["delivery"])
+            XCTAssertEqual(rows[1]["delivery"] as? String, "delivered")
+            XCTAssertEqual(rows[2]["delivery"] as? String, "notDelivered")
+            XCTAssertTrue(rows.allSatisfy { $0["decision"] as? String == "allow" })
         }
     }
 }

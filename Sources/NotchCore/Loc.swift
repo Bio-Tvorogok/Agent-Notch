@@ -25,3 +25,13 @@ public enum Loc {
     /// The string for the current language.
     public static func t(_ en: String, _ ru: String) -> String { isRussian ? ru : en }
 }
+
+public enum DeliveryText {
+    public static var sent: String { Loc.t("Sent…", "Отправлено…") }
+    public static var notDelivered: String { Loc.t("delivery unconfirmed", "доставка не подтверждена") }
+    public static var openTerminal: String { Loc.t("Open terminal", "Открыть терминал") }
+    public static var dismiss: String { Loc.t("Dismiss", "Скрыть") }
+    public static func countdown(_ seconds: Int) -> String {
+        Loc.t("Waiting: \(seconds)s left", "Ожидание: осталось \(seconds) с")
+    }
+}

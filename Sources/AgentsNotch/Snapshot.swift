@@ -23,6 +23,39 @@ enum Snapshot {
         }
     }
 
+    /// `--snapshot-delivery <dir>`: the same permission before countdown, near timeout, in flight, and after failure.
+    static func runDelivery(into dir: String) -> Bool {
+        let suite = "AgentsNotch.snapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        let forced = Loc.forced
+        defer { defaults.removePersistentDomain(forName: suite); Loc.forced = forced }
+        let settings = AppSettings(defaults: defaults)
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            for (name, age, status) in [("waiting", 5.0, AnswerDelivery.waiting), ("countdown", 75.0, .waiting),
+                                        ("sent", 76.0, .sent), ("not-delivered", 100.0, .notDelivered)] {
+                let store = Store(settings: settings)
+                store.useFixture(Fixtures.agents("ask") ?? [], asks: Array(Fixtures.asks("ask").prefix(1)), askAge: age, delivery: status)
+                ok = write(Scene(store: store), to: url.appendingPathComponent("\(name)-\(language.rawValue).png")) && ok
+            }
+            let mixed = Store(settings: settings)
+            let requests = Array(Fixtures.asks("ask").prefix(1)) + [HookEvent(vendor: .claude, name: "PermissionRequest",
+                sessionId: "fx-1", tool: "Bash", toolUseID: "second", detail: "echo second request")]
+            mixed.useFixture(Fixtures.agents("ask") ?? [], asks: requests, deliveries: [.notDelivered, .waiting])
+            ok = write(Scene(store: mixed), to: url.appendingPathComponent("mixed-\(language.rawValue).png")) && ok
+            for name in ["question", "plan"] {
+                let store = Store(settings: settings)
+                store.useFixture(Fixtures.agents(name) ?? [], asks: Fixtures.asks(name), delivery: .notDelivered)
+                ok = write(Scene(store: store), to: url.appendingPathComponent("\(name)-not-delivered-\(language.rawValue).png")) && ok
+            }
+        }
+        return ok
+    }
+
     /// `--snapshot-live <file.png>`: scans this Mac's session logs once and renders what it found.
     static func runLive(to file: String) async {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString

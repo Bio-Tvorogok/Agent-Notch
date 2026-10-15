@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot-delivery"), i + 1 < args.count {
+            exit(Snapshot.runDelivery(into: args[i + 1]) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot-themes"), i + 1 < args.count {
             exit(Snapshot.runThemes(into: args[i + 1]) ? 0 : 1)
         }
@@ -54,6 +57,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.start()
         }
         store.forceCramped = args.contains("--cramped")
+        if UpdateLaunchPolicy.shouldStart(arguments: args) {
+            AppUpdates.shared.start()
+            if args.contains("--check-updates") { AppUpdates.shared.checkForUpdates() }
+        }
         KeepAwakeModel.shared.startMonitoring()
         let notch = NotchController(store: store)
         self.notch = notch
