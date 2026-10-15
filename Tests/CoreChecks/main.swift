@@ -43,11 +43,11 @@ run("fixtureCodexLegacy") { try sessionFixtures.codexLegacy() }
 run("fixtureResumedReaders") { try sessionFixtures.resumedReaders() }
 run("fixtureTruncatedRecovery") { try sessionFixtures.truncatedRecovery() }
 run("fixtureRotation") { try sessionFixtures.rotation() }
+run("fixtureResumedDiscovery") { try sessionFixtures.resumedDiscoveryExpectedFail() }
 if ProcessInfo.processInfo.environment["NOTCH_EXPECTED_FAIL"] == "1" {
-    run("EXPECTED-FAIL fixtureResumedDiscovery") { try sessionFixtures.resumedDiscoveryExpectedFail() }
     run("EXPECTED-FAIL fixtureTruncatedTail") { try sessionFixtures.truncatedTailExpectedFail() }
 } else {
-    print("SKIP EXPECTED-FAIL fixtureResumedDiscovery, fixtureTruncatedTail (NOTCH_EXPECTED_FAIL=1 to run)")
+    print("SKIP EXPECTED-FAIL fixtureTruncatedTail (NOTCH_EXPECTED_FAIL=1 to run)")
 }
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
