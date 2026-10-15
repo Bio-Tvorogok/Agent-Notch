@@ -40,9 +40,16 @@ struct PanelView: View {
             Summary(projects: projects, usage: store.usage)
             UsageInline(usage: store.usage)
             let items = attention(projects)
-            let firstAsk = store.hooks.pending.first?.event.agentKey
+            let firstAsk = store.hooks.pending.first(where: { $0.delivery == .waiting })?.ticket
             ForEach(items, id: \.agent.id) { item in
-                AttentionRow(item: item, multi: projects.count > 1, store: store, first: item.agent.id == firstAsk)
+                let requests = store.hooks.pending.filter { $0.event.agentKey == item.agent.id }
+                if requests.isEmpty {
+                    AttentionRow(item: item, multi: projects.count > 1, store: store, ask: nil)
+                } else {
+                    ForEach(requests) { ask in
+                        AttentionRow(item: item, multi: projects.count > 1, store: store, ask: ask, first: ask.ticket == firstAsk)
+                    }
+                }
             }
             ForEach(settings.listSections(projects)) { p in
                 if settings.rows.groupByProject && projects.count > 1 { ProjectHeader(project: p) }
@@ -119,14 +126,20 @@ private struct AttentionRow: View {
     let item: AttentionItem
     let multi: Bool
     @ObservedObject var store: Store
+    let ask: PendingAsk?
     /// The first open request answers to the hotkeys; its row shows them.
     var first = false
     @Environment(\.theme) private var theme
 
+    private var requestAgent: Agent {
+        var agent = item.agent
+        if let ask { agent.state = ask.delivery == .notDelivered ? .error : .waiting }
+        return agent
+    }
+
     var body: some View {
-        let a = item.agent
+        let a = requestAgent
         let waiting = a.state == .waiting
-        let ask = store.pending(for: a)
         HStack(alignment: .top, spacing: 7) {
             AgentStatusMark(agent: a).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
@@ -136,7 +149,10 @@ private struct AttentionRow: View {
                     if multi { Text(item.project).foregroundStyle(dim).lineLimit(1) }
                 }
                 .contentShape(Rectangle()).onTapGesture { RowClick.isDouble ? store.open(a) : store.select(a) }
-                if let ask, ask.event.isQuestion {
+                if let ask { DeliveryStatus(ask: ask, agent: a, store: store) }
+                if let ask, ask.delivery != .waiting {
+                    Request(event: ask.event)
+                } else if let ask, ask.event.isQuestion {
                     QuestionChoices(ask: ask, store: store).id(ask.ticket)
                 } else if let ask, ask.event.isPlan {
                     PlanChoices(ask: ask, store: store).id(ask.ticket)
@@ -168,10 +184,11 @@ private struct Request: View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(event.tool.map { $0.hasPrefix("mcp__") ? "MCP" : $0 } ?? Loc.t("action", "действие")).foregroundStyle(dim)
             // The approval row shows exactly what gets approved, whole (up to 12 lines), never the shortened activity line.
-            Text(event.full ?? Loc.t("no details", "без подробностей"))
+            Text(event.full ?? event.plan ?? (event.questions.isEmpty ? nil : event.questions.map(\.question).joined(separator: "\n"))
+                 ?? Loc.t("no details", "без подробностей"))
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(event.isRisky ? Ink.error : Ink.code)
-                .lineLimit(event.isLong ? 12 : 1).truncationMode(.middle)
+                .lineLimit(event.isLong || event.isQuestion || event.isPlan ? 12 : 1).truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
         }

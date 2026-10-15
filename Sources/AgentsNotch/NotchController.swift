@@ -170,6 +170,8 @@ final class NotchController {
         prompts.target = run
         prompts.representedObject = run
         menu.addItem(prompts)
+        let updateItem = menu.addItem(withTitle: UpdateText.check, action: #selector(AppUpdates.checkForUpdates(_:)), keyEquivalent: "")
+        updateItem.target = AppUpdates.shared
         let inst = HookInstaller()
         item(inst.isInstalled(.claude) ? Loc.t("Claude Code hooks installed — remove", "Хуки Claude Code установлены — удалить")
              : Loc.t("Install Claude Code hooks", "Установить хуки Claude Code"),
@@ -242,7 +244,10 @@ final class AppActions: NSObject {
                 try inst.placeHelper(from: Self.bundledHelper, app: Self.appExecutable)
                 try inst.install(vendor)
                 SoundPlayer.shared.play(.connected)
-                if vendor == .codex { Self.say(Loc.t("Codex hooks written to ~/.codex/hooks.json", "Хуки Codex записаны в ~/.codex/hooks.json"), Self.codexTrustNote) }
+                if vendor == .codex {
+                    let path = CardFormat.path(inst.file(vendor).path, cwd: nil, home: inst.home.path)
+                    Self.say(Loc.t("Codex hooks written to \(path)", "Хуки Codex записаны в \(path)"), Self.codexTrustNote)
+                }
             }
         } catch {
             SoundPlayer.shared.play(.operationFailed)

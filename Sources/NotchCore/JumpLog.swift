@@ -37,7 +37,7 @@ enum JumpLog {
 
     static func find(id: String, vendor: Vendor, home: URL, near: URL?) -> URL? {
         guard !id.isEmpty, !id.contains("/"), !id.contains("\0"), id != ".", id != ".." else { return nil }
-        let root = home.appendingPathComponent(vendor == .claude ? ".claude/projects" : ".codex/sessions")
+        let root = ConfigRoots(home: home).logs(vendor)
         if vendor == .claude, var directory = near?.deletingLastPathComponent() {
             while directory.path.hasPrefix(root.path + "/") {
                 let candidate = directory.appendingPathComponent(id + ".jsonl")
@@ -59,7 +59,7 @@ enum JumpLog {
     }
 
     static func live(id: String, home: URL) -> [String: Any] {
-        let dir = home.appendingPathComponent(".claude/sessions")
+        let dir = ConfigRoots(home: home).root(.claude).appendingPathComponent("sessions")
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         var matches: [[String: Any]] = []
         for file in files.sorted(by: { $0.path < $1.path }) where file.pathExtension == "json" {

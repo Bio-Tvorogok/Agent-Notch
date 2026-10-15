@@ -8,6 +8,8 @@ import NotchCore
 // notch-hook --uninstall-hooks removes our entries from both vendors, like the app flag.
 // `brew uninstall --zap` runs it from this copy, because by then the app bundle is already gone.
 
+// A closed stdout pipe must not turn a delivery failure into a hook failure.
+signal(SIGPIPE, SIG_IGN)
 let args = CommandLine.arguments
 if args.dropFirst().first == "doctor" || args.dropFirst().first == "--test-request" {
     let home = args.firstIndex(of: "--home").flatMap { $0 + 1 < args.count ? URL(fileURLWithPath: args[$0 + 1]) : nil }
@@ -46,8 +48,8 @@ if parsed?.isAutomaticReview == true { exit(0) }
 // PreToolUse holds the call only for the entry installed with --wait and only for a question or plan; the async one reports and leaves.
 let holds = event == "PermissionRequest" || (args.contains("--wait") && parsed?.waitsForAnswer == true)
 let wait = holds ? Double(HookInstaller.wait) : 0
-if let decision = HookClient.send(vendor: vendor, payload: input, wait: wait),
-   let out = HookReply.helperStdout(event: parsed, name: event, decision: decision) {
-    FileHandle.standardOutput.write(Data((out + "\n").utf8))
-}
+_ = HookClient.send(vendor: vendor, payload: input, wait: wait, deliver: { decision in
+    guard let out = HookReply.helperStdout(event: parsed, name: event, decision: decision) else { return false }
+    return HookClient.writeStdout(out)
+})
 exit(0)

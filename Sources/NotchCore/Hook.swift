@@ -9,6 +9,8 @@ public struct HookEvent: Sendable, Equatable {
     public var agentId: String?
     public var cwd: String?
     public var tool: String?
+    /// The vendor's identity for this exact tool call; nil uses the socket ticket.
+    public var toolUseID: String?
     /// One line about the tool call: the command, the file, the URL.
     public var detail: String?
     /// The whole command, path or URL being approved, up to 4000 characters: what the person must be able to read.
@@ -51,10 +53,10 @@ public struct HookEvent: Sendable, Equatable {
     }
 
     public init(vendor: Vendor, name: String, sessionId: String, agentId: String? = nil, cwd: String? = nil,
-                tool: String? = nil, detail: String? = nil, full: String? = nil, notificationType: String? = nil, message: String? = nil,
+                tool: String? = nil, toolUseID: String? = nil, detail: String? = nil, full: String? = nil, notificationType: String? = nil, message: String? = nil,
                 questions: [Question] = [], plan: String? = nil, toolInput: String? = nil) {
         self.vendor = vendor; self.name = name; self.sessionId = sessionId; self.agentId = agentId; self.cwd = cwd
-        self.tool = tool; self.detail = detail; self.full = full ?? detail
+        self.tool = tool; self.toolUseID = toolUseID; self.detail = detail; self.full = full ?? detail
         self.notificationType = notificationType; self.message = message
         self.questions = questions; self.plan = plan; self.toolInput = toolInput
     }
@@ -66,7 +68,7 @@ public struct HookEvent: Sendable, Equatable {
         let input = p["tool_input"]
         let interactive = tool == "AskUserQuestion" || tool == "ExitPlanMode"
         self.init(vendor: vendor, name: name, sessionId: session, agentId: p["agent_id"] as? String, cwd: p["cwd"] as? String,
-                  tool: tool, detail: tool.flatMap { ToolText.detail($0, input) }, full: ToolText.full(input),
+                  tool: tool, toolUseID: Self.toolIdentity(vendor: vendor, payload: p), detail: tool.flatMap { ToolText.detail($0, input) }, full: ToolText.full(input),
                   notificationType: p["notification_type"] as? String, message: p["message"] as? String,
                   questions: tool == "AskUserQuestion" ? Question.parse(input) : [],
                   plan: tool == "ExitPlanMode" ? (input as? Rec)?["plan"] as? String : nil,
@@ -74,6 +76,12 @@ public struct HookEvent: Sendable, Equatable {
         if vendor == .codex, name == "PermissionRequest" {
             isAutomaticReview = CodexApprovalContext.isAutomatic(payload: p)
         }
+    }
+
+    /// Read identity without re-reading Codex's approval transcript on the reply path.
+    static func toolIdentity(vendor: Vendor, payload: Rec) -> String? {
+        (payload["tool_use_id"] as? String)?.nilIfEmpty
+            ?? (vendor == .codex ? (payload["call_id"] as? String)?.nilIfEmpty : nil)
     }
 
     /// "Bash · pnpm test", "Edit · src/app.ts".

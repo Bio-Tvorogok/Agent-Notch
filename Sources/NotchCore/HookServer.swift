@@ -11,11 +11,21 @@ public final class HookServer: @unchecked Sendable {
     /// The waiting hook hung up: the agent was interrupted, or its own timeout ran out.
     public var onGone: @Sendable (Int) -> Void = { _ in }
 
+    /// Sent is provisional. Only a matching receipt reports delivered.
+    public var onDelivery: @Sendable (Int, AnswerDelivery) -> Void = { _, _ in }
+
+    private struct Request {
+        let watch: DispatchSourceRead
+        let fd: Int32
+        let toolUseID: String?
+        var sent = false
+        var receipt = Data()
+    }
+
     private let queue = DispatchQueue(label: "agents-notch.hooks")
     private var listener: Int32 = -1
     private var acceptSource: DispatchSourceRead?
-    private var waiting: [Int: DispatchSourceRead] = [:]
-    private var waitingFD: [Int: Int32] = [:]
+    private var waiting: [Int: Request] = [:]
     private var nextTicket = 1
 
     public static var defaultPath: String {
@@ -23,8 +33,15 @@ public final class HookServer: @unchecked Sendable {
             .appendingPathComponent("Library/Application Support/AgentsNotch/notch.sock").path
     }
 
-    public init(path: String = HookServer.defaultPath) {
+    private let writeDecision: @Sendable (Int32, Data) -> Bool
+
+    public convenience init(path: String = HookServer.defaultPath) {
+        self.init(path: path, writeDecision: { Socket.write($0, $1) })
+    }
+
+    init(path: String, writeDecision: @escaping @Sendable (Int32, Data) -> Bool) {
         self.path = path
+        self.writeDecision = writeDecision
     }
 
     public func start() throws {
@@ -53,7 +70,7 @@ public final class HookServer: @unchecked Sendable {
 
     public func stop() {
         queue.sync {
-            for id in Array(waiting.keys) { finish(id, reply: nil) }
+            for id in Array(waiting.keys) { finish(id, status: .notDelivered) }
             acceptSource?.cancel()
             acceptSource = nil
             listener = -1
@@ -61,9 +78,36 @@ public final class HookServer: @unchecked Sendable {
         }
     }
 
-    /// Sends the human's decision to the waiting hook. A ticket that already hung up is ignored.
-    public func answer(_ ticket: Int, _ decision: HookDecision) {
-        queue.async { self.finish(ticket, reply: decision) }
+    /// A ticket and tool identity must both match. A duplicate cannot replace an answer in flight.
+    public func answer(_ ticket: Int, _ decision: HookDecision, toolUseID: String? = nil) {
+        queue.async {
+            guard var request = self.waiting[ticket] else {
+                self.onDelivery(ticket, .notDelivered)
+                return
+            }
+            guard request.toolUseID == toolUseID, !request.sent else { return }
+            request.sent = true
+            self.waiting[ticket] = request
+            self.onDelivery(ticket, .sent)
+            let wire = HookReceipt.decision(decision, ticket: ticket, toolUseID: toolUseID)
+            guard self.writeDecision(request.fd, wire + [10]) else {
+                NSLog("agents-notch: decision write failed for ticket %d: %s", ticket, strerror(errno))
+                self.finish(ticket, status: .notDelivered)
+                return
+            }
+            // The helper never waits for this timer: it sends one receipt and returns to the agent.
+            self.queue.asyncAfter(deadline: .now() + 3) {
+                self.finish(ticket, status: .notDelivered)
+            }
+        }
+    }
+
+    /// No approval: release an obsolete or hidden request back to the agent's own prompt.
+    public func handBack(_ ticket: Int) {
+        queue.async {
+            guard let request = self.waiting[ticket] else { return }
+            self.answer(ticket, .pass, toolUseID: request.toolUseID)
+        }
     }
 
     // MARK: connections
@@ -71,6 +115,8 @@ public final class HookServer: @unchecked Sendable {
     /// Requests held open at once; more get an immediate pass.
     static let maxWaiting = 64
     public static let maxLine = 4 << 20
+    // JSON can escape each byte as six characters; 512 still leaves room in the 4096-byte receipt.
+    static let maxToolIdentityBytes = 512
 
     private func acceptAll() {
         while true {
@@ -108,6 +154,7 @@ public final class HookServer: @unchecked Sendable {
               let event = HookEvent(vendor: vendor, payload: payload) else { close(fd); return }
         // Older helpers may still send these while the newly built app is running.
         guard !event.isAutomaticReview else { close(fd); return }
+        guard (event.toolUseID?.utf8.count ?? 0) <= Self.maxToolIdentityBytes else { close(fd); return }
         guard event.waitsForAnswer, r["wait"] as? Bool == true, waiting.count < Self.maxWaiting else {
             close(fd)
             onEvent(event, nil)
@@ -115,24 +162,40 @@ public final class HookServer: @unchecked Sendable {
         }
         let ticket = nextTicket
         nextTicket += 1
-        // The hook only reads from here on, so the socket turning readable means it hung up.
         let watch = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-        watch.setEventHandler { [weak self] in
-            guard let self, self.waiting[ticket] != nil else { return }
-            self.finish(ticket, reply: nil)
-            self.onGone(ticket)
-        }
+        watch.setEventHandler { [weak self] in self?.readReceipt(ticket) }
         watch.setCancelHandler { close(fd) }
-        waiting[ticket] = watch
-        waitingFD[ticket] = fd
+        waiting[ticket] = Request(watch: watch, fd: fd, toolUseID: event.toolUseID)
         watch.resume()
+        queue.asyncAfter(deadline: .now() + Double(HookInstaller.wait)) {
+            guard self.waiting[ticket]?.sent == false else { return }
+            self.finish(ticket, status: .notDelivered)
+        }
         onEvent(event, ticket)
     }
 
-    private func finish(_ ticket: Int, reply: HookDecision?) {
-        guard let watch = waiting.removeValue(forKey: ticket), let fd = waitingFD.removeValue(forKey: ticket) else { return }
-        if let reply { Socket.write(fd, reply.wire + [0x0A]) }
-        watch.cancel()
+    private func readReceipt(_ ticket: Int) {
+        guard var request = waiting[ticket] else { return }
+        var bytes = [UInt8](repeating: 0, count: 4096)
+        let n = recv(request.fd, &bytes, bytes.count, MSG_DONTWAIT)
+        if n < 0 && (errno == EAGAIN || errno == EINTR) { return }
+        guard n > 0, request.sent else { finish(ticket, status: .notDelivered); return }
+        request.receipt.append(contentsOf: bytes[..<n])
+        if let nl = request.receipt.firstIndex(of: 10) {
+            let accepted = HookReceipt.matches(Data(request.receipt[..<nl]), ticket: ticket, toolUseID: request.toolUseID)
+            finish(ticket, status: accepted ? .delivered : .notDelivered)
+        } else if request.receipt.count >= 4096 {
+            finish(ticket, status: .notDelivered)
+        } else {
+            waiting[ticket] = request
+        }
+    }
+
+    private func finish(_ ticket: Int, status: AnswerDelivery) {
+        guard let request = waiting.removeValue(forKey: ticket) else { return }
+        request.watch.cancel()
+        if request.sent { onDelivery(ticket, status) }
+        if status == .notDelivered { onGone(ticket) }
     }
 
     static func address(_ path: String) throws -> sockaddr_un {

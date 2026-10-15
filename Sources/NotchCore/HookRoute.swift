@@ -50,7 +50,7 @@ public struct AnswerRoute: Sendable {
 
     public init() {}
 
-    private static func key(_ e: HookEvent) -> String { e.agentKey + "|" + (e.tool ?? "") }
+    private static func key(_ e: HookEvent) -> String { e.agentKey + "|" + (e.tool ?? "") + "|" + (e.toolUseID ?? "") }
 
     /// A PreToolUse for a question or plan reached the notch with a ticket.
     public mutating func noteRouted(_ e: HookEvent, now: Double) {

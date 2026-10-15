@@ -91,3 +91,31 @@ public extension HookDecision {
         try? JSONSerialization.jsonObject(with: Data(s.utf8)) as? Rec
     }
 }
+
+/// The private socket envelope binds both directions to the same tool call and connection ticket.
+/// Receipt confirms that the helper read the decision, not that the agent completed the tool.
+enum HookReceipt {
+    static func decision(_ decision: HookDecision, ticket: Int, toolUseID: String?) -> Data {
+        var object = (try? JSONSerialization.jsonObject(with: decision.wire) as? Rec) ?? [:]
+        object["ticket"] = ticket
+        object["tool_use_id"] = toolUseID
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+    }
+
+    static func ack(ticket: Int, toolUseID: String?) -> Data {
+        var object: Rec = ["ack": ticket]
+        object["tool_use_id"] = toolUseID
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
+    }
+
+    static func matches(_ data: Data, ticket: Int, toolUseID: String?) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? Rec,
+              object["ack"] as? Int == ticket else { return false }
+        return matchesTool(object, toolUseID: toolUseID)
+    }
+
+    static func matchesTool(_ object: Rec, toolUseID: String?) -> Bool {
+        if let toolUseID { return object["tool_use_id"] as? String == toolUseID }
+        return object["tool_use_id"] == nil
+    }
+}

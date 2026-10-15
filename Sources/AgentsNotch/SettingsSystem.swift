@@ -118,6 +118,7 @@ struct SettingsGeneral: View {
                 if loginStatus == .requiresApproval { Text(SettingsText.loginApproval).font(.caption).foregroundStyle(.secondary) }
             }
             SettingsKeepAwake()
+            SettingsUpdates()
             Section {
                 LabeledContent {
                     Button(SettingsText.resetButton) { confirmReset = true }
@@ -133,6 +134,7 @@ struct SettingsGeneral: View {
         .confirmationDialog(SettingsText.resetConfirm, isPresented: $confirmReset) {
             Button(SettingsText.resetConfirmButton, role: .destructive) {
                 settings.resetAll()
+                AppUpdates.shared.setAutomaticChecks(true)
                 SettingsSystem.setLogin(false, settings: settings)
                 refreshLogin()
             }

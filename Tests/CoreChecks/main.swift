@@ -1,5 +1,14 @@
 import Foundation
 
+if CommandLine.arguments.contains("--lineage-child") {
+    Thread.sleep(forTimeInterval: 60)
+    exit(0)
+}
+
+// Existing fixtures use temporary homes; ignore the developer’s real config roots.
+unsetenv("CLAUDE_CONFIG_DIR")
+unsetenv("CODEX_HOME")
+
 // Minimal XCTest stand-in: Command Line Tools ship no XCTest, and scripts/test.sh builds with plain swiftc.
 var failures = 0
 var ran = 0
@@ -52,6 +61,7 @@ if ProcessInfo.processInfo.environment["NOTCH_EXPECTED_FAIL"] == "1" {
 
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
 Loc.forced = .ru
+run("updateLaunchModes") { UpdateChecks().launchModes() }
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 run("codexAutomaticMCPRoundTrip") { try HookTests().testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
@@ -82,6 +92,12 @@ run("execRetainedLifecycle") { try ExecIdentityChecks().retainedSessionUsesExecL
 run("execLongIdentity") { try ExecIdentityChecks().longExecStreamKeepsThreadIdentity() }
 run("lineageNearest") { LineageChecks().testPicksTheNearestKnownParent() }
 run("lineageEnv") { LineageChecks().testReadsBothVendorIdsFromTheEnvironment() }
+run("rolloutPaths") { RolloutLineageChecks().rolloutPaths() }
+run("rolloutOpenFile") { try RolloutLineageChecks().openRolloutFile() }
+run("rolloutLineageRetention") { try RolloutLineageChecks().workerKeepsItsParentAfterExitAndReset() }
+run("rolloutNativeParent") { try RolloutLineageChecks().nativeParentWins() }
+run("rolloutNearestParent") { try RolloutLineageChecks().nearestParentAcrossVendors() }
+run("rolloutExecMerge") { try RolloutLineageChecks().execStreamStillMerges() }
 run("claudeQuestion") { try l.testClaudeQuestionWaitsUntilAnswered() }
 run("nestsGrandchildren") { t.testNestsGrandchildrenUnderTheRootAndOrphansBecomeRoots() }
 run("dropsFinishedProjects") { t.testProjectsWithOnlyFinishedAgentsAreDropped() }
@@ -90,6 +106,25 @@ run("smallProjectDetailed") { w.testSmallProjectDrawsEveryLiveAgent() }
 run("busyProjectCounters") { w.testBusyProjectSwitchesToCountersAndKeepsExceptions() }
 run("crampedSummary") { w.testCrampedOrTooWideCollapsesIntoOneSummary() }
 run("nothingLive") { w.testNothingLiveDrawsNothing() }
+run("deliveryWaitsForReceipt") { try SecurityDeliveryChecks().waitsForReceipt() }
+run("deliveryStdoutBroken") { try DeliveryFixChecks().helperStdout("broken") }
+run("deliveryStdoutSuccess") { try DeliveryFixChecks().helperStdout("success") }
+run("deliveryStdoutFull") { try DeliveryFixChecks().helperStdout("full") }
+run("deliveryStdoutLarge") { try DeliveryFixChecks().helperStdout("large") }
+run("deliveryOversizedIdentity") { try DeliveryFixChecks().oversizedIdentity() }
+run("deliveryUnsentDisconnect") { try DeliveryFixChecks().unsentDisconnect() }
+run("deliveryUnconfirmedExpiry") { try DeliveryFixChecks().unconfirmedExpiry() }
+run("deliveryIdenticalCommands") { try DeliveryIdentityRegressionChecks().identicalCommands() }
+run("deliveryQuestionRoute") { try DeliveryIdentityRegressionChecks().questionRoute() }
+run("deliveryAck") { try SecurityDeliveryChecks().receiptAndFailure("ack") }
+run("deliveryWriteError") { try SecurityDeliveryChecks().receiptAndFailure("write-error") }
+run("deliveryAckTimeout") { try SecurityDeliveryChecks().receiptAndFailure("timeout") }
+run("deliveryWrongAck") { try SecurityDeliveryChecks().receiptAndFailure("wrong-ack") }
+run("deliveryFragmentedAck") { try SecurityDeliveryChecks().receiptAndFailure("fragmented-ack") }
+run("deliveryDelayedAck") { try SecurityDeliveryChecks().receiptAndFailure("delayed-ack") }
+run("deliveryLateAndDuplicate") { try SecurityDeliveryChecks().lateAndDuplicate() }
+run("deliveryNoClick") { try SecurityDeliveryChecks().noClick() }
+run("deliveryStateAndIdentity") { try SecurityDeliveryChecks().stateAndIdentity() }
 let connectionChecks = ConnectionChecks()
 run("connectionPartialSetRefreshesHelper") { try connectionChecks.partialSetRefreshesHelper() }
 run("connectionFullSet") { try connectionChecks.fullSet() }
@@ -288,8 +323,18 @@ run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-h
 run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
 run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
 run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
+run("safeCustomRootsWithoutEnvironment") { try safeUninstall.customRootsWithoutEnvironment() }
 run("safeAuditRotation") { try safeUninstall.auditRotates() }
+run("auditDeliveryResult") { try safeUninstall.auditDelivery() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
+
+let configRoots = ConfigRootChecks()
+run("configClaudeHooks") { try configRoots.hooks(.claude) }
+run("configCodexHooks") { try configRoots.hooks(.codex) }
+run("configClaudeDiscovery") { try configRoots.discovery(.claude) }
+run("configCodexDiscovery") { try configRoots.discovery(.codex) }
+run("configClaudeProjects") { try configRoots.claudeProjects() }
+run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
