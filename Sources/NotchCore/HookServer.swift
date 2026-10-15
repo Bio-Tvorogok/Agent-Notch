@@ -96,7 +96,7 @@ public final class HookServer: @unchecked Sendable {
                 return
             }
             // The helper never waits for this timer: it sends one receipt and returns to the agent.
-            self.queue.asyncAfter(deadline: .now() + 1) {
+            self.queue.asyncAfter(deadline: .now() + 3) {
                 self.finish(ticket, status: .notDelivered)
             }
         }
@@ -115,6 +115,8 @@ public final class HookServer: @unchecked Sendable {
     /// Requests held open at once; more get an immediate pass.
     static let maxWaiting = 64
     public static let maxLine = 4 << 20
+    // JSON can escape each byte as six characters; 512 still leaves room in the 4096-byte receipt.
+    static let maxToolIdentityBytes = 512
 
     private func acceptAll() {
         while true {
@@ -145,6 +147,7 @@ public final class HookServer: @unchecked Sendable {
               let event = HookEvent(vendor: vendor, payload: payload) else { close(fd); return }
         // Older helpers may still send these while the newly built app is running.
         guard !event.isAutomaticReview else { close(fd); return }
+        guard (event.toolUseID?.utf8.count ?? 0) <= Self.maxToolIdentityBytes else { close(fd); return }
         guard event.waitsForAnswer, r["wait"] as? Bool == true, waiting.count < Self.maxWaiting else {
             close(fd)
             onEvent(event, nil)
@@ -158,6 +161,7 @@ public final class HookServer: @unchecked Sendable {
         waiting[ticket] = Request(watch: watch, fd: fd, toolUseID: event.toolUseID)
         watch.resume()
         queue.asyncAfter(deadline: .now() + Double(HookInstaller.wait)) {
+            guard self.waiting[ticket]?.sent == false else { return }
             self.finish(ticket, status: .notDelivered)
         }
         onEvent(event, ticket)
@@ -183,7 +187,7 @@ public final class HookServer: @unchecked Sendable {
     private func finish(_ ticket: Int, status: AnswerDelivery) {
         guard let request = waiting.removeValue(forKey: ticket) else { return }
         request.watch.cancel()
-        onDelivery(ticket, status)
+        if request.sent { onDelivery(ticket, status) }
         if status == .notDelivered { onGone(ticket) }
     }
 

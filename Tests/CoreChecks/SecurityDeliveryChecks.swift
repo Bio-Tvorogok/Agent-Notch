@@ -63,7 +63,8 @@ extension SecurityDeliveryChecks {
             XCTAssertEqual(decision["ticket"] as? Int, t)
             XCTAssertEqual(decision["tool_use_id"] as? String, "tool-A")
             XCTAssertEqual(statuses.value, [.sent], "a successful write is not delivery")
-            if mode == "ack" || mode == "wrong-ack" || mode == "fragmented-ack" {
+            if mode == "ack" || mode == "wrong-ack" || mode == "fragmented-ack" || mode == "delayed-ack" {
+                if mode == "delayed-ack" { Thread.sleep(forTimeInterval: 1.3) }
                 let receipt = HookReceipt.ack(ticket: t, toolUseID: mode == "wrong-ack" ? "tool-B" : "tool-A")
                 XCTAssertTrue(Socket.write(fd, receipt))
                 if mode == "fragmented-ack" {
@@ -72,22 +73,24 @@ extension SecurityDeliveryChecks {
                 XCTAssertTrue(Socket.write(fd, Data([10])))
             }
         }
-        XCTAssertTrue(finished.wait(timeout: .now() + (mode == "write-error" ? 0.5 : 3)) == .success)
-        XCTAssertEqual(statuses.value, [.sent, mode == "ack" || mode == "fragmented-ack" ? .delivered : .notDelivered])
+        XCTAssertTrue(finished.wait(timeout: .now() + (mode == "write-error" ? 0.5 : 4)) == .success)
+        XCTAssertEqual(statuses.value, [.sent, ["ack", "fragmented-ack", "delayed-ack"].contains(mode) ? .delivered : .notDelivered])
     }
 
     func lateAndDuplicate() throws {
         let server = HookServer(path: HookTests().socketPath())
         let ready = DispatchSemaphore(value: 0), gone = DispatchSemaphore(value: 0)
+        let disconnected = DispatchSemaphore(value: 0)
         let tickets = Box<[Int]>([]), statuses = Box<[(Int, AnswerDelivery)]>([])
         server.onEvent = { _, t in if let t { tickets.value.append(t) }; ready.signal() }
         server.onDelivery = { t, s in statuses.value.append((t, s)); if s == .notDelivered { gone.signal() } }
+        server.onGone = { _ in disconnected.signal() }
         try server.start()
         defer { server.stop() }
         let old = try connect(server.path, toolID: "tool-A")
         XCTAssertTrue(ready.wait(timeout: .now() + 2) == .success)
         close(old)
-        XCTAssertTrue(gone.wait(timeout: .now() + 2) == .success)
+        XCTAssertTrue(disconnected.wait(timeout: .now() + 2) == .success)
         let fd = try connect(server.path, toolID: "tool-B")
         defer { close(fd) }
         XCTAssertTrue(ready.wait(timeout: .now() + 2) == .success)
@@ -154,12 +157,15 @@ extension SecurityDeliveryChecks {
         state.delivery(2, .delivered)
         XCTAssertEqual(state.pending, [])
         _ = state.receive(a, ticket: 3, now: 4)
+        XCTAssertTrue(state.send(try XCTUnwrap(state.pending.first)))
         state.delivery(3, .notDelivered)
         _ = state.receive(try event("b"), ticket: 4, now: 5)
         XCTAssertEqual(state.pending.map(\.ticket), [4], "new request moves the session on")
+        XCTAssertTrue(state.send(try XCTUnwrap(state.pending.first)))
         state.delivery(4, .notDelivered)
         XCTAssertEqual(state.receive(try event("c", name: "PreToolUse"), ticket: nil, now: 6), [4], "the next tool moves on from an undelivered request")
         _ = state.receive(try event("d"), ticket: 5, now: 7)
+        XCTAssertTrue(state.send(try XCTUnwrap(state.pending.first)))
         state.delivery(5, .notDelivered)
         state.resolve(5)
         XCTAssertEqual(state.pending, [])
@@ -168,10 +174,10 @@ extension SecurityDeliveryChecks {
         XCTAssertEqual(a.toolUseID, "a")
         XCTAssertNil(HookEvent(vendor: .codex, payload: ["session_id": "s", "hook_event_name": "PermissionRequest"])?.toolUseID)
         Loc.forced = .en
-        XCTAssertEqual(DeliveryText.notDelivered, "not delivered")
+        XCTAssertEqual(DeliveryText.notDelivered, "delivery unconfirmed")
         XCTAssertEqual(DeliveryText.openTerminal, "Open terminal")
         Loc.forced = .ru
-        XCTAssertEqual(DeliveryText.notDelivered, "не доставлено")
+        XCTAssertEqual(DeliveryText.notDelivered, "доставка не подтверждена")
         XCTAssertEqual(DeliveryText.openTerminal, "Открыть терминал")
     }
 }

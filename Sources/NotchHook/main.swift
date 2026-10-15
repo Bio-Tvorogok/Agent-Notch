@@ -36,9 +36,8 @@ if parsed?.isAutomaticReview == true { exit(0) }
 // PreToolUse holds the call only for the entry installed with --wait and only for a question or plan; the async one reports and leaves.
 let holds = event == "PermissionRequest" || (args.contains("--wait") && parsed?.waitsForAnswer == true)
 let wait = holds ? Double(HookInstaller.wait) : 0
-if let decision = HookClient.send(vendor: vendor, payload: input, wait: wait),
-   let out = HookReply.helperStdout(event: parsed, name: event, decision: decision) {
-    // HookClient has read the bound decision and sent its one-line receipt before returning.
-    try? FileHandle.standardOutput.write(contentsOf: Data((out + "\n").utf8))
-}
+_ = HookClient.send(vendor: vendor, payload: input, wait: wait, deliver: { decision in
+    guard let out = HookReply.helperStdout(event: parsed, name: event, decision: decision) else { return false }
+    return HookClient.writeStdout(out)
+})
 exit(0)

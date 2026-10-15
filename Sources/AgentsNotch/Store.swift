@@ -42,6 +42,7 @@ final class Store: ObservableObject {
     private var timer: Timer?
     private var server: HookServer?
     private var deliverySounds: [Int: SoundEvent] = [:]
+    private var deliveryAudit: [Int: (HookEvent, HookDecision)] = [:]
     private var fakeTicket = 1_000_000
     private var soundWatcher = SoundAgentWatcher()
 
@@ -69,7 +70,10 @@ final class Store: ObservableObject {
         }
         for (index, ticket) in tickets.enumerated() {
             let status = deliveries.indices.contains(index) ? deliveries[index] : delivery
-            if status != .waiting { hooks.delivery(ticket, status) }
+            if status != .waiting, let ask = hooks.pending.first(where: { $0.ticket == ticket }) {
+                _ = hooks.send(ask)
+                hooks.delivery(ticket, status)
+            }
         }
     }
 
@@ -96,6 +100,12 @@ final class Store: ObservableObject {
                 self.polling = false
                 if let next {
                     if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
+                }
+                // Age failed requests even when the scanner has no changed snapshot.
+                for ticket in self.hooks.expire(agents: self.agents, now: Date().timeIntervalSince1970) {
+                    self.deliverySounds[ticket] = nil
+                }
+                if let next {
                     self.finisher.check(self.settings.listFilter.apply(next))
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
                 }
@@ -114,18 +124,14 @@ final class Store: ObservableObject {
             Task { @MainActor in self?.receive(e, ticket: ticket) }
         }
         server.onDelivery = { [weak self] ticket, status in
+            Task { @MainActor in self?.receivedDelivery(ticket, status) }
+        }
+        server.onGone = { [weak self] ticket in
             Task { @MainActor in
-                guard let self else { return }
-                let ask = self.hooks.pending.first { $0.ticket == ticket }
-                self.hooks.delivery(ticket, status)
-                if status == .delivered || status == .notDelivered {
-                    if let ask { self.soundWatcher.resolve(ask.event.agentKey) }
-                    let sound = self.deliverySounds.removeValue(forKey: ticket)
-                    if ask != nil {
-                        if status == .notDelivered { self.play(.operationFailed) }
-                        else if let sound { self.play(sound) }
-                    }
-                }
+                guard let self, let ask = self.hooks.pending.first(where: { $0.ticket == ticket }),
+                      ask.delivery == .waiting else { return }
+                self.hooks.resolve(ticket)
+                self.soundWatcher.resolve(ask.event.agentKey)
             }
         }
         do {
@@ -134,6 +140,21 @@ final class Store: ObservableObject {
         } catch {
             NSLog("agents-notch: hook socket failed: \(error)")
             play(.operationFailed)
+        }
+    }
+
+    private func receivedDelivery(_ ticket: Int, _ status: AnswerDelivery) {
+        let ask = hooks.pending.first { $0.ticket == ticket }
+        hooks.delivery(ticket, status)
+        guard status == .delivered || status == .notDelivered else { return }
+        if let (event, decision) = deliveryAudit.removeValue(forKey: ticket) {
+            Audit.record(event, decision, delivery: status)
+        }
+        if let ask { soundWatcher.resolve(ask.event.agentKey) }
+        let sound = deliverySounds.removeValue(forKey: ticket)
+        if ask?.delivery == .sent {
+            if status == .notDelivered { play(.operationFailed) }
+            else if let sound { play(sound) }
         }
     }
 
@@ -180,10 +201,19 @@ final class Store: ObservableObject {
     /// The human's answer from the notch. `.pass` hands the question back to the agent's own window.
     func decide(_ p: PendingAsk, _ d: HookDecision) {
         guard hooks.send(p) else { return }
+        // Hand-back prints no decision and needs no stdout receipt.
+        if d == .pass {
+            hooks.resolve(p.ticket)
+            soundWatcher.resolve(p.event.agentKey)
+            Audit.record(p.event, d)
+            server?.handBack(p.ticket)
+            play(.handedBack)
+            return
+        }
         deliverySounds[p.ticket] = SoundEvent.decision(d, for: p.event)
-        Audit.record(p.event, d)
+        deliveryAudit[p.ticket] = (p.event, d)
         if let server { server.answer(p.ticket, d, toolUseID: p.toolUseID) }
-        else { hooks.delivery(p.ticket, .notDelivered) }
+        else { receivedDelivery(p.ticket, .notDelivered) }
     }
 
     /// "Всегда": allow and keep the rule. Claude gets it in the reply; for Codex the app writes the rule file and the reply is a plain allow.
@@ -195,10 +225,10 @@ final class Store: ObservableObject {
                 catch { NSLog("agents-notch: codex rule failed: \(error)"); play(.operationFailed); return }
             }
             guard hooks.send(p) else { return }
-            Audit.record(p.event, .allowAlways(rule))
+            deliveryAudit[p.ticket] = (p.event, .allowAlways(rule))
             deliverySounds[p.ticket] = .alwaysAllowed
             if let server { server.answer(p.ticket, .allow, toolUseID: p.toolUseID) }
-            else { hooks.delivery(p.ticket, .notDelivered) }
+            else { receivedDelivery(p.ticket, .notDelivered) }
         } else {
             decide(p, .allowAlways(rule))
         }
@@ -250,12 +280,13 @@ enum Audit {
     private static let lock = NSLock()
     private static let maxBytes = 1_048_576
 
-    static func record(_ e: HookEvent, _ d: HookDecision) {
+    static func record(_ e: HookEvent, _ d: HookDecision, delivery: AnswerDelivery? = nil) {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
-        let row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "decision": d.name,
+        var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "decision": d.name,
                                   "vendor": e.vendor.rawValue, "session": e.agentKey, "tool": e.tool ?? "", "detail": e.detail ?? "",
                                   "cwd": e.cwd ?? "", "tool_use_id": e.toolUseID ?? ""]
+        row["delivery"] = delivery?.rawValue
         guard var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
         line.append(0x0A)
         guard line.count <= maxBytes else { return }

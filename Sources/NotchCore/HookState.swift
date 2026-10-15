@@ -77,7 +77,10 @@ public struct HookState: Sendable, Equatable {
         if status == .delivered {
             guard pending[i].delivery == .sent else { return }
             pending.remove(at: i)
-        } else if status == .notDelivered || (status == .sent && pending[i].delivery == .waiting) {
+        } else if status == .notDelivered {
+            if pending[i].delivery == .waiting { pending.remove(at: i) }
+            else { pending[i].delivery = status }
+        } else if status == .sent && pending[i].delivery == .waiting {
             pending[i].delivery = status
         }
     }
@@ -86,12 +89,27 @@ public struct HookState: Sendable, Equatable {
         pending.removeAll { $0.ticket == ticket }
     }
 
+    private func expired(_ ask: PendingAsk, agents: Set<String>, now: Double) -> Bool {
+        ask.delivery == .notDelivered && (!agents.contains(ask.event.agentKey) || now - ask.at >= 600)
+    }
+
+    /// Called after a scan, including scans whose agent list has not changed.
+    @discardableResult
+    public mutating func expire(agents: [Agent], now: Double) -> [Int] {
+        let known = Set(agents.map(\.id))
+        let stale = pending.filter { expired($0, agents: known, now: now) }.map(\.ticket)
+        pending.removeAll { stale.contains($0.ticket) }
+        return stale
+    }
+
     /// The agents with hook knowledge laid over: open requests and shown prompts make them wait.
     /// A request from a session the logs do not show yet becomes its own row.
     public func apply(to agents: [Agent], now: Double, project: (String?) -> String) -> [Agent] {
+        let ids = Set(agents.map(\.id))
+        let live = pending.filter { !expired($0, agents: ids, now: now) }
         var out = agents.map { a -> Agent in
             var a = a
-            if let p = pending.first(where: { $0.event.agentKey == a.id }) {
+            if let p = live.first(where: { $0.event.agentKey == a.id }) {
                 a.state = p.delivery == .notDelivered ? .error : .waiting
                 a.ask = p.event.askLine
             } else if let s = shown[a.id], now - s.at < 3600 {
@@ -101,7 +119,7 @@ public struct HookState: Sendable, Equatable {
             return a
         }
         var known = Set(agents.map(\.id))
-        for p in pending where !known.contains(p.event.agentKey) {
+        for p in live where !known.contains(p.event.agentKey) {
             let e = p.event
             known.insert(e.agentKey)
             out.append(Agent(id: e.agentKey, vendor: e.vendor, title: Loc.t("new session", "новая сессия"),

@@ -28,7 +28,7 @@ public enum Loc {
 
 public enum DeliveryText {
     public static var sent: String { Loc.t("Sent…", "Отправлено…") }
-    public static var notDelivered: String { Loc.t("not delivered", "не доставлено") }
+    public static var notDelivered: String { Loc.t("delivery unconfirmed", "доставка не подтверждена") }
     public static var openTerminal: String { Loc.t("Open terminal", "Открыть терминал") }
     public static var dismiss: String { Loc.t("Dismiss", "Скрыть") }
     public static func countdown(_ seconds: Int) -> String {
