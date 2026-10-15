@@ -27,7 +27,7 @@ brew install --cask forichok/tap/agent-notch
 
 You run three Claude Code sessions and a couple of Codex workers. One of them has been sitting on `rm -rf dist?` for twenty minutes, and you find out only when you switch windows.
 
-Agent Notch puts one mark per agent beside the notch. A glance shows who is busy, and a click answers whoever is waiting. It reads the logs Claude Code and Codex already keep on your Mac and makes no network requests.
+Agent Notch puts one mark per agent beside the notch. A glance shows who is busy, and a click answers whoever is waiting. It reads the logs Claude Code and Codex already keep on your Mac and makes no network requests except when you press Check for Updates.
 
 ## How to read the wing
 

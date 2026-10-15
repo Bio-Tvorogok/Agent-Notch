@@ -1,0 +1,484 @@
+<title>Роадмап Agent Notch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Onest:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a MacBook-notch hero whose status dots double as the page's legend; then one column of sections, roadmap as three lanes */
+:root{
+  --bg:#eef0f3; --surface:#ffffff; --sunk:#e4e7ec; --fg:#16181d; --muted:#5b616e; --line:#d3d7de;
+  --notch:#0d0e11; --notch-fg:#e9ebef;
+  --accent:#c77700; --accent-soft:#fbecd3;
+  --ok:#1f9d55; --wait:#d99a00; --bad:#d64545; --done:#9aa0aa;
+  --claude:#c96442; --codex:#3b6fd6;
+  --f-display:"Unbounded",system-ui,sans-serif;
+  --f-body:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121317; --surface:#1b1d22; --sunk:#24272e; --fg:#e8eaee; --muted:#9aa1ad; --line:#30343c;
+  --notch:#000; --notch-fg:#e9ebef; --accent:#f0a83a; --accent-soft:#3a2c14;
+  --ok:#3cc47a; --wait:#f2b829; --bad:#f06a6a; --done:#7c828c; --claude:#e08562; --codex:#6c97f0; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121317; --surface:#1b1d22; --sunk:#24272e; --fg:#e8eaee; --muted:#9aa1ad; --line:#30343c;
+  --notch:#000; --notch-fg:#e9ebef; --accent:#f0a83a; --accent-soft:#3a2c14;
+  --ok:#3cc47a; --wait:#f2b829; --bad:#f06a6a; --done:#7c828c; --claude:#e08562; --codex:#6c97f0; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:20px;padding-block:0 80px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;font-weight:700;letter-spacing:-.01em}
+h2{font-size:1.45rem}
+h3{font-size:1rem;font-weight:500}
+p{margin:0}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+a{color:var(--accent)}
+.eyebrow{font-family:var(--f-mono);font-size:.74rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.muted{color:var(--muted)}
+section{display:grid;gap:20px;padding-block:44px 0}
+.lede{max-width:66ch;color:var(--muted)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+
+/* hero / notch */
+.hero{display:grid;justify-items:center;gap:26px;padding-block:28px 8px;text-align:center}
+.screen{width:min(100%,760px);background:var(--surface);border:1px solid var(--line);border-top:none;border-radius:0 0 18px 18px;padding:0 0 26px;display:grid;justify-items:center;gap:22px;overflow:hidden}
+.menubar{width:100%;display:flex;justify-content:center;align-items:flex-start;position:relative;height:38px;background:var(--sunk)}
+.notch{background:var(--notch);height:34px;border-radius:0 0 14px 14px;display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--notch-fg);font-family:var(--f-mono);font-size:.72rem;transition:padding .35s ease}
+.notch .gap{width:clamp(40px,14vw,120px)}
+.dots{display:flex;gap:7px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--done);flex:none}
+.dot.ok{background:var(--ok)}.dot.wait{background:var(--wait)}.dot.bad{background:var(--bad)}
+.dot.wait.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--wait) 25%,transparent)}}
+@media (prefers-reduced-motion:reduce){.dot.wait.pulse{animation:none}}
+.hero h1{font-size:clamp(1.7rem,4.6vw,2.9rem);line-height:1.1}
+.hero h1 span{color:var(--accent)}
+.thesis{max-width:56ch;font-size:1.08rem}
+.meta{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 18px;font-size:.84rem;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 18px;font-size:.82rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+
+/* nav */
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);margin-inline:-20px;padding:10px 20px}
+nav.toc ul{list-style:none;margin:0 auto;padding:0;max-width:1040px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+nav.toc a{display:block;white-space:nowrap;text-decoration:none;color:var(--muted);font-size:.86rem;padding:5px 11px;border-radius:999px}
+nav.toc a:hover,nav.toc a.on{background:var(--surface);color:var(--fg)}
+
+/* market chart */
+.chart-ctrl{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 12px;font-size:.84rem;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.bars{display:grid;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px}
+.bar{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:12px;align-items:center;cursor:pointer;border-radius:8px;padding:4px 6px;background:none;border:0;text-align:left;width:100%}
+.bar:hover{background:var(--sunk)}
+.bar .nm{font-weight:500;font-size:.92rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .track{position:relative;height:22px;display:flex;align-items:center;gap:8px;min-width:0}
+.bar .fill{height:100%;border-radius:4px;background:var(--line);min-width:3px;transition:width .5s ease}
+.bar.us .fill{background:var(--accent)}
+.bar.us .nm{color:var(--accent)}
+.bar .val{font-family:var(--f-mono);font-size:.8rem;font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.bar[aria-expanded="true"]{background:var(--sunk)}
+.detail{grid-column:1/-1;font-size:.88rem;color:var(--muted);padding:2px 6px 8px}
+.axis{display:grid;grid-template-columns:minmax(110px,170px) 1fr;gap:12px;padding:0 6px}
+.axis div:last-child{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:.7rem;color:var(--muted);border-top:1px solid var(--line);padding-top:4px}
+.wedge{background:var(--accent-soft);border-radius:14px;padding:18px 20px;display:grid;gap:6px}
+.wedge strong{font-family:var(--f-display);font-weight:500;font-size:1.05rem}
+
+/* findings */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+details.find{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:0}
+details.find summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}
+details.find summary::-webkit-details-marker{display:none}
+details.find summary .dot{margin-top:7px}
+details.find summary .t{font-weight:600}
+details.find summary .chev{color:var(--muted);transition:transform .2s}
+details.find[open] summary .chev{transform:rotate(90deg)}
+details.find .body{display:grid;gap:8px;padding-top:10px;font-size:.92rem;color:var(--muted)}
+details.find .body code{color:var(--fg);background:var(--sunk);padding:1px 5px;border-radius:4px;word-break:break-word}
+.good{border-left:3px solid var(--ok);padding-left:12px;font-size:.94rem}
+
+/* roadmap */
+.lanes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:860px){.lanes{grid-template-columns:1fr}}
+.lane{display:grid;align-content:start;gap:10px;min-width:0}
+.lane header{display:grid;gap:2px;padding:4px 2px 8px;border-bottom:2px solid var(--fg)}
+.lane header .v{font-family:var(--f-display);font-size:1.05rem}
+.lane.later header{border-color:var(--line)}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:12px;text-align:left;padding:12px 14px;cursor:pointer;display:grid;gap:6px;width:100%;transition:border-color .15s,transform .15s}
+.item:hover{border-color:var(--accent)}
+.item[aria-expanded="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.item .row{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+.item .tt{font-weight:600;font-size:.95rem}
+.size{font-family:var(--f-mono);font-size:.72rem;border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap;color:var(--muted)}
+.who{display:flex;gap:5px;flex-wrap:wrap}
+.tag{font-size:.7rem;font-family:var(--f-mono);padding:1px 7px;border-radius:999px;border:1px solid}
+.tag.cl{color:var(--claude);border-color:var(--claude)}
+.tag.cx{color:var(--codex);border-color:var(--codex)}
+.item .more{display:grid;gap:6px;font-size:.88rem;color:var(--muted)}
+.item .more b{color:var(--fg);font-weight:600}
+.dont{display:flex;flex-wrap:wrap;gap:8px}
+.dont span{background:var(--sunk);border-radius:999px;padding:6px 12px;font-size:.88rem;text-decoration:line-through;text-decoration-color:var(--bad);text-decoration-thickness:1.5px}
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+/* borrow */
+.hl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:700px){.hl{grid-template-columns:1fr}}
+.hl>div{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:grid;gap:6px;align-content:start;font-size:.92rem}
+.hl .hl-main{background:var(--accent-soft);border-color:transparent}
+.hl strong{font-family:var(--f-display);font-weight:500;font-size:1.05rem}
+.btable{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.bhead,.brow{display:grid;grid-template-columns:minmax(0,2.4fr) minmax(0,1.3fr) 92px 64px;gap:12px;align-items:center;padding:10px 16px}
+.bhead{font-family:var(--f-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);border-bottom:1px solid var(--line)}
+.brow{width:100%;background:none;border:0;border-top:1px solid var(--line);text-align:left;cursor:pointer;font-size:.92rem}
+#brows .brow:first-child{border-top:0}
+.brow:hover,.brow[aria-expanded="true"]{background:var(--sunk)}
+.brow .src{color:var(--muted);font-size:.84rem}
+.brow .when{font-family:var(--f-mono);font-size:.78rem}
+.bdet{padding:4px 16px 14px;font-size:.88rem;color:var(--muted);background:var(--sunk);display:grid;gap:4px}
+.bdet b{color:var(--fg);font-weight:600}
+.bdet code{color:var(--fg);word-break:break-word}
+.lk{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+.lk.code{background:var(--ok)}.lk.idea{background:var(--done)}
+.brow .lic-cell{display:inline-flex;gap:6px;align-items:center;font-size:.82rem}
+.lic{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.8rem;color:var(--muted)}
+.lic span{display:inline-flex;gap:6px;align-items:center}
+.nocopy{margin:0;padding-left:18px;display:grid;gap:6px;font-size:.92rem;color:var(--muted)}
+.nocopy b{color:var(--fg);font-weight:600}
+@media (max-width:640px){.bhead{display:none}.brow{grid-template-columns:1fr auto;row-gap:4px}.brow .src{grid-column:1/-1;order:3}.brow .lic-cell{order:4}.brow .when{order:2}}
+
+/* disagreements */
+.dis{display:grid;gap:10px}
+.dis article{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr);gap:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.dis article>div{padding:12px 14px;font-size:.9rem;min-width:0}
+.dis article>div+div{border-left:1px solid var(--line)}
+.dis .lbl{font-family:var(--f-mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.dis .c .lbl{color:var(--claude)}.dis .x .lbl{color:var(--codex)}.dis .r .lbl{color:var(--accent)}
+.dis .r{background:var(--accent-soft)}
+.dis h3{grid-column:1/-1;padding:12px 14px 0}
+@media (max-width:700px){.dis article{grid-template-columns:1fr}.dis article>div+div{border-left:0;border-top:1px solid var(--line)}}
+
+/* decisions */
+.q{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:10px}
+.q legend{font-weight:600;padding:0}
+.q fieldset{border:0;margin:0;padding:0;display:grid;gap:8px;min-width:0}
+.q .why{font-size:.88rem;color:var(--muted)}
+.opts{display:flex;flex-wrap:wrap;gap:8px}
+.opt{position:relative}
+.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt label{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:7px 12px;cursor:pointer;font-size:.9rem;background:var(--bg)}
+.opt input:checked+label{border-color:var(--accent);background:var(--accent-soft);color:var(--fg)}
+.opt input:focus-visible+label{outline:2px solid var(--accent);outline-offset:2px}
+.rec{font-family:var(--f-mono);font-size:.68rem;color:var(--accent)}
+.out{display:grid;gap:10px;background:var(--notch);color:var(--notch-fg);border-radius:14px;padding:18px}
+.out pre{margin:0;white-space:pre-wrap;font-family:var(--f-mono);font-size:.84rem;min-height:3em}
+.out .bar2{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{background:var(--accent);color:#16120a;border:0;border-radius:9px;padding:8px 14px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--notch-fg);border:1px solid #444}
+.status{font-size:.84rem;color:#aab}
+footer{padding-block:48px 0;font-size:.84rem;color:var(--muted);display:grid;gap:6px}
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="screen" aria-hidden="true">
+    <div class="menubar">
+      <div class="notch" id="notch">
+        <div class="dots"><span class="dot ok"></span><span class="dot ok"></span><span class="dot wait pulse"></span></div>
+        <div class="gap"></div>
+        <span>0.4 → 0.6</span>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="dot ok"></i>работает</span>
+      <span><i class="dot wait"></i>ждёт решения</span>
+      <span><i class="dot bad"></i>сломано</span>
+      <span><i class="dot"></i>не делаем</span>
+    </div>
+  </div>
+  <p class="eyebrow">Предложение · 15 октября 2026</p>
+  <h1>Agent Notch: <span>честные разрешения</span> вместо ширины</h1>
+  <p class="thesis">В категории уже есть проекты с тысячами звёзд. Свободной остаётся одна позиция: надёжные локальные разрешения для Claude Code и Codex в уже запущенных сессиях. Чтобы её занять, сначала нужно починить то, что её подрывает.</p>
+  <div class="meta">
+    <span>Рынок и аудит: <b style="color:var(--claude)">Claude ×2</b> · <b style="color:var(--codex)">Codex ×2</b></span>
+    <span>Код конкурентов: <b style="color:var(--codex)">Codex ×8</b>, 10 репозиториев</span>
+    <span>Звёзды перепроверены через GitHub API</span>
+    <span>Код не запускался: ошибки найдены по исходникам</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Разделы">
+  <ul>
+    <li><a href="#market">Рынок</a></li>
+    <li><a href="#audit">Что сломано</a></li>
+    <li><a href="#borrow">Что взять</a></li>
+    <li><a href="#roadmap">Роадмап</a></li>
+    <li><a href="#diff">Где разошлись</a></li>
+    <li><a href="#decide">Решения</a></li>
+  </ul>
+</nav>
+
+<section id="market">
+  <p class="eyebrow">01 · Рынок</p>
+  <h2>Ниша заполнилась за месяц</h2>
+  <p class="lede">Звёзды GitHub на 15 октября. Нажмите на строку, чтобы увидеть, что у конкурента есть, а у нас нет.</p>
+  <div class="chart-ctrl" role="group" aria-label="Фильтр">
+    <button class="chip" data-f="all" aria-pressed="true">Все</button>
+    <button class="chip" data-f="notch" aria-pressed="false">Приложения в чёлке</button>
+    <button class="chip" data-f="usage" aria-pressed="false">Лимиты и расходы</button>
+    <button class="chip" data-f="orch" aria-pressed="false">Оркестраторы</button>
+  </div>
+  <div class="bars" id="bars"></div>
+  <div class="wedge">
+    <strong>Наша позиция</strong>
+    <p>Без сети, только по клику человека, опасные команды красные, при молчании агент спрашивает в своём окне, а «доставлено» значит доставлено. В <a href="https://github.com/anthropics/claude-code/issues/43058" target="_blank" rel="noopener">claude-code#43058</a> и <a href="https://github.com/anthropics/claude-code/issues/94373" target="_blank" rel="noopener">#94373</a> люди с десятками сессий не могут отличить «ждёт меня» от «закончил». <a href="https://github.com/anthropics/claude-code/issues/93672" target="_blank" rel="noopener">#93672</a>: ложное «ждёт», пока работают фоновые сабагенты.</p>
+  </div>
+</section>
+
+<section id="audit">
+  <p class="eyebrow">02 · Аудит кода</p>
+  <h2>Что сейчас подрывает эту позицию</h2>
+  <p class="lede">Claude и Codex нашли это независимо друг от друга. Нажмите на карточку, чтобы увидеть файлы и строки.</p>
+  <div class="grid" id="finds"></div>
+  <p class="good">Что сделано хорошо: установка хуков (атомарная запись, симлинки, резервная копия, сокет закреплён за процессом) и 122 проверки в ядре. Из старого плана выполнены пункты 1–4 и 6, пятый частично.</p>
+</section>
+
+<section id="borrow">
+  <p class="eyebrow">03 · Разбор кода конкурентов</p>
+  <h2>Что взять, что исправить, что не трогать</h2>
+  <p class="lede">Восемь воркеров Codex прочитали исходники десяти конкурентов. Ничего не собирали и не запускали. Нажмите на строку: откроется, где это у них и где пробел у нас.</p>
+  <div class="hl">
+    <div class="hl-main"><span class="eyebrow">Ни у кого нет</span><strong>Подтверждения доставки ответа</strong><p>У всех десяти клик убирает запрос раньше, чем агент что-то получил. Сделаем первыми — и это будет то, что отличает нас от всех.</p></div>
+    <div><span class="eyebrow">Где мы уже сильнее</span><p>Находим сессии по логам без хуков, в том числе после перезапуска. Дерево сабагентов, возврат плана с комментарием, проверка собеседника на сокете, атомарная правка конфигов, контекст и стоимость, диплинки в приложения, 122 проверки.</p></div>
+  </div>
+  <div class="filters" role="group" aria-label="Фильтр заимствований">
+    <span class="muted" style="font-size:.84rem">Версия:</span>
+    <button class="chip" data-s="all" aria-pressed="true">Все</button>
+    <button class="chip" data-s="0.5" aria-pressed="false">0.5</button>
+    <button class="chip" data-s="0.6" aria-pressed="false">0.6</button>
+    <button class="chip" data-s="later" aria-pressed="false">Потом</button>
+    <span class="muted" style="font-size:.84rem;margin-left:8px">Лицензия:</span>
+    <button class="chip" data-l="all" aria-pressed="true">Все</button>
+    <button class="chip" data-l="code" aria-pressed="false">Можно код</button>
+    <button class="chip" data-l="idea" aria-pressed="false">Только идея</button>
+  </div>
+  <div class="btable" role="table" aria-label="Список заимствований">
+    <div class="bhead" role="row"><span role="columnheader">Что</span><span role="columnheader">У кого</span><span role="columnheader">Брать</span><span role="columnheader">Когда</span></div>
+    <div id="brows"></div>
+  </div>
+  <div class="lic">
+    <span><i class="lk code"></i>MIT: Coucou, CodeIsland, CodexBar, CodexIsland, so-agentbar, Peekle — код с копирайтом</span>
+    <span><i class="lk code"></i>Apache-2.0: Vibe Notch, cctop — код с лицензией и NOTICE</span>
+    <span><i class="lk idea"></i>CC BY-NC: MioIsland, GPL-3.0: Code Island — только идеи</span>
+  </div>
+  <div style="display:grid;gap:10px">
+    <h3>Не копируем</h3>
+    <ul class="nocopy">
+      <li><b>Тихую установку хуков при каждом запуске.</b> У CodeIsland «починка» возвращала хуки, которые пользователь удалил вручную (#182).</li>
+      <li><b>Ожидание 300 секунд или сутки, очередь на 5 запросов.</b> Наши 100 секунд с возвратом в окно агента честнее.</li>
+      <li><b>Аналитику и сетевые квоты через OAuth и Keychain.</b> У Vibe Notch Mixpanel, у CodexBar до 24 запросов пароля Keychain.</li>
+      <li><b>Сопоставление tmux по кускам текста и выбор цели только по сессии.</b> Так легко ответить не тому агенту.</li>
+      <li><b>Одобрение с телефона по отпечатку без одноразового ID.</b> Coucou: одинаковые запросы неразличимы.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="roadmap">
+  <p class="eyebrow">04 · Роадмап</p>
+  <h2>Сначала честность, потом охват</h2>
+  <div class="filters" role="group" aria-label="Фильтр по источнику">
+    <span class="muted" style="font-size:.84rem">Кто предложил:</span>
+    <button class="chip" data-w="all" aria-pressed="true">Все</button>
+    <button class="chip" data-w="both" aria-pressed="false">Оба сошлись</button>
+    <button class="chip" data-w="cl" aria-pressed="false">Только Claude</button>
+    <button class="chip" data-w="cx" aria-pressed="false">Только Codex</button>
+  </div>
+  <div class="lanes" id="lanes"></div>
+  <div style="display:grid;gap:10px">
+    <h3>Не делаем</h3>
+    <div class="dont">
+      <span>Оркестрация и worktree</span><span>Новые темы и маскоты</span><span>Аналитика уровня биллинга</span><span>Intel, Windows, Linux</span><span>30 агентов ради списка</span>
+    </div>
+  </div>
+</section>
+
+<section id="diff">
+  <p class="eyebrow">05 · Расхождения</p>
+  <h2>Где Claude и Codex разошлись</h2>
+  <div class="dis" id="dis"></div>
+</section>
+
+<section id="decide">
+  <p class="eyebrow">06 · Решения владельца</p>
+  <h2>Что согласовано 15 октября</h2>
+  <p class="lede">Два раунда decide. Где решение разошлось с моей рекомендацией, стоит пометка.</p>
+  <div id="qs" style="display:grid;gap:12px"></div>
+</section>
+
+<footer>
+  <span>Исходники: docs/roadmap-proposal-2026-10.md и четыре отчёта в scratchpad сессии.</span>
+  <span>Согласовано владельцем 15 октября. ROADMAP.md пока не менялся.</span>
+</footer>
+</div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+
+/* market */
+const M=[
+ {n:"CodexBar",s:22519,c:"usage",u:"https://github.com/steipete/CodexBar",d:"Лимиты, сброс и расходы многих провайдеров, виджеты, JSON CLI. Агентов и разрешений нет. MIT, релиз 14 октября."},
+ {n:"Vibe Kanban",s:28372,c:"orch",u:"https://github.com/BloopAI/vibe-kanban",d:"Сам запускает агентов в worktree. По сообщению на сайте, проект сворачивается. Последний релиз в апреле."},
+ {n:"ccusage",s:19009,c:"usage",u:"https://github.com/ccusage/ccusage",d:"CLI-отчёты по токенам и стоимости из локальных логов. Аналитика, не интерфейс разрешений."},
+ {n:"Claude Squad",s:8600,c:"orch",u:"https://github.com/smtg-ai/claude-squad",d:"TUI для нескольких агентов в tmux и worktree. AGPL. Число звёзд приблизительное."},
+ {n:"Coucou",s:5254,c:"notch",u:"https://github.com/Louis-CFM/coucou",d:"Телефон (iOS и Android), Windows и Linux. Создан 27 сентября, v0.4.0 вышла 15 октября. MIT. Главный прямой конкурент."},
+ {n:"Vibe Notch",s:2524,c:"notch",u:"https://github.com/farouqaldori/vibe-notch",d:"Бывший Claude Island. Автоустановка хуков, история диалога. В нём Mixpanel, не обновлялся с апреля."},
+ {n:"CodeIsland",s:2499,c:"notch",u:"https://github.com/wxtsky/CodeIsland",d:"Больше 30 инструментов, iPhone и Apple Watch. v1.0.38 от 11 октября."},
+ {n:"MioIsland",s:539,c:"notch",u:"https://github.com/MioMioOS/MioIsland",d:"Синхронизация с iPhone, интеграция с cmux. Лицензия CC BY-NC, не MIT."},
+ {n:"CodexIsland",s:354,c:"notch",u:"https://github.com/ericjypark/codex-island",d:"Квоты и время сброса, карточки расходов, Sparkle. Скорее трекер, чем разрешения."},
+ {n:"Agent Notch",s:2,c:"notch",us:1,u:"https://github.com/Forichok/Agent-Notch",d:"Мы. 0.4.0 от 13 октября, Claude Code и Codex, ответы из чёлки, не нотаризован."}
+];
+let filt="all",openBar=null;
+function drawBars(){
+  const rows=M.filter(r=>filt==="all"||r.c===filt).sort((a,b)=>b.s-a.s);
+  const max=Math.max(...rows.map(r=>r.s));
+  const nice=max>20000?30000:max>5000?6000:max>1000?3000:600;
+  const el=$("#bars");el.innerHTML="";
+  rows.forEach(r=>{
+    const b=document.createElement("button");
+    b.className="bar"+(r.us?" us":"");b.setAttribute("aria-expanded",openBar===r.n);
+    b.innerHTML=`<span class="nm">${r.n}</span><span class="track"><span class="fill" style="width:${Math.max(.4,r.s/nice*100)}%"></span><span class="val">${r.s.toLocaleString("ru-RU")}</span></span>`;
+    b.onclick=()=>{openBar=openBar===r.n?null:r.n;drawBars()};
+    el.appendChild(b);
+    if(openBar===r.n){const d=document.createElement("div");d.className="detail";d.innerHTML=`${r.d} <a href="${r.u}" target="_blank" rel="noopener">GitHub ↗</a>`;el.appendChild(d)}
+  });
+  const ax=document.createElement("div");ax.className="axis";
+  ax.innerHTML=`<div></div><div><span>0</span><span>${(nice/2).toLocaleString("ru-RU")}</span><span>${nice.toLocaleString("ru-RU")} ★</span></div>`;
+  el.appendChild(ax);
+}
+document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filt=b.dataset.f;openBar=null;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===b));drawBars()});
+drawBars();
+
+/* findings */
+const F=[
+ ["bad","«Подключено» горит, когда хуки не работают","Зелёная метка ставится, если в конфиге есть хоть одна наша команда. Не проверяются доверие в Codex <code>/hooks</code>, живой helper и приход хотя бы одного хука. Мастера первого запуска нет.","HookInstaller.swift:52–62 · SettingsSystem.swift:35–57"],
+ ["bad","Сессии Codex старше двух дней не видны","Ищутся только папки за сегодня и вчера. Если продолжить тред трёхдневной давности, после перезапуска приложения его не будет. Чтение хвоста не переживает подмену или усечение файла.","LogScanner.swift:38–53 · LogScanner.swift:159–184"],
+ ["bad","Поздний клик выглядит как ответ","После клика запрос сразу убирается, результат записи в сокет игнорируется. Обратного отсчёта до 100 секунд нет, поэтому видно «ответил», хотя агент уже спросил в своём окне.","Store.swift:160–166 · HookServer.swift:64–66"],
+ ["wait","Тишина считается «готово»","После 300 секунд без записей агент считается закончившим. Долгая тихая команда Codex получает тост «готово». В тост попадает текущий HEAD, который могла сдвинуть другая сессия.","SessionLog.swift:45–68 · FinishSummary.swift:34–49"],
+ ["wait","zap оставляет висячие хуки","Ошибка чистки скрыта за <code>; true</code>, после чего удаляется папка с helper, то есть единственный инструмент восстановления.","packaging/agent-notch.rb:30–41"],
+ ["wait","Документы обещают больше, чем есть","«Разрешать всегда» для Codex в коде недостижимо. Вопросы и планы работают только у Claude. В CHANGELOG нет 0.4.0. ROADMAP запрещает воркеров под родителем, которые уже выпущены.","AlwaysRule.swift · Store.swift:170–184 · ROADMAP.md:48"]
+];
+$("#finds").innerHTML=F.map(f=>`<details class="find"><summary><i class="dot ${f[0]}"></i><span class="t">${f[1]}</span><span class="chev">›</span></summary><div class="body"><p>${f[2]}</p><code>${f[3]}</code></div></details>`).join("");
+
+/* borrow */
+const B=[
+ ["Чтение хвоста: inode, перемотка при усечении, буфер неполной строки, тесты на гонки","CodeIsland","code","0.5","H","M","CodeIsland JSONLTailer.swift:111–144, 328–381; тесты JSONLTailerTests.swift:351–621","LogScanner.swift:159–184 только сдвигает offset. Лучший донор из всех."],
+ ["Codex по mtime во всех папках дат, а не за два дня","so-agentbar","code","0.5","H","M","so-agentbar: обход год/месяц/день, файлы, изменённые за 24 часа","LogScanner.swift:90–96. У CodexBar та же дыра."],
+ ["CLAUDE_CONFIG_DIR и CODEX_HOME вместо жёстких путей","CodexIsland, Vibe Notch","code","0.5","H","M","Vibe Notch ClaudePaths.swift:24–114","HookInstaller.swift:19, LogScanner.swift:31"],
+ ["Одно сканирование в работе, без очереди","cctop, CodeIsland","code","0.5","H","S","CodeIsland AppState.swift:3660–3683","Store.swift:70–88 ставит в очередь каждые 1,5 с"],
+ ["Проверка полного набора хуков, события по версии CLI","CodeIsland, Vibe Notch","code","0.5","H","S","CodeIsland ConfigInstaller.swift:3264–3291; Vibe Notch HookInstaller.swift:55–169","HookInstaller.swift:52–62 довольно одной команды"],
+ ["Доктор: OK, warn или fail с подсказкой; проверка таймаутов","Peekle","code","0.5","H","M","Peekle doctor.rs:26, 78","Сейчас только зелёная метка «подключено»"],
+ ["Предпросмотр правки конфига, резервные копии с датой","Coucou","code","0.5","H","M","Coucou SettingsView.swift:607–623, ClaudeSettingsFile.swift:88–143","Резервная копия одна, первая"],
+ ["Слежение за конфигом после переключателей провайдеров","MioIsland","idea","0.5","H","M","MioIsland ClaudeSettingsWatcher.swift:45–123","Проверяем только при открытии настроек"],
+ ["Запрос привязан к tool_use_id и полному вводу","Coucou, Vibe Notch","code","0.5","H","M","Coucou ApprovalQueue.swift:69–82; Vibe Notch HookSocketServer.swift:424","HookState.swift:35–40 сравнивает по подписи"],
+ ["Ответ ждёт подтверждения от агента, реестр закрывает запрос один раз","Peekle","code","0.5","H","M","Peekle: pending до события агента, общий реестр ответ/таймаут/выход","Store.swift:160–166 убирает сразу. Основа нашего отличия."],
+ ["Вопрос Codex: «Ответить в Codex» вместо ответа, который не дойдёт","Code Island, CodeIsland","idea","0.5","H","S","Code Island QuestionView.swift:98–122; CodeIsland DisplayOnlyWait.swift","Parsers.swift:116–119 видит вопрос, ответить нечем"],
+ ["Мульти-выбор массивом, а не строкой через запятую","Coucou","code","0.5","H","M","Coucou AskQuestion.swift:76–90","QuestionAnswers.swift:5–24. Сначала проверить на наших версиях CLI."],
+ ["Регрессионные сценарии: гонки, поздний клик, Stop соседа","CodeIsland, Coucou, CodexBar","code","0.5","H","M","Coucou ApprovalQueueTests.swift:21–56, PillSessionRegistryTests.swift:122–159","Перевести в наш CoreChecks"],
+ ["Конец хода по Stop, StopFailure и Interrupt, без повторов","Coucou, MioIsland","code","0.6","H","M","Coucou HookServer.swift:587–659; MioIsland SessionStore.swift:279 (идея)","SessionLog.swift:45–68 считает тишину концом"],
+ ["Родитель занят, пока работает делегат; уведомление только при переходе","cctop","code","0.6","H","M","cctop collect.ts, sessions.ts, notify.ts:44","Ложное «ждёт» при фоновых сабагентах"],
+ ["PID вместе со временем старта","cctop, Code Island","code","0.6","H","M","cctop collect.ts:113–124","ClaudeLive.swift:16–31 только kill(pid,0)"],
+ ["FSEvents для папок, vnode для активных файлов","CodeIsland, so-agentbar","code","0.6","H","L","CodeIsland JSONLTailer.swift:254–258; so-agentbar поток FSEvents с паузой 0,5 с","Опрос раз в 1,5 и 5 с"],
+ ["Терминал запоминается в момент хука: tmux, iTerm, cmux","CodeIsland, Vibe Notch, MioIsland","code","0.6","H","M","CodeIsland CodeIslandBridge/main.swift:427–465, TerminalActivator.swift:278–312","Jump.swift:63: у Codex CLI нет PID"],
+ ["Итог перехода: точно, только приложение, не вышло","CodexBar","code","0.6","H","M","CodexBar SessionWindowFocuser.swift:6–47","Сейчас при ошибке только звук"],
+ ["Порядок строк замирает, пока список открыт","Peekle, Vibe Notch","code","0.6","H","M","Vibe Notch ClaudeInstancesView.swift:40","Строка может уехать под курсором перед кликом «Разрешить»"],
+ ["Выбор монитора по UUID","Coucou, CodexIsland","code","0.6","M","M","Coucou IslandDisplayChoice.swift:3–63","NotchController.swift:43–45"],
+ ["Лимиты: источник, возраст, ошибка; сброс только по новым данным","CodexBar, CodexIsland","code","later","H","M","CodexBar CodexWeeklyResetConfirmation.swift:41–87","LimitsReader.swift:52 ставит 0% по часам"],
+ ["Расходы: дедупликация по сообщению и запросу, форки Codex","CodexBar","code","later","H","L","CodexBar CostUsageScanner+Claude.swift:291–304, CostUsageScanner.swift:4239–4254","SpendCache.swift:37–46"],
+ ["Возможности вендора как данные","CodeIsland, Code Island","code","later","H","L","CodeIsland ConfigInstaller.swift:123–368","Vendor: перечисление на два случая и около 60 ветвлений"],
+ ["Codex app-server как эксперимент","CodeIsland, Code Island","code","later","H","L","CodeIsland AppState+CodexAppServer.swift; грабли у Code Island: циклы запуска, блокировка на stderr","Только догадки по логам"],
+ ["Проверка обновлений: спросить один раз при первом запуске","so-agentbar","code","later","M","M","so-agentbar: вопрос при первом запуске, выбор передаётся в Sparkle","README обещает «без сети»"],
+ ["История диалога в карточке","Vibe Notch","code","later","M","L","Vibe Notch ChatView.swift:36–433","CardTabBody.swift показывает только последнее сообщение"]
+];
+let bs="all",bl="all",bopen=null;
+function drawBorrow(){
+  const rows=B.map((r,i)=>[r,i]).filter(([r])=>(bs==="all"||r[3]===bs)&&(bl==="all"||r[2]===bl));
+  $("#brows").innerHTML=rows.map(([r,i])=>`<button class="brow" data-i="${i}" aria-expanded="${bopen===i}"><span>${r[0]}</span><span class="src">${r[1]}</span><span class="lic-cell"><i class="lk ${r[2]}"></i>${r[2]==="code"?"код":"идея"}</span><span class="when">${r[3]==="later"?"потом":r[3]}</span></button>${bopen===i?`<div class="bdet"><span><b>У них:</b> <code>${r[6]}</code></span><span><b>У нас:</b> ${r[7]}</span><span>Ценность ${r[4]} · объём ${r[5]}</span></div>`:""}`).join("")||'<p class="muted" style="padding:14px 16px">Нет строк под этот фильтр.</p>';
+  document.querySelectorAll(".brow").forEach(b=>b.onclick=()=>{const i=+b.dataset.i;bopen=bopen===i?null:i;drawBorrow()});
+}
+document.querySelectorAll("[data-s]").forEach(b=>b.onclick=()=>{bs=b.dataset.s;bopen=null;document.querySelectorAll("[data-s]").forEach(x=>x.setAttribute("aria-pressed",x===b));drawBorrow()});
+document.querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>{bl=b.dataset.l;bopen=null;document.querySelectorAll("[data-l]").forEach(x=>x.setAttribute("aria-pressed",x===b));drawBorrow()});
+drawBorrow();
+
+/* roadmap */
+const L=[
+ {k:"now",v:"0.5 «Работает честно»",h:"Сейчас · 2 недели",items:[
+  ["Здоровье подключения","S–M","both","Отдельные состояния: конфиг записан, helper жив, первый хук пришёл, Codex ждёт доверия. Кнопка «Тестовый запрос», чек-лист при первом запуске.","Пять человек с нуля доходят до первого реального разрешения без подсказок. Меряем время."],
+  ["Поиск и чтение сессий","M","cx","Старые продолженные треды Codex, восстановление после подмены или усечения лога, без очереди сканирований.","Регрессионные фикстуры. После холодного старта все живые сессии видны за 10 с."],
+  ["Доставка ответа","M","both","Отсчёт до 100 с, статусы «отправлено», «доставлено», «истекло», учёт ошибки записи в сокет.","Клик на границе таймаута, выход, сон: ни одного ложного «доставлено» и ни одного разрешения без клика."],
+  ["Безопасное удаление и мелочи","S","both","zap сообщает об ошибке и не удаляет helper. Конфиги JSONC. Ротация decisions.jsonl.","zap при сломанном конфиге одного вендора не оставляет висячих хуков молча."],
+  ["Правда в документах","S","both","Codex Always убрать из README (доделываем в 0.6), пометить вопросы и планы как только Claude, CHANGELOG 0.4.0, название. Воркеры под родителем остаются.","Каждому обещанию README соответствует строка в коде."]]},
+ {k:"next",v:"0.6 «Ставится за минуту»",h:"Дальше · 1–2 месяца",items:[
+  ["Установка без нотаризации","S","both","Developer ID не покупаем. Свой tap в brew и пошаговая инструкция первого запуска с картинками.","Новый человек ставит по инструкции и доходит до первого запроса без вопросов."],
+  ["Честные «готово» и «ждёт»","M","both","Фоновые сабагенты не дают ложного «ждёт», тишина не значит «готово». В тосте видны «не сделано», упавшие тесты и коммит именно этой сессии.","Долгая тихая команда и убитый процесс не получают тоста «успех»."],
+  ["Точный переход в сессию","M","cx","Codex CLI и вкладки терминала, понятная подпись, когда открылась только папка, несколько мониторов.","Две сессии одного проекта в разных окнах открываются правильно."],
+  ["Бюджет производительности","L","both","Замер на 200 сессиях и 10 000 архивных файлов, FSEvents вместо опроса раз в 5 с.","CPU в простое ≤2% ядра, память ≤200 МБ, новые состояния видны за 5 с."],
+  ["Codex «Разрешать всегда»","M","both","Доделываем и возвращаем в README.","Правило срабатывает на втором одинаковом запросе Codex."],
+  ["Проверка обновлений","S","both","Только по кнопке «Проверить обновления», фоновых проверок нет. Сделано в 0.4.1.","До клика Little Snitch не видит ни одного запроса."],
+  ["Иконки нейросетей в баре","S","both","Для каждого вендора своя иконка из встроенного набора и SF Symbols, независимо от темы. Идея владельца.","Смена темы не сбрасывает выбранные иконки."],
+["Запуск","S","cx","Демо на 30 с: несколько сессий, запрос, ответ из чёлки, возврат в чат. Show HN, r/ClaudeCode, awesome-claude-code. После установки и честных статусов.","Скачивания релиза и установки через brew. Звёзды вторичны."]]},
+ {k:"later",v:"Если 0.5 и 0.6 сработали",h:"Потом · 3–6 месяцев",items:[
+  ["Адаптеры и набор фикстур","L","both","Сейчас Vendor — перечисление на два случая и около 60 ветвлений. Изменение формата логов должно ловиться тестом, а не молча прятать агентов.","Каждая версия Claude и Codex проходит прогон фикстур и реальное разрешение перед релизом."],
+  ["Пробный переход на Codex app-server","M–L","cx","Он сообщает waitingOnApproval и serverRequest/resolved, то есть настоящее подтверждение ответа. Если подключение потребует перезапуска чужих сессий, прекращаем.","Точный статус и отмена на поддерживаемой версии, режим только чтения логов сохраняется."],
+  ["Предпросмотр последствий","M","both","Перед git push показываем уходящие коммиты, перед rm — число файлов.","Одобрение push показывает тот же список, что git log origin..HEAD."],
+  ["Конфликт файлов между агентами","M","both","Два агента правят один файл — предупреждаем у чёлки.","Две сессии, правящие один файл, дают предупреждение до второй записи."],
+  ["Прогноз лимита","S","both","«При таком темпе лимит кончится в 16:40».","Прогноз сверяется с фактом на записанных сессиях."],
+  ["Телефон","?","both","Вернёмся к вопросу после 0.6.","Отдельное решение владельца."],
+  ["Лимиты без притворства","M","cx","Источник и возраст данных, «неизвестно» вместо нуля, дневной расход виден и без лимитов подписки.","Ни одно угаданное значение не показано как наблюдаемое."],
+  ["Остальные вендоры","L","cl","Владелец планирует добавить их после двух текущих. Первый кандидат — OpenCode: у него есть permission.asked и API ответа. У Gemini разрешения только для наблюдения, у Cursor ask не применяется.","Только после запросов пользователей и только поддерживаемые действия."]]}
+];
+const WHO={both:'<span class="tag cl">Claude</span><span class="tag cx">Codex</span>',cl:'<span class="tag cl">Claude</span>',cx:'<span class="tag cx">Codex</span>'};
+let who="all",openItem=null;
+function drawLanes(){
+  $("#lanes").innerHTML=L.map(l=>`<div class="lane ${l.k}"><header><span class="eyebrow">${l.h}</span><span class="v">${l.v}</span></header>${
+    l.items.filter(i=>who==="all"||i[2]===who).map(i=>{const id=l.k+i[0];const op=openItem===id;
+      return `<button class="item" data-id="${id}" aria-expanded="${op}"><span class="row"><span class="tt">${i[0]}</span><span class="size">${i[1]}</span></span><span class="who">${WHO[i[2]]}</span>${op?`<span class="more"><span>${i[3]}</span><span><b>Проверка:</b> ${i[4]}</span></span>`:""}</button>`}).join("")||'<p class="muted" style="font-size:.88rem">Нет пунктов под этот фильтр.</p>'
+  }</div>`).join("");
+  document.querySelectorAll(".item").forEach(b=>b.onclick=()=>{openItem=openItem===b.dataset.id?null:b.dataset.id;drawLanes()});
+}
+document.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{who=b.dataset.w;document.querySelectorAll("[data-w]").forEach(x=>x.setAttribute("aria-pressed",x===b));drawLanes()});
+drawLanes();
+
+/* disagreements */
+const D=[
+ ["Другие вендоры","Аудит: десятое место, сначала адаптер. Рынок: шириной не соревноваться.","Аудит: не делать вообще. Рынок: десятое место, если попросят пользователи.","Адаптер ради нынешних двух вендоров, третий только по запросам."],
+ ["Телефон","Рынок: либо телефон, либо прямое «нет, и это намеренно».","Оба отчёта: отложить, нужна отдельная модель безопасности.","Владелец: вернёмся после 0.6."],
+ ["Sparkle","Аудит ставит его в топ-10.","Напоминает, что README обещает «ни одного сетевого запроса».","Владелец: проверять всегда, с переключателем и честной строкой в README."],
+ ["Конкуренты","Нашёл Coucou (5,2k) и CodeIsland от wxtsky (2,5k).","Не нашёл Coucou, под именем Code Island показал другой репозиторий с 8 звёздами.","Приняты данные Claude, перепроверены через API."]
+];
+$("#dis").innerHTML=D.map(d=>`<article><h3>${d[0]}</h3><div class="c"><div class="lbl">Claude</div>${d[1]}</div><div class="x"><div class="lbl">Codex</div>${d[2]}</div><div class="r"><div class="lbl">Итог</div>${d[3]}</div></article>`).join("");
+
+/* decisions */
+const Q=[
+ ["Позиция","Честные локальные разрешения для Claude Code и Codex. Остальных вендоров добавим позже.",0],
+ ["Телефон","Не сейчас, вернёмся после 0.6.",1],
+ ["Apple Developer ID, $99","Не платим. В 0.6 — brew и инструкция без нотаризации.",1],
+ ["Воркеры под родителем","Остаются, из «Не делаем» вычёркиваем.",0],
+ ["Codex «Разрешать всегда»","Убрать из README в 0.5, доделать в 0.6.",0],
+ ["Проверка обновлений","Только по кнопке, фоновых проверок нет (15 октября, заменило «всегда включена»).",1],
+ ["Чужой код","Берём идеи и реализацию, переписываем под себя. Целые файлы не копируем.",0],
+ ["Хуки при первом запуске","Чек-лист: показываем изменения, делаем копию, ставим по кнопке.",0],
+ ["Состав 0.5 и 0.6","Целиком, как предложено.",0],
+ ["Новые идеи","Предпросмотр последствий, конфликт файлов, прогноз лимита. Иконки нейросетей в 0.6 — идея владельца.",0]
+];
+$("#qs").innerHTML=Q.map((x,i)=>`<div class="q"><fieldset><legend>${i+1}. ${x[0]}</legend><p class="why">${x[1]}${x[2]?' <span class="rec">не как рекомендовал</span>':""}</p></fieldset></div>`).join("");
+document.querySelectorAll("#notch .dot").forEach(d=>d.className="dot ok");
+
+/* toc highlight */
+const links=[...document.querySelectorAll("nav.toc a")];
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle("on",a.getAttribute("href")==="#"+e.target.id))}),{rootMargin:"-40% 0px -55% 0px"});
+document.querySelectorAll("section[id]").forEach(s=>io.observe(s));
+})();
+</script>
