@@ -16,7 +16,7 @@ final class Store: ObservableObject {
     @Published var selected: Agent.ID?
     @Published private(set) var hooks = HookState() {
         didSet {
-            let first = hooks.pending.first?.ticket
+            let first = hooks.pending.first(where: { $0.delivery == .waiting })?.ticket
             if first != hinted?.ticket { hinted = first.map { ($0, Date().timeIntervalSince1970) } }
         }
     }
@@ -39,6 +39,7 @@ final class Store: ObservableObject {
     private let queue = DispatchQueue(label: "agents-notch.scan", qos: .utility)
     private var timer: Timer?
     private var server: HookServer?
+    private var deliverySounds: [Int: SoundEvent] = [:]
     private var fakeTicket = 1_000_000
     private var soundWatcher = SoundAgentWatcher()
 
@@ -56,11 +57,17 @@ final class Store: ObservableObject {
     /// The layout as it would be drawn with room to spare: the width MenuWatcher has to keep clear.
     var fullLayout: WingLayout { Wing.configuredLayout(projects, cramped: false, prefs: settings.wingDisplay) }
 
-    func useFixture(_ fixture: [Agent], asks: [HookEvent] = []) {
+    func useFixture(_ fixture: [Agent], asks: [HookEvent] = [], askAge: Double = 0, delivery: AnswerDelivery = .waiting, deliveries: [AnswerDelivery] = []) {
         agents = fixture
+        var tickets: [Int] = []
         for e in asks {
             fakeTicket += 1
-            _ = hooks.receive(e, ticket: fakeTicket, now: 0)
+            _ = hooks.receive(e, ticket: fakeTicket, now: Date().timeIntervalSince1970 - askAge)
+            tickets.append(fakeTicket)
+        }
+        for (index, ticket) in tickets.enumerated() {
+            let status = deliveries.indices.contains(index) ? deliveries[index] : delivery
+            if status != .waiting { hooks.delivery(ticket, status) }
         }
     }
 
@@ -96,11 +103,19 @@ final class Store: ObservableObject {
         server.onEvent = { [weak self] e, ticket in
             Task { @MainActor in self?.receive(e, ticket: ticket) }
         }
-        server.onGone = { [weak self] ticket in
+        server.onDelivery = { [weak self] ticket, status in
             Task { @MainActor in
                 guard let self else { return }
-                if let ask = self.hooks.pending.first(where: { $0.ticket == ticket }) { self.soundWatcher.resolve(ask.event.agentKey) }
-                self.hooks.resolve(ticket)
+                let ask = self.hooks.pending.first { $0.ticket == ticket }
+                self.hooks.delivery(ticket, status)
+                if status == .delivered || status == .notDelivered {
+                    if let ask { self.soundWatcher.resolve(ask.event.agentKey) }
+                    let sound = self.deliverySounds.removeValue(forKey: ticket)
+                    if ask != nil {
+                        if status == .notDelivered { self.play(.operationFailed) }
+                        else if let sound { self.play(sound) }
+                    }
+                }
             }
         }
         do {
@@ -118,16 +133,16 @@ final class Store: ObservableObject {
         let now = Date().timeIntervalSince1970
         let handedBack = ticket != nil && route.isHandedBack(e, now: now)
         // A question already sent back to the agent's window must not come back through its PermissionRequest.
-        if let t = ticket, handedBack { server?.answer(t, .pass); ticket = nil }
+        if let t = ticket, handedBack { server?.handBack(t); ticket = nil }
         else if ticket != nil { route.noteRouted(e, now: now) }
         if let t = ticket, settings.listFilter.shouldPass(e, project: names.name(for: e.cwd), answerFromNotch: settings.answerFromNotch,
                                                          owner: agents.first { $0.id == e.agentKey }) {
-            server?.answer(t, .pass)
+            server?.handBack(t)
             ticket = nil
         }
         let wasWaiting = hooks.pending.count
         let stale = hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970)
-        for ticket in stale { server?.answer(ticket, .pass) }
+        for ticket in stale { server?.handBack(ticket) }
         if e.name == "UserPromptSubmit" {
             soundWatcher.resume(e.agentKey)
         } else if !stale.isEmpty || ["Stop", "SessionEnd", "SubagentStop"].contains(e.name) {
@@ -152,33 +167,28 @@ final class Store: ObservableObject {
         }
     }
 
-    func pending(for agent: Agent) -> PendingAsk? {
-        hooks.pending.first { $0.event.agentKey == agent.id }
-    }
-
     /// The human's answer from the notch. `.pass` hands the question back to the agent's own window.
     func decide(_ p: PendingAsk, _ d: HookDecision) {
-        guard hooks.pending.contains(where: { $0.ticket == p.ticket }) else { return }
-        server?.answer(p.ticket, d)
-        hooks.resolve(p.ticket)
-        soundWatcher.resolve(p.event.agentKey)
+        guard hooks.send(p) else { return }
+        deliverySounds[p.ticket] = SoundEvent.decision(d, for: p.event)
         Audit.record(p.event, d)
-        play(SoundEvent.decision(d, for: p.event))
+        if let server { server.answer(p.ticket, d, toolUseID: p.toolUseID) }
+        else { hooks.delivery(p.ticket, .notDelivered) }
     }
 
     /// "Всегда": allow and keep the rule. Claude gets it in the reply; for Codex the app writes the rule file and the reply is a plain allow.
     func decideAlways(_ p: PendingAsk) {
-        guard hooks.pending.contains(where: { $0.ticket == p.ticket }), !p.event.needsClick, let rule = AlwaysRule.suggest(for: p.event) else { return }
+        guard hooks.pending.contains(where: { $0.ticket == p.ticket && $0.toolUseID == p.toolUseID && $0.delivery == .waiting }), !p.event.needsClick, let rule = AlwaysRule.suggest(for: p.event) else { return }
         if p.event.vendor == .codex {
             if let prefix = rule.prefix {
                 do { try CodexRules.add(prefix: prefix, home: FileManager.default.homeDirectoryForCurrentUser) }
                 catch { NSLog("agents-notch: codex rule failed: \(error)"); play(.operationFailed); return }
             }
-            server?.answer(p.ticket, .allow)
-            hooks.resolve(p.ticket)
+            guard hooks.send(p) else { return }
             Audit.record(p.event, .allowAlways(rule))
-            soundWatcher.resolve(p.event.agentKey)
-            play(.alwaysAllowed)
+            deliverySounds[p.ticket] = .alwaysAllowed
+            if let server { server.answer(p.ticket, .allow, toolUseID: p.toolUseID) }
+            else { hooks.delivery(p.ticket, .notDelivered) }
         } else {
             decide(p, .allowAlways(rule))
         }
@@ -203,10 +213,16 @@ final class Store: ObservableObject {
     /// so a keypress never lands on a request that just appeared or one nobody has seen. Never allows a click-only request.
     func decideByHotkey(_ d: HookDecision) -> Bool {
         let now = Date().timeIntervalSince1970
-        guard let shownAt = listShownAt, let p = hooks.pending.first, let h = hinted, h.ticket == p.ticket,
+        guard let shownAt = listShownAt, let p = hooks.pending.first(where: { $0.delivery == .waiting }), let h = hinted, h.ticket == p.ticket,
               now - max(shownAt, h.since) >= 0.5, !p.event.isQuestion, !p.event.isPlan, d != .allow || !p.event.needsClick else { return false }
         decide(p, d)
         return true
+    }
+
+    func dismiss(_ ask: PendingAsk) {
+        guard hooks.pending.contains(where: { $0.ticket == ask.ticket && $0.delivery == .notDelivered }) else { return }
+        hooks.resolve(ask.ticket)
+        deliverySounds[ask.ticket] = nil
     }
 
     // MARK: chat
@@ -226,7 +242,7 @@ enum Audit {
             .appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
         let row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "decision": d.name,
                                   "vendor": e.vendor.rawValue, "session": e.agentKey, "tool": e.tool ?? "", "detail": e.detail ?? "",
-                                  "cwd": e.cwd ?? ""]
+                                  "cwd": e.cwd ?? "", "tool_use_id": e.toolUseID ?? ""]
         guard var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
         line.append(0x0A)
         if let h = try? FileHandle(forWritingTo: url) {

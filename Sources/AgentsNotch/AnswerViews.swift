@@ -155,3 +155,36 @@ struct AlwaysButton: View {
         }
     }
 }
+
+/// A failed answer stays actionable without offering another approval on a dead hook.
+struct DeliveryStatus: View {
+    let ask: PendingAsk
+    let agent: Agent
+    let store: Store
+
+    var body: some View {
+        switch ask.delivery {
+        case .notDelivered:
+            VStack(alignment: .leading, spacing: 4) {
+                Label(DeliveryText.notDelivered, systemImage: "exclamationmark.circle.fill")
+                    .foregroundStyle(Ink.error).font(.system(size: 11, weight: .medium))
+                HStack(spacing: 8) {
+                    Button(DeliveryText.openTerminal) { store.open(agent) }.buttonStyle(Pill(primary: false))
+                    Button(DeliveryText.dismiss) { store.dismiss(ask) }
+                        .buttonStyle(.plain).foregroundStyle(dim).font(.system(size: 11))
+                }
+            }
+        case .sent:
+            Text(DeliveryText.sent).foregroundStyle(dim).font(.system(size: 11))
+        case .waiting:
+            SurfaceTimeline(every: 1) { date in
+                if let seconds = ask.secondsRemaining(now: date.timeIntervalSince1970) {
+                    Text(DeliveryText.countdown(seconds)).foregroundStyle(Ink.askText)
+                        .font(.system(size: 11)).monospacedDigit()
+                }
+            }
+        case .delivered:
+            EmptyView()
+        }
+    }
+}

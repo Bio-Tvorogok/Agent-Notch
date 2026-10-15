@@ -8,6 +8,8 @@ import NotchCore
 // notch-hook --uninstall-hooks: takes our entries out of the Claude Code and Codex hook files, like the app flag.
 // `brew uninstall --zap` runs it from this copy, because by then the app bundle is already gone.
 
+// A closed stdout pipe must not turn a delivery failure into a hook failure.
+signal(SIGPIPE, SIG_IGN)
 let args = CommandLine.arguments
 if args.count == 2 && args[1] == "--uninstall-hooks" {
     // The home is where this copy lives, so the paths match the installed commands exactly; $HOME is the fallback.
@@ -43,6 +45,7 @@ let holds = event == "PermissionRequest" || (args.contains("--wait") && parsed?.
 let wait = holds ? Double(HookInstaller.wait) : 0
 if let decision = HookClient.send(vendor: vendor, payload: input, wait: wait),
    let out = HookReply.helperStdout(event: parsed, name: event, decision: decision) {
-    FileHandle.standardOutput.write(Data((out + "\n").utf8))
+    // HookClient has read the bound decision and sent its one-line receipt before returning.
+    try? FileHandle.standardOutput.write(contentsOf: Data((out + "\n").utf8))
 }
 exit(0)

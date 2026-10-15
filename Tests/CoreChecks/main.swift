@@ -82,6 +82,17 @@ run("smallProjectDetailed") { w.testSmallProjectDrawsEveryLiveAgent() }
 run("busyProjectCounters") { w.testBusyProjectSwitchesToCountersAndKeepsExceptions() }
 run("crampedSummary") { w.testCrampedOrTooWideCollapsesIntoOneSummary() }
 run("nothingLive") { w.testNothingLiveDrawsNothing() }
+run("deliveryWaitsForReceipt") { try SecurityDeliveryChecks().waitsForReceipt() }
+run("deliveryIdenticalCommands") { try DeliveryIdentityRegressionChecks().identicalCommands() }
+run("deliveryQuestionRoute") { try DeliveryIdentityRegressionChecks().questionRoute() }
+run("deliveryAck") { try SecurityDeliveryChecks().receiptAndFailure("ack") }
+run("deliveryWriteError") { try SecurityDeliveryChecks().receiptAndFailure("write-error") }
+run("deliveryAckTimeout") { try SecurityDeliveryChecks().receiptAndFailure("timeout") }
+run("deliveryWrongAck") { try SecurityDeliveryChecks().receiptAndFailure("wrong-ack") }
+run("deliveryFragmentedAck") { try SecurityDeliveryChecks().receiptAndFailure("fragmented-ack") }
+run("deliveryLateAndDuplicate") { try SecurityDeliveryChecks().lateAndDuplicate() }
+run("deliveryNoClick") { try SecurityDeliveryChecks().noClick() }
+run("deliveryStateAndIdentity") { try SecurityDeliveryChecks().stateAndIdentity() }
 let h = HookTests()
 run("hookParseReply") { try h.testParsesEventAndRepliesOnlyWithAClick() }
 run("hookRoundTrip") { try h.testPermissionWaitsForTheClickAndNothingWithoutTheApp() }

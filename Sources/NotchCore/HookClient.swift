@@ -22,7 +22,15 @@ public enum HookClient {
         guard Socket.write(fd, line + [0x0A]) else { return nil }
         guard wait > 0, let reply = Socket.readLine(fd, limit: HookServer.maxLine),
               let r = try? JSONSerialization.jsonObject(with: reply) as? Rec else { return nil }
-        return HookDecision(wire: r)
+        let toolUseID = HookEvent.toolIdentity(vendor: vendor, payload: p)
+        guard let ticket = r["ticket"] as? Int, ticket > 0,
+              HookReceipt.matchesTool(r, toolUseID: toolUseID),
+              let decision = HookDecision(wire: r) else { return nil }
+        // One nonblocking receipt write: acknowledgement must never extend the agent's wait.
+        let receipt = HookReceipt.ack(ticket: ticket, toolUseID: toolUseID) + [10]
+        let sent = receipt.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, MSG_DONTWAIT) }
+        guard sent == receipt.count else { return nil }
+        return decision
     }
 
     /// Require the app bundle layout before trusting a socket decision.
