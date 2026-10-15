@@ -8,3 +8,5 @@ xcrun swiftc -O -o .build/checks/core-checks Sources/NotchCore/*.swift Tests/Cor
 sh scripts/test-keep-awake.sh
 
 python3 -m unittest discover -s Tests/UpdateChecks
+
+python3 -m unittest discover -s Tests/ReleaseSkillChecks
