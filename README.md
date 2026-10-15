@@ -150,6 +150,8 @@ Requires macOS 14+ on Apple Silicon.
 
 **What does it read?** Files under `~/.claude` and `~/.codex`, plus the Claude app's plan-usage file. The Skills tab also reads `SKILL.md` files in the projects listed in `~/.claude.json` and `~/.codex/config.toml`. Hook decisions are logged to `~/Library/Application Support/AgentsNotch/decisions.jsonl`.
 
+Agent Notch uses `CLAUDE_CONFIG_DIR` and `CODEX_HOME` from its process environment when set (including `~` and trailing slashes), otherwise defaults to `~/.claude` and `~/.codex`; Finder/launchd may not inherit shell variables, and the app does not source shell files.
+
 **Why Accessibility?** To shrink the wing when a menu reaches it and to press ⌘V when you paste a prompt. Nothing else.
 
 **Uninstall?** `brew uninstall --zap agent-notch` also removes the hooks.

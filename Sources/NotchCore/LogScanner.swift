@@ -60,9 +60,9 @@ public final class LogScanner: @unchecked Sendable {
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, execRuns: @escaping () -> [ExecRun] = ExecRun.running,
                 rolloutParents: (() -> [String: [String]])? = nil) {
         self.execRuns = execRuns
-        claudeRoot = home.appendingPathComponent(".claude/projects")
-        claudeSessions = home.appendingPathComponent(".claude/sessions")
-        codexRoot = home.appendingPathComponent(".codex/sessions")
+        claudeRoot = ConfigRoots(home: home).logs(.claude)
+        claudeSessions = ConfigRoots(home: home).root(.claude).appendingPathComponent("sessions")
+        codexRoot = ConfigRoots(home: home).logs(.codex)
         let root = codexRoot
         self.rolloutParents = rolloutParents ?? { Proc.rolloutParents(in: root) }
     }

@@ -5,7 +5,7 @@ import CoreFoundation
 enum UsageLog {
     static let tailBytes = 4 << 20
     static func files(home: URL, vendor: Vendor) -> [URL] {
-        let root = home.appendingPathComponent(vendor == .claude ? ".claude/projects" : ".codex/sessions")
+        let root = ConfigRoots(home: home).logs(vendor)
         guard let items = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey],
                                                         options: [.skipsHiddenFiles]) else { return [] }
         return items.compactMap { $0 as? URL }.filter { $0.pathExtension == "jsonl" }

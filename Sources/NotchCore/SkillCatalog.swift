@@ -176,7 +176,7 @@ public struct SkillCatalog: Sendable {
                 found.append(skill)
             }
         }
-        let claude = home.appendingPathComponent(".claude"), codex = home.appendingPathComponent(".codex")
+        let claude = ConfigRoots(home: home).root(.claude), codex = ConfigRoots(home: home).root(.codex)
         add(claude.appendingPathComponent("skills"), .claude, .user)
         for p in claudePlugins() {
             add(URL(fileURLWithPath: p.path).appendingPathComponent("skills"), .claude, .plugin,
@@ -210,12 +210,12 @@ public struct SkillCatalog: Sendable {
     /// Folders Claude Code (`projects` in `~/.claude.json`) and Codex (`[projects."…"]` in `config.toml`) have worked in.
     func knownProjects() -> [String] {
         var result: [String] = []
-        if let data = try? Data(contentsOf: home.appendingPathComponent(".claude.json")),
+        if let data = try? Data(contentsOf: ConfigRoots(home: home).claudeState),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let projects = json["projects"] as? [String: Any] {
             result += projects.keys
         }
-        let toml = (try? String(contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8)) ?? ""
+        let toml = (try? String(contentsOf: ConfigRoots(home: home).root(.codex).appendingPathComponent("config.toml"), encoding: .utf8)) ?? ""
         for raw in toml.components(separatedBy: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             guard line.hasPrefix("[projects.\""), let close = line.range(of: "\"]", options: .backwards) else { continue }
@@ -228,7 +228,7 @@ public struct SkillCatalog: Sendable {
 
     /// `~/.claude/plugins/installed_plugins.json`, switched on or off by `enabledPlugins` in `~/.claude/settings.json`.
     func claudePlugins() -> [(name: String, version: String?, path: String, enabled: Bool?)] {
-        let base = home.appendingPathComponent(".claude")
+        let base = ConfigRoots(home: home).root(.claude)
         guard let data = try? Data(contentsOf: base.appendingPathComponent("plugins/installed_plugins.json")),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let plugins = json["plugins"] as? [String: Any] else { return [] }
@@ -250,7 +250,7 @@ public struct SkillCatalog: Sendable {
 
     /// `~/.codex/plugins/cache/<marketplace>/<plugin>/<version>`, the newest version of each, switched by `config.toml`.
     func codexPlugins() -> [(name: String, version: String?, path: URL, enabled: Bool?)] {
-        let base = home.appendingPathComponent(".codex")
+        let base = ConfigRoots(home: home).root(.codex)
         let config = (try? String(contentsOf: base.appendingPathComponent("config.toml"), encoding: .utf8)) ?? ""
         let switches = Self.codexSwitches(config)
         var result: [(String, String?, URL, Bool?)] = []
@@ -352,7 +352,7 @@ public struct SkillUsageScanner: Sendable {
     public init() {}
 
     public mutating func scan(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String: SkillUse] {
-        let root = home.appendingPathComponent(".claude/projects")
+        let root = ConfigRoots(home: home).logs(.claude)
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
         var live = Set<String>()
         var total: [String: SkillUse] = [:]
