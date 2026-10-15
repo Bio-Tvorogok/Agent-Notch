@@ -1,7 +1,7 @@
 import Foundation
 
 /// Finds recently written Claude Code and Codex session logs under a home folder and tails them.
-/// Read-only. Overlapping polls share one pending scan and return the last published snapshot.
+/// Read-only. Overlapping polls share one pending scan; only its owner returns a snapshot.
 public final class LogScanner: @unchecked Sendable {
     private struct Tracked {
         var log: SessionLog
@@ -22,6 +22,11 @@ public final class LogScanner: @unchecked Sendable {
         }
     }
 
+    // Observers report actual I/O without replacing filesystem operations.
+    var didRead: ((Int) -> Void)?
+    var didStat: ((String) -> Void)?
+    var didList: ((String) -> Void)?
+
     private let claudeRoot: URL
     private let claudeSessions: URL
     private let codexRoot: URL
@@ -31,13 +36,13 @@ public final class LogScanner: @unchecked Sendable {
     private let scanLock = NSLock()
     private var scanning = false
     private var pending: (Date, Double)?
-    private var published: [Agent] = []
     private struct DirectoryStamp: Equatable {
         let modified: Date
         let inode: UInt64
         let device: UInt64
     }
     private var codexDirectories: [String: (DirectoryStamp, [URL])] = [:]
+    private var codexDays: [String: (newest: Double, checked: Double)] = [:]
     private var lastDiscovery: Double = 0
     private var lastRetention: Double?
     private let execRuns: () -> [ExecRun]
@@ -56,13 +61,12 @@ public final class LogScanner: @unchecked Sendable {
         codexRoot = home.appendingPathComponent(".codex/sessions")
     }
 
-    public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent] {
+    public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent]? {
         scanLock.lock()
         if scanning {
             pending = (now, finishedRetention)
-            let result = published
             scanLock.unlock()
-            return result
+            return nil
         }
         scanning = true
         scanLock.unlock()
@@ -70,7 +74,6 @@ public final class LogScanner: @unchecked Sendable {
         while true {
             let result = scan(now: request.0, finishedRetention: request.1)
             scanLock.lock()
-            published = result
             if let next = pending {
                 pending = nil
                 scanLock.unlock()
@@ -170,7 +173,7 @@ public final class LogScanner: @unchecked Sendable {
         var visited: Set<String> = []
         func directories(_ dir: URL, digits: Int) -> [URL] {
             visited.insert(dir.path)
-            return codexChildren(dir).filter {
+            return codexChildren(dir, now: now).filter {
                 $0.lastPathComponent.count == digits && $0.lastPathComponent.allSatisfy(\.isNumber)
             }.sorted { $0.lastPathComponent > $1.lastPathComponent }
         }
@@ -178,22 +181,37 @@ public final class LogScanner: @unchecked Sendable {
             for month in directories(year, digits: 2) {
                 for day in directories(month, digits: 2) {
                     visited.insert(day.path)
-                    // An append does not touch the date folder's mtime. Check the files even
-                    // in old folders; only their own sorted modification times allow a stop.
-                    let logs = codexChildren(day).filter { $0.pathExtension == "jsonl" }.map {
-                        ($0, mtime($0.path))
-                    }.sorted { $0.1 > $1.1 }
-                    for (file, modified) in logs {
-                        if modified <= fresh { break }
-                        if files[file.path] == nil { track(codex: file) }
+                    let previous = codexDirectories[day.path]
+                    let items = codexChildren(day, now: now)
+                    let changed = previous?.0 != codexDirectories[day.path]?.0 || previous?.1 != items
+                    let date = day.lastPathComponent
+                    let monthPath = day.deletingLastPathComponent()
+                    let key = monthPath.deletingLastPathComponent().lastPathComponent + "/" + monthPath.lastPathComponent + "/" + date
+                    let calendar = Calendar.current
+                    let current = Date(timeIntervalSince1970: now)
+                    let recentDays = [current, calendar.date(byAdding: .day, value: -1, to: current)!].map {
+                        let c = calendar.dateComponents([.year, .month, .day], from: $0)
+                        return String(format: "%04d/%02d/%02d", c.year!, c.month!, c.day!)
                     }
+                    // Appends leave directory mtimes unchanged. Revisit cold folders within 60s.
+                    if let cached = codexDays[day.path], !changed, !recentDays.contains(key),
+                       cached.newest <= fresh, now - cached.checked < 55 { continue }
+                    var newest: Double = 0
+                    for file in items where file.pathExtension == "jsonl" {
+                        let modified = mtime(file.path)
+                        newest = max(newest, modified)
+                        if modified > fresh, files[file.path] == nil { track(codex: file) }
+                    }
+                    codexDays[day.path] = (newest, now)
                 }
             }
         }
         codexDirectories = codexDirectories.filter { visited.contains($0.key) }
+        codexDays = codexDays.filter { visited.contains($0.key) }
     }
 
-    private func codexChildren(_ dir: URL) -> [URL] {
+    private func codexChildren(_ dir: URL, now: Double) -> [URL] {
+        didStat?(dir.path)
         guard let attributes = try? fm.attributesOfItem(atPath: dir.path),
               let modified = attributes[.modificationDate] as? Date,
               let inode = attributes[.systemFileNumber] as? UInt64,
@@ -202,7 +220,11 @@ public final class LogScanner: @unchecked Sendable {
             return []
         }
         let stamp = DirectoryStamp(modified: modified, inode: inode, device: device)
-        if let cached = codexDirectories[dir.path], cached.0 == stamp { return cached.1 }
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: now))
+        let today = String(format: "/%04d/%02d/%02d", c.year!, c.month!, c.day!)
+        if !dir.path.hasSuffix(today), modified.timeIntervalSince1970 < now - 2,
+           let cached = codexDirectories[dir.path], cached.0 == stamp { return cached.1 }
+        didList?(dir.path)
         guard let items = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]) else {
             codexDirectories.removeValue(forKey: dir.path)
             return []
@@ -281,16 +303,23 @@ public final class LogScanner: @unchecked Sendable {
         guard var f = files[path], let h = FileHandle(forReadingAtPath: path) else { return }
         defer { try? h.close() }
         var info = stat()
+        didStat?(path)
         guard fstat(h.fileDescriptor, &info) == 0 else { return }
         let size = UInt64(max(0, info.st_size))
         if size < f.offset || (f.inode != nil && (f.inode != info.st_ino || f.device != info.st_dev)) {
             f.log = f.initial
-            f.offset = f.log.vendor == .codex ? 0 : (size > Self.tailBytes ? size - Self.tailBytes : 0)
+            if f.log.vendor == .codex, let first = firstLine(h, chunkBytes: 1),
+               let r = try? JSONSerialization.jsonObject(with: first) as? Rec {
+                if f.isExec { ExecLine.apply(r, to: &f.log, at: now) }
+                else { CodexLine.apply(r, to: &f.log) }
+            }
+            f.offset = size > Self.tailBytes ? size - Self.tailBytes : 0
         }
         f.inode = info.st_ino
         f.device = info.st_dev
         files[path] = f
-        guard (try? h.seek(toOffset: f.offset)) != nil, let data = try? h.readToEnd(), !data.isEmpty else { return }
+        guard (try? h.seek(toOffset: f.offset)) != nil, let data = try? h.read(upToCount: Int(size - f.offset)), !data.isEmpty else { return }
+        didRead?(data.count)
         // A tail read may start mid-line: that fragment fails to parse and is skipped like any bad line.
         var consumed = 0
         data.withUnsafeBytes { raw in
@@ -313,6 +342,7 @@ public final class LogScanner: @unchecked Sendable {
     }
 
     private func startOffset(_ path: String) -> UInt64 {
+        didStat?(path)
         let size = (try? fm.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
         return size > Self.tailBytes ? size - Self.tailBytes : 0
     }
@@ -320,8 +350,15 @@ public final class LogScanner: @unchecked Sendable {
     private func firstLine(_ path: String) -> Data? {
         guard let h = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? h.close() }
+        return firstLine(h, chunkBytes: 64 << 10)
+    }
+
+    private func firstLine(_ h: FileHandle, chunkBytes: Int) -> Data? {
+        guard (try? h.seek(toOffset: 0)) != nil else { return nil }
         var buf = Data()
-        while buf.count < 1 << 20, let chunk = try? h.read(upToCount: 64 << 10), !chunk.isEmpty {
+        // Resets read exactly through the newline; discovery keeps its chunked reads.
+        while buf.count < 1 << 20, let chunk = try? h.read(upToCount: chunkBytes), !chunk.isEmpty {
+            didRead?(chunk.count)
             if let nl = chunk.firstIndex(of: 0x0A) { return buf + chunk[..<nl] }
             buf += chunk
         }
@@ -333,6 +370,7 @@ public final class LogScanner: @unchecked Sendable {
     }
 
     private func mtime(_ path: String) -> Double {
+        didStat?(path)
         var info = stat()
         guard stat(path, &info) == 0 else { return 0 }
         return Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000

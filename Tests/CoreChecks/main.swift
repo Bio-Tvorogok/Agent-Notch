@@ -41,8 +41,11 @@ run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoe
 let l = LogTests(), t = TreeTests(), w = WingTests()
 let discovery = CodexDiscoveryChecks()
 run("codexResumedOldFolder") { try discovery.resumedOldFolderAndAppendedTail() }
-run("codexTruncatedFullRead") { try discovery.resetReadsFromStart(replaced: false) }
-run("codexReplacedFullRead") { try discovery.resetReadsFromStart(replaced: true) }
+run("codexTruncatedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: false) }
+run("codexReplacedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: true) }
+run("codexColdFolderStats") { try discovery.coldFoldersBoundStats() }
+run("codexTodayListing") { try discovery.recentListingsAreNeverTrusted(today: true) }
+run("codexRecentListing") { try discovery.recentListingsAreNeverTrusted(today: false) }
 run("scannerCoalesces") { try discovery.overlappingPollsCoalesce() }
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("scannerRewrittenLog") { try ScannerRewriteChecks().rewrittenLogClearsThePreviousTurn() }
