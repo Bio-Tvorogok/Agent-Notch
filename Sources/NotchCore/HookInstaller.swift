@@ -110,7 +110,13 @@ public struct HookInstaller: Sendable {
         var mode = 0o644
         try HookFileUpdate.apply(read: {
             fm.fileExists(atPath: url.path) ? try String(contentsOf: url, encoding: .utf8) : ""
-        }, merge: { try Self.merge($0, spec: spec) }, prepare: { old in
+        }, merge: { text in
+            do { return try Self.merge(text, spec: spec) }
+            catch {
+                throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "Cannot edit \(url.path); file left unchanged. \(error.localizedDescription)"])
+            }
+        }, prepare: { old in
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             mode = (try? fm.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int) ?? 0o644
             let backup = url.appendingPathExtension("agents-notch-backup")
@@ -127,6 +133,7 @@ public struct HookInstaller: Sendable {
     static let script = """
     function merge(text, spec) {
       const d = text.trim() ? JSON.parse(text) : {};
+      if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('Expected a JSON object');
       const hooks = d.hooks || {};
       let removed = false;
       for (const ev of Object.keys(hooks)) {
@@ -154,7 +161,10 @@ public struct HookInstaller: Sendable {
         ctx.exceptionHandler = { _, e in failure = e?.toString() }
         ctx.evaluateScript(script)
         let out = ctx.objectForKeyedSubscript("merge")?.call(withArguments: [text, spec])
-        if let failure { throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: failure]) }
+        if let failure {
+            throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "Strict JSON object required; comments and trailing commas are not supported. \(failure)"])
+        }
         guard let s = out?.toString() else { throw POSIXError(.EINVAL) }
         return s
     }

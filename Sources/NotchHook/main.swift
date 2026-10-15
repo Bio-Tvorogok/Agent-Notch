@@ -4,12 +4,13 @@ import NotchCore
 // notch-hook <claude|codex>: Claude Code or Codex runs this for every hook event, with the event JSON on stdin.
 // It hands the event to Agents Notch. For a permission request it waits for a click in the notch and prints the
 // decision; when the app is not running or nobody clicks, it prints nothing and the agent asks as usual.
-// It always exits 0: a broken notch must never break an agent.
-// notch-hook --uninstall-hooks: takes our entries out of the Claude Code and Codex hook files, like the app flag.
+// Hook events always exit 0: a broken notch must never break an agent.
+// notch-hook --install-hooks / --uninstall-hooks: adds or removes our entries in the Claude Code and Codex hook files, like the app flag.
 // `brew uninstall --zap` runs it from this copy, because by then the app bundle is already gone.
 
 let args = CommandLine.arguments
-if args.count == 2 && args[1] == "--uninstall-hooks" {
+if args.count == 2 && ["--install-hooks", "--uninstall-hooks"].contains(args[1]) {
+    let install = args[1] == "--install-hooks"
     // The home is where this copy lives, so the paths match the installed commands exactly; $HOME is the fallback.
     let suffix = "/Library/Application Support/AgentsNotch/notch-hook"
     // realpath, not URL.resolvingSymlinksInPath: that one drops /private and the paths stop matching.
@@ -21,10 +22,10 @@ if args.count == 2 && args[1] == "--uninstall-hooks" {
     var failed = false
     for v in [Vendor.claude, .codex] {
         do {
-            try inst.uninstall(v)
+            try install ? inst.install(v) : inst.uninstall(v)
             print("\(v.rawValue): \(inst.isInstalled(v) ? "installed" : "removed") in \(inst.file(v).path)")
         } catch {
-            print("\(v.rawValue): \(error.localizedDescription)")
+            FileHandle.standardError.write(Data("\(v.rawValue): \(error.localizedDescription)\n".utf8))
             failed = true
         }
     }

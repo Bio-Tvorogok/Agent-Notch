@@ -248,5 +248,13 @@ run("soundRequestsEn") { Loc.forced = .en; defer { Loc.forced = .ru }; soundChec
 run("soundLimits") { soundChecks.limits() }
 run("soundNativeRequests") { soundChecks.nativeRequests() }
 
+let safeUninstall = SafeUninstallChecks()
+run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-hooks") }
+run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
+run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
+run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
+run("safeAuditRotation") { try safeUninstall.auditRotates() }
+if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
