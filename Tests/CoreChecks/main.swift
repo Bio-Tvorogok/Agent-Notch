@@ -102,6 +102,25 @@ run("smallProjectDetailed") { w.testSmallProjectDrawsEveryLiveAgent() }
 run("busyProjectCounters") { w.testBusyProjectSwitchesToCountersAndKeepsExceptions() }
 run("crampedSummary") { w.testCrampedOrTooWideCollapsesIntoOneSummary() }
 run("nothingLive") { w.testNothingLiveDrawsNothing() }
+run("deliveryWaitsForReceipt") { try SecurityDeliveryChecks().waitsForReceipt() }
+run("deliveryStdoutBroken") { try DeliveryFixChecks().helperStdout("broken") }
+run("deliveryStdoutSuccess") { try DeliveryFixChecks().helperStdout("success") }
+run("deliveryStdoutFull") { try DeliveryFixChecks().helperStdout("full") }
+run("deliveryStdoutLarge") { try DeliveryFixChecks().helperStdout("large") }
+run("deliveryOversizedIdentity") { try DeliveryFixChecks().oversizedIdentity() }
+run("deliveryUnsentDisconnect") { try DeliveryFixChecks().unsentDisconnect() }
+run("deliveryUnconfirmedExpiry") { try DeliveryFixChecks().unconfirmedExpiry() }
+run("deliveryIdenticalCommands") { try DeliveryIdentityRegressionChecks().identicalCommands() }
+run("deliveryQuestionRoute") { try DeliveryIdentityRegressionChecks().questionRoute() }
+run("deliveryAck") { try SecurityDeliveryChecks().receiptAndFailure("ack") }
+run("deliveryWriteError") { try SecurityDeliveryChecks().receiptAndFailure("write-error") }
+run("deliveryAckTimeout") { try SecurityDeliveryChecks().receiptAndFailure("timeout") }
+run("deliveryWrongAck") { try SecurityDeliveryChecks().receiptAndFailure("wrong-ack") }
+run("deliveryFragmentedAck") { try SecurityDeliveryChecks().receiptAndFailure("fragmented-ack") }
+run("deliveryDelayedAck") { try SecurityDeliveryChecks().receiptAndFailure("delayed-ack") }
+run("deliveryLateAndDuplicate") { try SecurityDeliveryChecks().lateAndDuplicate() }
+run("deliveryNoClick") { try SecurityDeliveryChecks().noClick() }
+run("deliveryStateAndIdentity") { try SecurityDeliveryChecks().stateAndIdentity() }
 let h = HookTests()
 run("hookParseReply") { try h.testParsesEventAndRepliesOnlyWithAClick() }
 run("hookRoundTrip") { try h.testPermissionWaitsForTheClickAndNothingWithoutTheApp() }
@@ -293,6 +312,7 @@ run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninsta
 run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }
 run("safeInvalidConfigRoots") { try safeUninstall.invalidRootsArePreserved() }
 run("safeAuditRotation") { try safeUninstall.auditRotates() }
+run("auditDeliveryResult") { try safeUninstall.auditDelivery() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
