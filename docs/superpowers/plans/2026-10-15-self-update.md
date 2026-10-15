@@ -50,3 +50,6 @@ User approved design and explicitly requested implementation in a separate workt
 
 ## Verification record
 See docs/self-update-verification.md. Ruling: production Keychain access and GitHub secret configuration are owner release steps; do not retry cancelled access or publish. Production signing was not verified. Homebrew installation and disconnected-server UI are explicitly unverified; no installed app replacement is included.
+
+## Owner adjustment: local releases
+The owner confirmed Actions are unavailable. Replace the release workflow with scripts/prepare-release.sh: clean-source check, stable changelog notes, tests, package, Keychain-signed appcast, rendered Homebrew cask. No tag, push or publication. GitHub private-key secret is no longer required. Targeted subprocess tests cover successful preparation and fail-closed paths; full production preparation still requires owner Keychain access and a release-version decision.

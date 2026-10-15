@@ -12,27 +12,38 @@
 
 Открытый ключ находится в `packaging/updates-public-key.txt`. Закрытая часть создана в Keychain под аккаунтом `com.forichok.agents-notch`. Не заменяйте этот ключ для уже выпущенных приложений: существующие копии доверяют старому открытому ключу.
 
-Для настройки CI один раз экспортируйте ключ во временный файл с правами только для владельца и передайте его в GitHub secret. Команды не печатают закрытый ключ:
-
-```sh
-sparkle=$(./scripts/fetch-sparkle.sh)
-keyfile=$(mktemp)
-chmod 600 "$keyfile"
-trap 'rm -f "$keyfile"' EXIT HUP INT TERM
-"$sparkle/bin/generate_keys" --account com.forichok.agents-notch -x "$keyfile"
-gh secret set SPARKLE_PRIVATE_KEY < "$keyfile"
-```
+Ключ не нужно экспортировать или передавать в GitHub. Подготовка релиза выполняется на этом Mac; закрытая часть остаётся в Keychain. GitHub Actions и секреты репозитория для выпуска не используются.
 
 При первом локальном подписании macOS может запросить доступ `generate_appcast` к созданному ключу. Разрешение выдаёт владелец; отказ прерывает выпуск до публикации.
 
 Храните резервную копию Keychain или ключа в защищённом месте. Создание ключа на другой машине вместо импорта исходного не позволит подписывать обновления для существующих пользователей.
 
-## Выпуск
+## Локальный выпуск
 
-1. Обновите changelog для новой стабильной версии. Получите разрешение владельца перед release tag и публикацией.
-2. `scripts/package.sh X.Y.Z` создаёт ZIP, DMG и SHA256SUMS. После подготовки `dist/notes.md` выполните `scripts/appcast.sh X.Y.Z`.
-3. Генератор подписывает окончательный ZIP, встраивает описание изменений, проверяет подпись по открытому ключу из ZIP и создаёт `dist/appcast.xml`. Локально используется Keychain; CI получает ключ через stdin из секрета. Повреждённая или неподписанная сборка не должна публиковаться.
-4. CI загружает все файлы в черновик GitHub Release и публикует его после загрузки. Постоянный адрес ленты: `https://github.com/Forichok/Agent-Notch/releases/latest/download/appcast.xml`.
+1. После проверки изменений и слияния в основную ветку добавьте секцию новой стабильной версии в `CHANGELOG.md` и закоммитьте её. Подготовка релиза требует чистого рабочего дерева.
+2. Запустите одну команду на Mac:
+
+   ```sh
+   ./scripts/prepare-release.sh X.Y.Z
+   ```
+
+   Она извлекает описание нужной версии, выполняет тесты, собирает ZIP/DMG, подписывает ZIP ключом из Keychain и проверяет подпись. В `dist/` появятся архивы, `SHA256SUMS.txt`, `appcast.xml`, `notes.md` и готовый `agent-notch.rb` для Homebrew tap. Ошибка тестов, сборки или подписи прерывает подготовку. Команда не создаёт тегов и не публикует файлы.
+3. Только после разрешения владельца на тег и выпуск загрузите готовые файлы в черновик GitHub Release. Команда `gh` обращается напрямую к GitHub API и не запускает Actions:
+
+   ```sh
+   version=X.Y.Z
+   revision=$(git rev-parse HEAD)
+   gh release create "v$version" --target "$revision" --draft \
+     --title "Agent Notch $version" --notes-file dist/notes.md \
+     "dist/AgentNotch-$version.dmg" "dist/AgentNotch-$version.zip" \
+     dist/SHA256SUMS.txt dist/appcast.xml
+   gh release edit "v$version" --draft=false
+   ```
+
+   Коммит должен уже находиться на GitHub. Если тег ещё не существует, `gh release create` создаст его на указанной ревизии. Не публикуйте релиз до загрузки всех файлов: постоянный адрес ленты указывает на последний опубликованный стабильный релиз.
+4. Скопируйте `dist/agent-notch.rb` в `Casks/agent-notch.rb` репозитория `Forichok/homebrew-tap` и опубликуйте изменение tap после разрешения владельца. Токен Actions для этого не нужен.
+
+Постоянный адрес ленты: `https://github.com/Forichok/Agent-Notch/releases/latest/download/appcast.xml`. GitHub хранит готовые файлы; сборка и подпись происходят локально.
 
 Приложение должно находиться на доступном для установки томе. При запуске с DMG сначала перенесите его в Applications. Cask помечен `auto_updates true`, поскольку приложение умеет обновляться само. Для принудительной проверки средствами Homebrew используйте `brew upgrade --cask --greedy agent-notch`; встроенное обновление использует права доступа фактического bundle. При отказе в записи ручная проверка должна показывать ошибку Sparkle, а рабочая копия сохраняться.
 
