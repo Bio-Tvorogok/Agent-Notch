@@ -31,6 +31,9 @@ public final class LogScanner: @unchecked Sendable {
     private var lastDiscovery: Double = 0
     private var lastRetention: Double?
     private let execRuns: () -> [ExecRun]
+    private let rolloutParents: () -> [String: [String]]
+    /// Keep ancestry after the process exits and across log resets.
+    private var threadParents: [String: [String]] = [:]
     /// Exec logs whose process was running at the last discovery.
     private var execAlive: Set<String> = []
 
@@ -39,11 +42,14 @@ public final class LogScanner: @unchecked Sendable {
     /// First read of a long log starts this far from its end.
     static let tailBytes: UInt64 = 2 << 20
 
-    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, execRuns: @escaping () -> [ExecRun] = ExecRun.running) {
+    public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, execRuns: @escaping () -> [ExecRun] = ExecRun.running,
+                rolloutParents: (() -> [String: [String]])? = nil) {
         self.execRuns = execRuns
         claudeRoot = home.appendingPathComponent(".claude/projects")
         claudeSessions = home.appendingPathComponent(".claude/sessions")
         codexRoot = home.appendingPathComponent(".codex/sessions")
+        let root = codexRoot
+        self.rolloutParents = rolloutParents ?? { Proc.rolloutParents(in: root) }
     }
 
     public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent] {
@@ -58,6 +64,9 @@ public final class LogScanner: @unchecked Sendable {
         let live = ClaudeLive.read(claudeSessions)
         for path in Array(files.keys) {
             read(path, now: t)
+            if let f = files[path], f.log.vendor == .codex, !f.isExec {
+                files[path]?.log.parentCandidates = threadParents[f.log.id] ?? []
+            }
             if let f = files[path], f.log.vendor == .claude {
                 let l = live[f.log.parentId ?? f.log.id]
                 files[path]?.log.live = l
@@ -72,6 +81,8 @@ public final class LogScanner: @unchecked Sendable {
         files = files.filter { path, f in
             f.log.state(now: t, finishedRetention: finishedRetention) != nil || mtime(path) > t - window
         }
+        let threads = Set(files.values.filter { $0.log.vendor == .codex }.map { $0.log.id })
+        threadParents = threadParents.filter { threads.contains($0.key) }
         // A retained exec thread has both a rollout and a stdout stream. Keep the rollout for
         // prompts, approvals and resuming; the stream still supplies its process ancestry.
         let logs = Dictionary(grouping: files.values, by: { "\($0.log.vendor.rawValue):\($0.log.id)" }).values.map { sources in
@@ -112,6 +123,11 @@ public final class LogScanner: @unchecked Sendable {
 
     private func discover(now: Double, window: Double) {
         let fresh = now - window
+        for (id, parents) in rolloutParents() {
+            for parent in parents where !threadParents[id, default: []].contains(parent) {
+                threadParents[id, default: []].append(parent)
+            }
+        }
         let runs = execRuns()
         execAlive = Set(runs.map(\.log))
         for run in runs where files[run.log] == nil { track(exec: run) }
