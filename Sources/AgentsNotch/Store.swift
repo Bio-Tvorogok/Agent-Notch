@@ -247,6 +247,9 @@ final class Store: ObservableObject {
 
 /// Every decision made in the notch, one JSON line each, in ~/Library/Application Support/AgentsNotch/decisions.jsonl.
 enum Audit {
+    private static let lock = NSLock()
+    private static let maxBytes = 1_048_576
+
     static func record(_ e: HookEvent, _ d: HookDecision) {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
@@ -255,12 +258,34 @@ enum Audit {
                                   "cwd": e.cwd ?? "", "tool_use_id": e.toolUseID ?? ""]
         guard var line = try? JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]) else { return }
         line.append(0x0A)
-        if let h = try? FileHandle(forWritingTo: url) {
-            defer { try? h.close() }
-            _ = try? h.seekToEnd()
-            try? h.write(contentsOf: line)
-        } else {
-            try? line.write(to: url)
+        guard line.count <= maxBytes else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        let fm = FileManager.default
+        do {
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Keep the lock on a separate inode: rotation replaces the log itself.
+            let fd = open(url.appendingPathExtension("lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            guard flock(fd, LOCK_EX) == 0 else { return }
+            defer { flock(fd, LOCK_UN) }
+            if fm.fileExists(atPath: url.path) {
+                let h = try FileHandle(forWritingTo: url)
+                defer { try? h.close() }
+                let size = try h.seekToEnd()
+                if size <= UInt64(maxBytes - line.count) {
+                    try h.write(contentsOf: line)
+                    return
+                }
+                try h.close()
+                let backup = url.appendingPathExtension("1")
+                if fm.fileExists(atPath: backup.path) { try fm.removeItem(at: backup) }
+                try fm.moveItem(at: url, to: backup)
+            }
+            try line.write(to: url, options: .atomic)
+        } catch {
+            // Logging must not prevent the decision from reaching the agent.
         }
     }
 }
