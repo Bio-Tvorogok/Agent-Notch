@@ -1,0 +1,6 @@
+{"type":"session_meta","timestamp":"2026-10-01T10:00:00Z","payload":{"id":"fixture-resumed","cwd":"/tmp/notch-fixture-project","git":{"branch":"fixture/resumed"}}}
+{"type":"event_msg","timestamp":"2026-10-01T10:00:01Z","payload":{"type":"task_complete"}}
+{"type":"turn_context","timestamp":"2026-10-13T10:00:01Z","payload":{"model":"gpt-6.1-sol","effort":"medium"}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:02Z","payload":{"type":"task_started"}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:03Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue the sample checks."}]}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:04Z","payload":{"type":"agent_message","message":"Resumed sample is running."}}

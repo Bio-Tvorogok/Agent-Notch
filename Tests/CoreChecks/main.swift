@@ -35,10 +35,26 @@ func run(_ name: String, _ body: () throws -> Void) {
     do { try body() } catch { report("threw \(error)", #fileID, #line) }
 }
 
+// AN-0.5-T1: synthetic on-disk formats, exercised through the production readers.
+let sessionFixtures = SessionLogFixtureChecks()
+run("fixtureClaudeSubagents") { try sessionFixtures.claudeSubagents() }
+run("fixtureCodexCurrent") { try sessionFixtures.codexCurrent() }
+run("fixtureCodexLegacy") { try sessionFixtures.codexLegacy() }
+run("fixtureResumedReaders") { try sessionFixtures.resumedReaders() }
+run("fixtureTruncatedRecovery") { try sessionFixtures.truncatedRecovery() }
+run("fixtureRotation") { try sessionFixtures.rotation() }
+if ProcessInfo.processInfo.environment["NOTCH_EXPECTED_FAIL"] == "1" {
+    run("EXPECTED-FAIL fixtureResumedDiscovery") { try sessionFixtures.resumedDiscoveryExpectedFail() }
+    run("EXPECTED-FAIL fixtureTruncatedTail") { try sessionFixtures.truncatedTailExpectedFail() }
+} else {
+    print("SKIP EXPECTED-FAIL fixtureResumedDiscovery, fixtureTruncatedTail (NOTCH_EXPECTED_FAIL=1 to run)")
+}
+
 // Most checks assert the Russian copy; LanguageChecks switches to English for its own run.
 Loc.forced = .ru
 run("updateLaunchModes") { UpdateChecks().launchModes() }
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
+run("codexAutomaticMCPRoundTrip") { try HookTests().testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
 run("scannerBothVendors") { try l.testScannerReadsBothVendorsIntoOneProject() }
 run("scannerRewrittenLog") { try ScannerRewriteChecks().rewrittenLogClearsThePreviousTurn() }

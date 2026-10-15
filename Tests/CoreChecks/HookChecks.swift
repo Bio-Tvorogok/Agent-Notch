@@ -24,11 +24,28 @@ struct HookTests {
         payload["session_id"] = "other"
         XCTAssertTrue(try event().waitsForAnswer)
         payload["session_id"] = "s"
-        payload["agent_id"] = "child"
+        // The transcript selects the reviewer, regardless of the tool or agent label.
+        // Returning no decision also leaves app-level Computer Use prompts to Codex.
+        for agent in [nil, "child"] as [String?] {
+            payload["agent_id"] = agent
+            for tool in ["Bash", "apply_patch", "MCP", "mcp__fs__read", "mcp__computer__click", "future_tool"] {
+                payload["tool_name"] = tool
+                let automatic = try event()
+                XCTAssertFalse(automatic.waitsForAnswer)
+                XCTAssertNil(HookReply.stdout(event: automatic, decision: .pass))
+                XCTAssertTrue(try event(.claude).waitsForAnswer)
+            }
+        }
+        // A real child has its own session and turn; never borrow its parent's reviewer.
+        payload["session_id"] = "child"
+        XCTAssertTrue(try event().waitsForAnswer)
+        let childMeta = #"{"type":"session_meta","payload":{"id":"child"}}"#
+        try (childMeta + "\n" + context("t", "auto_review") + "\n").write(to: path, atomically: true, encoding: .utf8)
+        XCTAssertFalse(try event().waitsForAnswer)
+        try (childMeta + "\n" + context("t", "user") + "\n").write(to: path, atomically: true, encoding: .utf8)
         XCTAssertTrue(try event().waitsForAnswer)
         payload["agent_id"] = nil
-        payload["tool_name"] = "mcp__computer__click"
-        XCTAssertTrue(try event().waitsForAnswer)
+        payload["session_id"] = "s"
         payload["tool_name"] = "Bash"
         for reviewer in ["user", "future", ""] {
             try (meta + "\n" + context("t", reviewer) + "\n").write(to: path, atomically: true, encoding: .utf8)
@@ -48,6 +65,41 @@ struct HookTests {
         let started = Date()
         XCTAssertTrue(try event().waitsForAnswer)
         XCTAssertTrue(Date().timeIntervalSince(started) < 1)
+    }
+
+    func testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() throws {
+        let transcript = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jsonl")
+        defer { try? FileManager.default.removeItem(at: transcript) }
+        func writeContext(_ reviewer: String) throws {
+            let rows: [[String: Any]] = [
+                ["type": "session_meta", "payload": ["id": "child"]],
+                ["type": "turn_context", "payload": ["turn_id": "turn", "approvals_reviewer": reviewer]]
+            ]
+            let data = try rows.reduce(into: Data()) { data, row in
+                data.append(try JSONSerialization.data(withJSONObject: row)); data.append(10)
+            }
+            try data.write(to: transcript)
+        }
+        let server = HookServer(path: socketPath())
+        let seen = Box<[String]>([])
+        server.onEvent = { event, ticket in
+            seen.value.append(event.tool ?? "")
+            if let ticket { server.answer(ticket, .deny) }
+        }
+        try server.start()
+        defer { server.stop() }
+        let payload: [String: Any] = ["session_id": "child", "agent_id": "child", "turn_id": "turn",
+            "transcript_path": transcript.path, "hook_event_name": "PermissionRequest", "tool_name": "MCP"]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        try writeContext("auto_review")
+        let started = Date()
+        XCTAssertNil(HookClient.send(vendor: .codex, payload: data, wait: 2, path: server.path, pathCheck: { _ in true }))
+        XCTAssertTrue(Date().timeIntervalSince(started) < 1)
+        XCTAssertEqual(seen.value, [])
+        // The same request in manual mode must still reach the UI and carry its decision back.
+        try writeContext("user")
+        XCTAssertEqual(HookClient.send(vendor: .codex, payload: data, wait: 2, path: server.path, pathCheck: { _ in true }), .deny)
+        XCTAssertEqual(seen.value, ["MCP"])
     }
 
     func payload(_ extra: String = "") -> Data {
