@@ -52,7 +52,7 @@ Subagents are smaller and sit next to their parent. Past six agents in a project
 </tr>
 </table>
 
-Approve with a click or a shortcut. “Always allow” is Claude Code only. If nobody answers in 100 seconds, the agent asks in its own window as usual.
+Nothing is approved without your click or shortcut. “Always allow” is Claude Code only. If nobody answers in 100 seconds, the agent asks in its own window as usual.
 
 ## Prompts and skills on a hotkey
 
