@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-10-13T10:00:01Z","cwd":"/tmp/notch-fixture-project","gitBranch":"fixture/readers","isSidechain":true,"message":{"role":"user","content":"Plan the sample checks."}}
+{"type":"assistant","timestamp":"2026-10-13T10:00:03Z","cwd":"/tmp/notch-fixture-project","gitBranch":"fixture/readers","isSidechain":true,"message":{"model":"claude-sonnet-4-6","content":[{"type":"tool_use","id":"plan","name":"Bash","input":{"command":"find Tests -type f"}}]}}
