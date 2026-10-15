@@ -47,12 +47,12 @@ Subagents are smaller and sit next to their parent. Past six agents in a project
 <td width="50%"><img src="assets/screens/heavy.png" alt="Projects, sessions and subagent trees"></td>
 </tr>
 <tr>
-<td valign="top"><b>Permissions, questions, plans.</b> Allow with <kbd>⌃⌥Y</kbd>, deny with <kbd>⌃⌥N</kbd>, or pick an answer. Risky commands like <code>rm -rf</code> and <code>git push --force</code> turn red and need a click.</td>
-<td valign="top"><b>Every project and subagent.</b> What each agent is running right now, plan limits, context and cost. A click jumps back to its chat.</td>
+<td valign="top"><b>Permissions, questions, plans.</b> Allow with <kbd>⌃⌥Y</kbd>, deny with <kbd>⌃⌥N</kbd>, or pick an answer. Answering questions and accepting or returning plans are Claude Code only. Risky commands like <code>rm -rf</code> and <code>git push --force</code> turn red and need a click.</td>
+<td valign="top"><b>Every project and subagent.</b> What each agent is running right now, plan limits, context and cost. A double-click jumps back to its chat or folder.</td>
 </tr>
 </table>
 
-Nothing is approved without a human click. If nobody answers in 100 seconds, the agent asks in its own window as usual.
+Nothing is approved without your click or shortcut. “Always allow” is Claude Code only. If nobody answers in 100 seconds, the agent asks in its own window as usual.
 
 ## Prompts and skills on a hotkey
 
@@ -75,7 +75,7 @@ Nothing is approved without a human click. If nobody answers in 100 seconds, the
 </tr>
 </table>
 
-Pasting goes through the clipboard and a ⌘V the app presses, so it needs Accessibility access; without it the prompt is copied. The clipboard is put back right after. Prompts live in `~/Library/Application Support/AgentsNotch/prompts.json`.
+Pasting goes through the clipboard and a ⌘V the app presses, so it needs Accessibility access; without it the prompt is copied. By default, the clipboard is put back after a short delay, unless another app has changed it. Prompts live in `~/Library/Application Support/AgentsNotch/prompts.json`.
 
 ## Themes and sounds
 

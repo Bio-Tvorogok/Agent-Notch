@@ -59,7 +59,7 @@ struct LogTests {
     }
 
     func testScannerReadsBothVendorsIntoOneProject() throws {
-        let agents = LogScanner(home: try home(), execRuns: { [] }).poll(now: now)
+        let agents = LogScanner(home: try home(), execRuns: { [] }).poll(now: now)!
         let byId = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0) })
         XCTAssertEqual(agents.count, 4, "old log is skipped")
         let main = try XCTUnwrap(byId["11111111-1111-1111-1111-111111111111"])
@@ -103,7 +103,7 @@ struct LogTests {
                 .write(to: dir.appendingPathComponent("1.json"), atomically: true, encoding: .utf8)
         }
         let scanner = LogScanner(home: home, execRuns: { [] })
-        func agent(_ id: String = main) -> Agent? { scanner.poll(now: now).first { $0.id == id } }
+        func agent(_ id: String = main) -> Agent? { scanner.poll(now: now)!.first { $0.id == id } }
 
         try status("waiting", extra: #","waitingFor":"dialog open""#)
         XCTAssertEqual(agent()?.state, .waiting)
