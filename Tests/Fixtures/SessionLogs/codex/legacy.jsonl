@@ -1,0 +1,8 @@
+{"type":"session_meta","timestamp":"2026-10-13T10:00:00Z","payload":{"session_id":"fixture-legacy","cwd":"/tmp/notch-fixture-project","git":{"branch":"fixture/legacy"}}}
+{"type":"turn_context","timestamp":"2026-10-13T10:00:00Z","payload":{"model":"gpt-5-codex","effort":"medium"}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:01Z","payload":{"type":"user_message","message":"Check the older sample."}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:01Z","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Check the older sample."}]}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:02Z","payload":{"type":"local_shell_call","id":"legacy-cmd","action":{"command":["sh","-c","swift test"]}}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:03Z","payload":{"type":"function_call_output","call_id":"legacy-cmd","output":"Process exited with code 0\nOutput:\npassed"}}
+{"type":"response_item","timestamp":"2026-10-13T10:00:04Z","payload":{"type":"agent_message","content":"Older checks passed."}}
+{"type":"event_msg","timestamp":"2026-10-13T10:00:05Z","payload":{"type":"task_complete"}}
