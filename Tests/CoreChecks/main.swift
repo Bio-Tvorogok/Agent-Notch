@@ -249,6 +249,9 @@ run("soundLimits") { soundChecks.limits() }
 run("soundNativeRequests") { soundChecks.nativeRequests() }
 
 let safeUninstall = SafeUninstallChecks()
+run("appContinuesAfterClaudeComment") { try safeUninstall.appContinuesAfterClaudeComment() }
+run("helperRejectsInstall") { try safeUninstall.helperRejectsInstall() }
+run("auditHonorsProcessLock") { try safeUninstall.auditHonorsProcessLock() }
 run("safeInstallVendorFailures") { try safeUninstall.vendorFailures("--install-hooks") }
 run("safeUninstallVendorFailures") { try safeUninstall.vendorFailures("--uninstall-hooks") }
 run("safeJSONCPreservation") { try safeUninstall.jsoncIsPreserved() }

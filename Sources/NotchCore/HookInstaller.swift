@@ -94,6 +94,21 @@ public struct HookInstaller: Sendable {
     public func install(_ v: Vendor) throws { try edit(v, add: true) }
     public func uninstall(_ v: Vendor) throws { try edit(v, add: false) }
 
+    /// Edits both vendors even when one config cannot be changed.
+    public func editHooks(install: Bool) -> Int32 {
+        var failed = false
+        for v in [Vendor.claude, .codex] {
+            do {
+                try install ? self.install(v) : uninstall(v)
+                print("\(v.rawValue): \(isInstalled(v) ? "installed" : "removed") in \(file(v).path)")
+            } catch {
+                FileHandle.standardError.write(Data("\(v.rawValue): \(error.localizedDescription)\n".utf8))
+                failed = true
+            }
+        }
+        return failed ? 1 : 0
+    }
+
     private func edit(_ v: Vendor, add: Bool) throws {
         // A symlinked settings file (dotfile managers) is edited where it really lives.
         let url = file(v).resolvingSymlinksInPath()
@@ -157,13 +172,16 @@ public struct HookInstaller: Sendable {
 
     static func merge(_ text: String, spec: [String: Any]) throws -> String {
         guard let ctx = JSContext() else { throw POSIXError(.ENOMEM) }
-        var failure: String?
-        ctx.exceptionHandler = { _, e in failure = e?.toString() }
+        var failure: (message: String, syntax: Bool)?
+        ctx.exceptionHandler = { _, e in
+            if let e { failure = (e.toString(), e.forProperty("name")?.toString() == "SyntaxError") }
+        }
         ctx.evaluateScript(script)
         let out = ctx.objectForKeyedSubscript("merge")?.call(withArguments: [text, spec])
         if let failure {
+            let hint = failure.syntax ? "Strict JSON object required; comments and trailing commas are not supported. " : ""
             throw NSError(domain: "HookInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey:
-                "Strict JSON object required; comments and trailing commas are not supported. \(failure)"])
+                hint + failure.message])
         }
         guard let s = out?.toString() else { throw POSIXError(.EINVAL) }
         return s

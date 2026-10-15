@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct SafeUninstallChecks {
     static let tools: Result<(URL, URL, URL), Error> = Result {
@@ -13,6 +14,24 @@ struct SafeUninstallChecks {
         let link = ["-O", "-I", dir.path, "-L", dir.path, "-lNotchCore"]
         let helper = dir.appendingPathComponent("notch-hook")
         try compile(link + ["-o", helper.path, "Sources/NotchHook/main.swift"])
+        // Exercise the app's actual flag handler without starting AppKit.
+        let appSource = try String(contentsOfFile: "Sources/AgentsNotch/main.swift", encoding: .utf8)
+        let appStart = try XCTUnwrap(appSource.range(of: "    private static func editHooks("))
+        let appEnd = try XCTUnwrap(appSource.range(of: "\n}\n\nlet app ="))
+        let handler = appSource[appStart.lowerBound..<appEnd.lowerBound]
+            .replacingOccurrences(of: "private static func", with: "func")
+        let appMain = dir.appendingPathComponent("main.swift")
+        try ("""
+        import Foundation
+        import NotchCore
+        enum AppActions {
+            static let bundledHelper = URL(fileURLWithPath: "\(helper.path)")
+            static let appExecutable = "/test/AgentsNotch"
+            static let codexTrustNote = "trust note"
+        }
+        """ + "\n" + handler + "\nexit(editHooks(install: CommandLine.arguments.contains(\"--install-hooks\")))\n")
+            .write(to: appMain, atomically: true, encoding: .utf8)
+        try compile(link + ["-o", dir.appendingPathComponent("app-hooks").path, appMain.path])
         // Compile the actual audit writer without the AppKit store and its UI dependencies.
         let store = try String(contentsOfFile: "Sources/AgentsNotch/Store.swift", encoding: .utf8)
         let start = try XCTUnwrap(store.range(of: "enum Audit {"))
@@ -76,7 +95,8 @@ struct SafeUninstallChecks {
                 }
                 let invalid = "{broken"
                 try invalid.write(to: inst.file(broken), atomically: true, encoding: .utf8)
-                let (status, message) = try Self.process(helper, [flag], home: home)
+                let executable = flag == "--install-hooks" ? helper.deletingLastPathComponent().appendingPathComponent("app-hooks") : helper
+                let (status, message) = try Self.process(executable, [flag], home: home)
                 XCTAssertEqual(status, 1)
                 XCTAssertTrue(message.contains("\(broken.rawValue):"))
                 XCTAssertTrue(message.contains(inst.file(broken).path))
@@ -91,7 +111,7 @@ struct SafeUninstallChecks {
         try fixture { home, helper, _ in
             let inst = HookInstaller(home: home)
             let samples = ["{\n// keep my comment\n\"hooks\": {}\n}", "{\"hooks\": {},}", "{ /* keep */ \"hooks\": {} }"]
-            for flag in ["--install-hooks", "--uninstall-hooks"] {
+            for flag in ["--uninstall-hooks"] {
                 for text in samples {
                     for v in [Vendor.claude, .codex] {
                         try FileManager.default.createDirectory(at: inst.file(v).deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -117,13 +137,88 @@ struct SafeUninstallChecks {
                     try FileManager.default.createDirectory(at: inst.file(v).deletingLastPathComponent(), withIntermediateDirectories: true)
                     try text.write(to: inst.file(v), atomically: true, encoding: .utf8)
                 }
-                let (status, message) = try Self.process(helper, ["--install-hooks"], home: home)
+                let (status, message) = try Self.process(helper, ["--uninstall-hooks"], home: home)
                 XCTAssertEqual(status, 1)
                 XCTAssertTrue(message.contains("object"))
+                XCTAssertFalse(message.contains("comments") || message.contains("trailing commas"))
                 for v in [Vendor.claude, .codex] {
                     XCTAssertEqual(try String(contentsOf: inst.file(v), encoding: .utf8), text)
                 }
             }
+        }
+    }
+
+    func appContinuesAfterClaudeComment() throws {
+        try fixture { home, helper, _ in
+            let inst = HookInstaller(home: home)
+            try inst.install(.codex)
+            try FileManager.default.createDirectory(at: inst.file(.claude).deletingLastPathComponent(), withIntermediateDirectories: true)
+            let invalid = "{ /* comment */ \"hooks\": {} }"
+            try invalid.write(to: inst.file(.claude), atomically: true, encoding: .utf8)
+            let app = helper.deletingLastPathComponent().appendingPathComponent("app-hooks")
+            let err = home.appendingPathComponent("stderr")
+            _ = FileManager.default.createFile(atPath: err.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: err)
+            defer { try? handle.close() }
+            let p = Process(), out = Pipe()
+            p.executableURL = app
+            p.arguments = ["--uninstall-hooks"]
+            var env = ProcessInfo.processInfo.environment
+            env["HOME"] = home.path
+            env["CFFIXED_USER_HOME"] = home.path
+            p.environment = env
+            p.standardOutput = out
+            p.standardError = handle
+            try p.run()
+            let stdout = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            p.waitUntilExit()
+            XCTAssertEqual(p.terminationStatus, 1)
+            XCTAssertTrue(try String(contentsOf: err, encoding: .utf8).hasPrefix("claude:"))
+            XCTAssertFalse(stdout.contains("Cannot edit"))
+            XCTAssertFalse(inst.isInstalled(.codex))
+            XCTAssertEqual(try String(contentsOf: inst.file(.claude), encoding: .utf8), invalid)
+        }
+    }
+
+    func helperRejectsInstall() throws {
+        try fixture { home, helper, _ in
+            let (status, message) = try Self.process(helper, ["--install-hooks"], home: home)
+            XCTAssertEqual(status, 1)
+            XCTAssertTrue(message.contains("app") && message.contains("--install-hooks"))
+            let inst = HookInstaller(home: home)
+            for v in [Vendor.claude, .codex] {
+                XCTAssertFalse(FileManager.default.fileExists(atPath: inst.file(v).path))
+            }
+        }
+    }
+
+    func auditHonorsProcessLock() throws {
+        try fixture { home, _, writer in
+            let fm = FileManager.default
+            let url = home.appendingPathComponent("Library/Application Support/AgentsNotch/decisions.jsonl")
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            XCTAssertEqual(try Self.process(writer, ["600000"], home: home).0, 0)
+            let before = try Data(contentsOf: url)
+            let fd = open(url.appendingPathExtension("lock").path, O_CREAT | O_RDWR, 0o600)
+            guard fd >= 0 else { return XCTFail("open audit lock") }
+            defer { close(fd) }
+            XCTAssertEqual(flock(fd, LOCK_EX), 0)
+            let p = Process()
+            p.executableURL = writer
+            p.arguments = ["600000"]
+            var env = ProcessInfo.processInfo.environment
+            env["HOME"] = home.path
+            env["CFFIXED_USER_HOME"] = home.path
+            p.environment = env
+            try p.run()
+            usleep(500_000)
+            XCTAssertTrue(p.isRunning, "writer must wait for the other process's lock")
+            XCTAssertTrue(try Data(contentsOf: url) == before, "log must stay unchanged while locked")
+            XCTAssertFalse(fm.fileExists(atPath: url.appendingPathExtension("1").path))
+            XCTAssertEqual(flock(fd, LOCK_UN), 0)
+            p.waitUntilExit()
+            XCTAssertEqual(p.terminationStatus, 0)
+            XCTAssertEqual(try Data(contentsOf: url.appendingPathExtension("1")), before)
         }
     }
 

@@ -238,6 +238,12 @@ enum Audit {
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            // Keep the lock on a separate inode: rotation replaces the log itself.
+            let fd = open(url.appendingPathExtension("lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            guard flock(fd, LOCK_EX) == 0 else { return }
+            defer { flock(fd, LOCK_UN) }
             if fm.fileExists(atPath: url.path) {
                 let h = try FileHandle(forWritingTo: url)
                 defer { try? h.close() }
