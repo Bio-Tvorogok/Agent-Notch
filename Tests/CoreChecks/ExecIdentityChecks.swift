@@ -40,7 +40,7 @@ struct ExecIdentityChecks {
         let scanner = LogScanner(home: home, execRuns: { [run] })
         var sounds = SoundAgentWatcher()
         for at in [now, now.addingTimeInterval(6), now.addingTimeInterval(12)] {
-            let agents = scanner.poll(now: at)
+            let agents = scanner.poll(now: at)!
             XCTAssertEqual(agents.count, 1, "the rollout and stdout belong to the same thread")
             let agent = try XCTUnwrap(agents.first { $0.chatId == "thread" })
             XCTAssertEqual(URL(fileURLWithPath: agent.logPath ?? "").resolvingSymlinksInPath().path, session.resolvingSymlinksInPath().path)
@@ -63,7 +63,7 @@ struct ExecIdentityChecks {
             runs.append(ExecRun(pid: 7, log: path.path, cwd: "/tmp/shared", model: nil, effort: nil))
         }
         let scanner = LogScanner(home: home, execRuns: { runs })
-        XCTAssertEqual(Set(scanner.poll().map(\.id)), ["one", "two"], "matching project or title is not matching identity")
+        XCTAssertEqual(Set(scanner.poll()!.map(\.id)), ["one", "two"], "matching project or title is not matching identity")
     }
 
     func retainedSessionUsesExecLifecycle() throws {
@@ -84,16 +84,16 @@ struct ExecIdentityChecks {
         var running = [ExecRun(pid: 7, log: exec.path, cwd: "/tmp/man", model: "gpt-6.1-sol", effort: .medium)]
         let scanner = LogScanner(home: home, execRuns: { running })
         var sounds = SoundAgentWatcher()
-        let resumed = scanner.poll(now: now)
+        let resumed = scanner.poll(now: now)!
         XCTAssertEqual(resumed.map(\.state), [.working], "the previous completed turn cannot hide a running resume")
         XCTAssertEqual(resumed.first?.parentId, "parent")
         XCTAssertEqual(sounds.update(resumed), [])
-        XCTAssertEqual(sounds.update(scanner.poll(now: now.addingTimeInterval(6))), [], "a stale completed rollout must not repeatedly sound finished")
+        XCTAssertEqual(sounds.update(scanner.poll(now: now.addingTimeInterval(6))!), [], "a stale completed rollout must not repeatedly sound finished")
         running = []
-        let ended = scanner.poll(now: now.addingTimeInterval(12))
+        let ended = scanner.poll(now: now.addingTimeInterval(12))!
         XCTAssertEqual(ended.map(\.state), [.done], "a process exit ends the run even without a final rollout event")
         XCTAssertEqual(sounds.update(ended), [.agentFinished])
-        XCTAssertEqual(sounds.update(scanner.poll(now: now.addingTimeInterval(18))), [])
+        XCTAssertEqual(sounds.update(scanner.poll(now: now.addingTimeInterval(18))!), [])
         let handle = try FileHandle(forWritingTo: session)
         try handle.seekToEnd()
         for (type, second) in [("task_started", 24), ("exec_approval_request", 30)] {
@@ -102,7 +102,7 @@ struct ExecIdentityChecks {
             var data = try JSONSerialization.data(withJSONObject: ["type": "event_msg", "timestamp": stamp, "payload": payload])
             data.append(10)
             try handle.write(contentsOf: data)
-            let resumed = scanner.poll(now: now.addingTimeInterval(Double(second)))
+            let resumed = scanner.poll(now: now.addingTimeInterval(Double(second)))!
             XCTAssertEqual(resumed.map(\.state), [type == "task_started" ? .working : .waiting], "old stdout cannot mask a later interactive turn")
         }
         try handle.close()
@@ -123,7 +123,7 @@ struct ExecIdentityChecks {
                    ["type": "item.completed", "item": ["id": "large", "type": "agent_message", "text": String(repeating: "x", count: Int(LogScanner.tailBytes) + 100)]],
                    ["type": "turn.started"]], to: exec)
         let run = ExecRun(pid: 7, log: exec.path, cwd: "/tmp/man", model: nil, effort: nil)
-        let agents = LogScanner(home: home, execRuns: { [run] }).poll(now: now)
+        let agents = LogScanner(home: home, execRuns: { [run] }).poll(now: now)!
         XCTAssertEqual(agents.map(\.id), ["thread"], "tailing must not skip the identity in the first line")
     }
 

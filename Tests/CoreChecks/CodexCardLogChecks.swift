@@ -29,7 +29,7 @@ struct CodexCardLogChecks {
         try DetailChecks().fixture(Self.execFixture) { path in
             let run = ExecRun(pid: 7, log: path, cwd: "/tmp/example", model: "gpt-6.1-sol", effort: .high)
             let scanner = LogScanner(home: URL(fileURLWithPath: "/tmp/example-home"), execRuns: { [run] })
-            let agent = try XCTUnwrap(scanner.poll().first { $0.logPath == path })
+            let agent = try XCTUnwrap(scanner.poll()!.first { $0.logPath == path })
             XCTAssertEqual(agent.state, .working)
             let d = try XCTUnwrap(DetailReader.read(path: try XCTUnwrap(agent.logPath), vendor: agent.vendor, agentId: agent.id))
             XCTAssertEqual(d.commands.map(\.command), ["cat /tmp/example/README.md", "search · example documentation",

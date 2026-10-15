@@ -37,6 +37,8 @@ final class Store: ObservableObject {
     private let scanner = LogScanner()
     private let names = ProjectNames()
     private let queue = DispatchQueue(label: "agents-notch.scan", qos: .utility)
+    private var polling = false
+    private var pollCompletions: [() -> Void] = []
     private var timer: Timer?
     private var server: HookServer?
     private var fakeTicket = 1_000_000
@@ -75,16 +77,24 @@ final class Store: ObservableObject {
 
     /// One scan now; the callback runs on the main actor after the agents are published.
     func poll(then done: (() -> Void)? = nil) {
+        if let done { pollCompletions.append(done) }
+        guard !polling else { return }
+        polling = true
         let scanner = scanner
         let retention = Double(settings.appearance.finishedMinutes) * 60
         queue.async {
             let next = scanner.poll(finishedRetention: retention)
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
-                self.finisher.check(self.settings.listFilter.apply(next))
-                for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
-                done?()
+                self.polling = false
+                if let next {
+                    if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
+                    self.finisher.check(self.settings.listFilter.apply(next))
+                    for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
+                }
+                let completions = self.pollCompletions
+                self.pollCompletions.removeAll()
+                for completion in completions { completion() }
             }
         }
     }
