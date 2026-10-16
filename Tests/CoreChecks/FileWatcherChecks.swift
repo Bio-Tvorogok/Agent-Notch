@@ -248,6 +248,7 @@ extension FileWatcherChecks {
             XCTAssertNil(watcher.eventChanges(paths: [path], flags: [UInt32(kFSEventStreamEventFlagMustScanSubDirs)]))
         }
         XCTAssertFalse(watcher.accepts(home.appendingPathComponent("Library/a").path))
+        XCTAssertTrue(watcher.eventChanges(paths: [home.path + "/"], flags: [0]) != nil, "directory streams report folders with a trailing slash")
         let log = home.appendingPathComponent("stdout.jsonl").path
         let execWatcher = FileWatcher(paths: [log]) { _ in }
         XCTAssertTrue(execWatcher.accepts(log))

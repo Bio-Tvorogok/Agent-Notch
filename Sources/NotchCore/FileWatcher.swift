@@ -127,6 +127,8 @@ public final class FileWatcher: @unchecked Sendable {
         let lost = UInt32(kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
             kFSEventStreamEventFlagEventIdsWrapped)
         if flags.contains(where: { $0 & lost != 0 }) { return .full }
+        // Directory-level streams report folders with a trailing slash.
+        let paths = paths.map { $0.count > 1 && $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
         let relevant = paths.indices.filter { accepts(paths[$0]) }
         guard !relevant.isEmpty else { return nil }
         return .events(paths: relevant.map { paths[$0] }, flags: relevant.map { flags[$0] })
