@@ -112,7 +112,8 @@ enum Snapshot {
         let prompts = promptFixture()
         let skills = skillFixture()
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
-            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light),
+            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light)
+                .environment(\.vendorIconSearchQuery, ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" ? "bolt" : ""),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
         }
         guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path), height: ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == nil ? SettingsView.size.height : 1800) }

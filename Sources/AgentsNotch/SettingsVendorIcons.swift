@@ -1,10 +1,28 @@
 import SwiftUI
 import NotchCore
 
+private struct VendorIconSearchQueryKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
+extension EnvironmentValues {
+    var vendorIconSearchQuery: String {
+        get { self[VendorIconSearchQueryKey.self] }
+        set { self[VendorIconSearchQueryKey.self] = newValue }
+    }
+}
+
 struct SettingsVendorIconRow: View {
     @ObservedObject var settings: AppSettings
     let vendor: Vendor
-    @State private var query = ""
+    @State private var query: String
+    @FocusState private var searchFocused: Bool
+
+    init(settings: AppSettings, vendor: Vendor, initialQuery: String = "") {
+        self.settings = settings
+        self.vendor = vendor
+        _query = State(initialValue: initialQuery)
+    }
 
     private var choice: Binding<VendorIcon> {
         Binding(get: { settings.vendorIcons[vendor] }, set: { settings.vendorIcons[vendor] = $0 })
@@ -13,7 +31,7 @@ struct SettingsVendorIconRow: View {
         var names = VendorSymbolCatalog.names.filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
         let exact = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if VendorIcon.isValidSymbol(exact), !names.contains(exact) { names.insert(exact, at: 0) }
-        return Array(names.prefix(8))
+        return Array(names.prefix(16))
     }
     private var selectedName: String? {
         if case .symbol(let name) = choice.wrappedValue { return name }
@@ -34,28 +52,33 @@ struct SettingsVendorIconRow: View {
                     }
                     if let name = selectedName { Text(name).tag(VendorIcon.symbol(name)) }
                 }.labelsHidden().frame(width: 200)
-                Button(SettingsText.resetConfirmButton) { choice.wrappedValue = .auto; query = "" }
+                Button(SettingsText.resetConfirmButton) { choice.wrappedValue = .auto; query = ""; searchFocused = false }
                     .controlSize(.small).disabled(choice.wrappedValue == .auto)
             }
             TextField(SettingsText.symbolSearch, text: $query)
+                .labelsHidden()
                 .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+                .focused($searchFocused)
                 .onSubmit {
                     let name = query.trimmingCharacters(in: .whitespacesAndNewlines)
                     if VendorIcon.isValidSymbol(name) { choice.wrappedValue = .symbol(name) }
                 }
                 .accessibilityLabel((vendor == .claude ? SettingsText.claude : SettingsText.codex) + ", " + SettingsText.symbolSearch)
-            if results.isEmpty {
-                Text(SettingsText.noSymbols).font(.caption).foregroundStyle(.secondary)
-            } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 6) {
-                    ForEach(results, id: \.self) { name in
-                        Button { choice.wrappedValue = .symbol(name) } label: {
-                            Image(systemName: name).font(.system(size: 16))
-                                .frame(maxWidth: .infinity).frame(height: 28)
-                                .background(selectedName == name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04),
-                                            in: RoundedRectangle(cornerRadius: 5))
-                        }.buttonStyle(.plain).help(name).accessibilityLabel(name)
-                            .accessibilityAddTraits(selectedName == name ? .isSelected : [])
+            if !query.isEmpty || searchFocused {
+                if results.isEmpty {
+                    Text(SettingsText.noSymbols).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 6) {
+                        ForEach(results, id: \.self) { name in
+                            Button { choice.wrappedValue = .symbol(name) } label: {
+                                Image(systemName: name).font(.system(size: 16))
+                                    .frame(maxWidth: .infinity).frame(height: 28)
+                                    .background(selectedName == name ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.04),
+                                                in: RoundedRectangle(cornerRadius: 5))
+                            }.buttonStyle(.plain).help(name).accessibilityLabel(name)
+                                .accessibilityAddTraits(selectedName == name ? .isSelected : [])
+                        }
                     }
                 }
             }
