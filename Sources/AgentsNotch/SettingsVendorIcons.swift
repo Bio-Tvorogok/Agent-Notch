@@ -60,7 +60,8 @@ struct VendorIconStateStrip: View {
         .padding(.horizontal, 10).frame(height: 30)
         .background(Color.black, in: Capsule())
         .environment(\.colorScheme, .dark)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel((vendor == .claude ? SettingsText.claude : SettingsText.codex) + ", " + SettingsText.vendorIconPreview)
     }
 }
 
@@ -103,6 +104,7 @@ struct VendorIconPopUp: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.choose = { choice = $0 }
         coordinator.chooseSymbol = chooseSymbol
+        coordinator.current = choice
         // Rebuild only when something a picture or a label depends on changed.
         let key = [Loc.language.rawValue, settings.theme.rawValue, "\(settings.usesThemeMarks)",
                    settings.appearance.markStyle.rawValue, "\(choice)"].joined(separator: "|")
@@ -137,6 +139,7 @@ struct VendorIconPopUp: NSViewRepresentable {
     final class Coordinator: NSObject {
         var icons: [VendorIcon] = []
         var key = ""
+        var current: VendorIcon = .auto
         var choose: (VendorIcon) -> Void = { _ in }
         var chooseSymbol: () -> Void = {}
 
@@ -145,8 +148,8 @@ struct VendorIconPopUp: NSViewRepresentable {
             if tag >= 0, tag < icons.count {
                 choose(icons[tag])
             } else {
-                // «More symbols…» is not a choice: the menu is rebuilt with the current one selected, and the search opens.
-                key = ""
+                // «More symbols…» is not a choice: the current one stays selected and the search opens.
+                if let index = icons.firstIndex(where: { $0 == current }) { sender.selectItem(withTag: index) }
                 chooseSymbol()
             }
         }

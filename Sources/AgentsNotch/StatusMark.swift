@@ -117,9 +117,10 @@ struct ResolvedVendorMark: View {
             ThemeMark(theme: onDark ? settings.currentTheme : theme, vendor: vendor, state: state,
                       isLight: isLight, size: size, onDark: onDark)
         case .themeMark(let id):
-            // A mark borrowed from a light theme takes the terminal's state colours on a dark surface.
+            // A borrowed mark takes state colours that read on the surface it sits on.
+            let dark = onDark || theme.scheme == .dark
             ThemeMark(theme: .of(id), vendor: vendor, state: state, isLight: isLight, size: size,
-                      onDark: onDark || (onDark ? settings.currentTheme : theme).scheme == .dark)
+                      onDark: dark, onLight: !dark)
         case .builtIn(let style):
             StatusMark(vendor: vendor, state: state, isLight: isLight, style: style, size: size)
         case .symbol(let name):

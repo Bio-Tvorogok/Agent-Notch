@@ -300,7 +300,9 @@ enum Snapshot {
         let settings = AppSettings(defaults: defaults)
         if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
             settings.theme = .paper
-            settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            // `AN_VENDOR_ICON_THEME=<id>` borrows that theme's mark instead of the symbol.
+            settings.vendorIcons[.codex] = ProcessInfo.processInfo.environment["AN_VENDOR_ICON_THEME"]
+                .flatMap(ThemeID.init(rawValue:)).map(VendorIcon.theme) ?? .symbol("bolt.fill")
             let store = Store(settings: settings)
             store.useFixture([CardFixture.agent])
             return host(VStack(spacing: 12) {

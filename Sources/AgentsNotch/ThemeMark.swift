@@ -12,6 +12,8 @@ struct ThemeMark: View {
     let size: CGFloat
     /// The wing is always black: themes made for light surfaces borrow the terminal's state colours there.
     var onDark = false
+    /// A mark borrowed from a dark theme onto a light surface takes Paper's state colours, the mirror of `onDark`.
+    var onLight = false
 
     var body: some View {
         Group {
@@ -33,7 +35,11 @@ struct ThemeMark: View {
     private var stateKey: String {
         switch state { case .working: "working"; case .waiting: "waiting"; case .error: "error"; case .done: "done" }
     }
-    private var ink: Color { (onDark && theme.scheme == .light ? Theme.terminal : theme).color(role) }
+    private var ink: Color {
+        if onDark && theme.scheme == .light { return Theme.terminal.color(role) }
+        if onLight && theme.scheme == .dark { return Theme.paper.color(role) }
+        return theme.color(role)
+    }
     /// Only marks that move get a timeline; a still mark costs nothing while the wing sits on screen.
     private var animates: Bool {
         switch state {
