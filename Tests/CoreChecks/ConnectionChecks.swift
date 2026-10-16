@@ -1,7 +1,7 @@
 import Foundation
 
 struct ConnectionChecks {
-    func home() -> URL { URL(fileURLWithPath: "/tmp/ct-" + UUID().uuidString.prefix(8)) }
+    func home() -> URL { URL(fileURLWithPath: "/tmp/an06-t7-ct-" + UUID().uuidString.prefix(8)) }
 
     func partialSetRefreshesHelper() throws {
         let root = home(), inst = HookInstaller(home: root)
@@ -117,7 +117,7 @@ struct ConnectionChecks {
     }
 
     func diagnostic() throws {
-        let path = "/tmp/dt-" + UUID().uuidString.prefix(8) + ".sock"
+        let path = "/tmp/an06-t7-dt-" + UUID().uuidString.prefix(8) + ".sock"
         let server = HookServer(path: path)
         let events = Box(0)
         server.onEvent = { _, _ in events.value += 1 }

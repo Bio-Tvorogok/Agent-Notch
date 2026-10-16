@@ -110,7 +110,7 @@ struct LogTests {
         XCTAssertEqual(agent()?.ask, "подтверждение в окне Claude")
         XCTAssertEqual(agent()?.title, "Сжатие видео")
         try status("idle")
-        XCTAssertEqual(agent()?.state, .done)
+        XCTAssertEqual(agent()?.state, .working, "a live helper keeps the parent working")
         try status("busy")
         XCTAssertEqual(agent()?.state, .working)
         // The process is gone: the session and its subagent are done, whatever the log says.
@@ -133,7 +133,7 @@ struct LogTests {
         s.turnEnded = false
         s.errorStreak = 0
         s.lastAt = t - 600
-        XCTAssertEqual(s.state(now: t), .done, "silent for 10 min without a running tool")
+        XCTAssertEqual(s.state(now: t), .working, "silence is not an end-of-turn signal")
         s.ask = "вопрос"
         XCTAssertEqual(s.state(now: t), .waiting)
     }

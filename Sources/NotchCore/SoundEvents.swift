@@ -148,7 +148,7 @@ public struct SoundAgentWatcher: Sendable {
                 result.append(.agentError)
                 forgetRequest(agent.id)
             case .done:
-                if previous != nil { result.append(.agentFinished) }
+                if previous != nil && !agent.interrupted { result.append(.agentFinished) }
                 forgetRequest(agent.id)
             }
         }

@@ -341,6 +341,34 @@ run("configCodexDiscovery") { try configRoots.discovery(.codex) }
 run("configClaudeProjects") { try configRoots.claudeProjects() }
 run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
 
+let honestDone = HonestDoneChecks()
+run("honestSilence") { try honestDone.silence() }
+run("honestInterrupted") { try honestDone.interrupted() }
+run("honestHelpers") {
+    let forced = Loc.forced
+    Loc.forced = .en
+    defer { Loc.forced = forced }
+    try honestDone.helpers()
+}
+run("honestNestedHelpers") { honestDone.nestedHelpers() }
+run("honestAborted") { honestDone.aborted() }
+run("honestHookEnds") { try honestDone.hookEnds() }
+run("honestRetainedFailedExec") { try honestDone.retainedFailedExec() }
+run("honestRetainedParent") { try honestDone.retainedParent() }
+run("honestColdCodexParent") { try honestDone.coldCodexParent() }
+run("honestHookRetention") { honestDone.hookRetention() }
+run("honestHelperHookCount") { honestDone.helperHookCount() }
+run("honestToast") { try honestDone.toast() }
+
+let doneReview = DoneReviewChecks()
+run("stopSurvivesProcessExit") { try doneReview.stopSurvivesExit() }
+run("lastHelperRestoresCompletedParent") { doneReview.lastHelperRestoresParent() }
+run("parentRetainedAfterFinalHelper") { try doneReview.parentRetainedAfterHelper() }
+run("delayedStopDoesNotFinishNextTurn") { try doneReview.delayedStopDoesNotFinishNextTurn() }
+for variant in ["summary", "large", "duplicate", "invalid", "partial", "no-newline"] {
+    run("stopTail-" + variant) { try doneReview.stopTail(variant) }
+}
+run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptTime() }
 run("vendorIconPreferences") { try VendorIconChecks().preferences() }
 run("vendorIconResolution") { VendorIconChecks().resolution() }
 

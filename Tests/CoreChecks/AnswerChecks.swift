@@ -86,7 +86,7 @@ struct AnswerTests {
     }
 
     func testSocketCarriesTheAnswerBack() throws {
-        let server = HookServer(path: "/tmp/notch-\(UUID().uuidString.prefix(8)).sock")
+        let server = HookServer(path: "/tmp/an06-t7-notch-\(UUID().uuidString.prefix(8)).sock")
         let got = DispatchSemaphore(value: 0)
         let tickets = Box<[Int]>([])
         server.onEvent = { e, ticket in

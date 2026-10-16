@@ -11,8 +11,11 @@ public struct SessionLog: Sendable {
     public var effort: Effort?
     public var startedAt: Double?
     public var lastAt: Double = 0
+    /// Claude turn activity, excluding system and meta bookkeeping.
+    var turnActivityAt: Double?
     /// The agent finished its turn and waits for the next prompt.
     public var turnEnded = false
+    public var interrupted = false
     /// What it asks the human (a Codex approval, a Claude question or plan), until the next sign of life.
     public var ask: String?
     public var errorStreak = 0
@@ -31,7 +34,7 @@ public struct SessionLog: Sendable {
 
     var customTitle: String?
     var prompt: String?
-    /// Latest Codex turn, so a retained exec stream cannot override a later interactive turn.
+    /// Latest user prompt or Codex turn, also used to order hooks and retained exec streams.
     var turnStartedAt: Double?
     var subTitle: String?
     var pendingTools: [String: String] = [:]
@@ -66,18 +69,29 @@ public struct SessionLog: Sendable {
         }
         if ask != nil && age < 3600 { return .waiting }
         if !turnEnded && errorStreak >= Self.stuckAfter && age < Self.quietWorking { return .error }
-        if !turnEnded && (age < Self.quietWorking || (!pendingTools.isEmpty && age < Self.longTool)) { return .working }
+        if !turnEnded {
+            return live?.alive == true || age < max(finishedRetention, Self.longTool) ? .working : nil
+        }
         return age < finishedRetention ? .done : nil
     }
 
     public func agent(now: Double, finishedRetention: Double = Self.keepDone, project: (String?) -> String) -> Agent? {
         guard let state = state(now: now, finishedRetention: finishedRetention) else { return nil }
         let ask = state == .waiting && self.ask == nil ? live?.waitingText : self.ask
-        return Agent(id: id, vendor: vendor, title: title, model: model, effort: effort, state: state,
+        var agent = Agent(id: id, vendor: vendor, title: title, model: model, effort: effort, state: state,
                      project: project(cwd), parentId: parentId, ask: ask, startedAt: startedAt ?? lastAt,
                      cwd: cwd, chatId: resumable ? parentId ?? id : nil,
                      activity: state == .done ? nil : activity, logPath: path,
                      branch: branch, worktree: Self.worktreeName(cwd: cwd))
+        agent.lastAt = lastAt
+        agent.turnActivityAt = turnActivityAt
+        agent.promptAt = turnStartedAt
+        agent.turnEnded = turnEnded || (parentId == nil && live?.status == "idle")
+        agent.interruptionInferred = !interrupted && live?.alive == false && !agent.turnEnded
+        agent.interrupted = interrupted || agent.interruptionInferred
+        agent.hasPendingAsk = state == .waiting && (self.ask != nil || live?.waitingFor != "input needed")
+        if agent.interrupted { agent.activity = SessionText.interrupted }
+        return agent
     }
 
     /// A linked checkout keeps its own folder name while sharing the project's repository.

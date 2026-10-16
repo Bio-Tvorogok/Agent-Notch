@@ -112,8 +112,9 @@ enum ExecLine {
         switch r["type"] as? String {
         // The thread id is what this run's own children carry as CODEX_THREAD_ID.
         case "thread.started": if let t = r["thread_id"] as? String, !t.isEmpty { s.id = t }
-        case "turn.started": s.turnEnded = false
+        case "turn.started": s.turnEnded = false; s.interrupted = false
         case "turn.completed", "turn.failed":
+            s.interrupted = r["type"] as? String == "turn.failed"
             s.turnEnded = true
             s.activity = nil
         case "item.started":

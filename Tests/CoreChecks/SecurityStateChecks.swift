@@ -50,7 +50,7 @@ struct SecurityStateChecks {
                      "/tmp/notch.app/Contents/Helpers/AgentsNotch", "/tmp/notch/Contents/MacOS/AgentsNotch"] {
             XCTAssertFalse(HookClient.isAppExecutable(path))
         }
-        let path = "/tmp/notch-id-\(UUID().uuidString.prefix(8)).sock"
+        let path = "/tmp/an06-t7-id-\(UUID().uuidString.prefix(8)).sock"
         let server = HookServer(path: path)
         let received = DispatchSemaphore(value: 0)
         server.onEvent = { _, _ in received.signal() }
