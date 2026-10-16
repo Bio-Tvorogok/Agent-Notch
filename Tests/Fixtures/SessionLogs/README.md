@@ -25,12 +25,13 @@ The checks use a fixed clock and private temporary homes. Date directories use
 Calendar.current, matching discovery, so no local midnight boundary is assumed.
 Run `sh scripts/test.sh` from the checkout.
 
-Two known-bug checks are skipped by default. Run
-`NOTCH_EXPECTED_FAIL=1 sh scripts/test.sh` to include them; they are ordinary
-assertions and make the command exit nonzero while the bugs remain:
+`fixtureResumedDiscovery` (a fresh log in an older date folder appears in the
+scanner's rows) now runs on every test run.
 
-- `EXPECTED-FAIL fixtureResumedDiscovery`: a fresh log in an older date folder
-  should appear in the scanner's rows.
+One known-bug check is skipped by default. Run
+`NOTCH_EXPECTED_FAIL=1 sh scripts/test.sh` to include it; it is an ordinary
+assertion and makes the command exit nonzero while the bug remains:
+
 - `EXPECTED-FAIL fixtureTruncatedTail`: the detail card should wait for a
   newline before showing the completed tail command, as the scanner does.
   Invalid partial JSON is already ignored; this check covers the interval
@@ -39,7 +40,7 @@ assertions and make the command exit nonzero while the bugs remain:
 ## Sensitivity check
 
 The six default checks pass with production sources extracted from the baseline
-revision above. With the opt-in flag, exactly the two known-bug checks fail.
+revision above. With the opt-in flag, the known-bug check fails.
 A separate temporary copy with these deliberate reader regressions fails all
 six default checks (15 assertions); the checkout's readers were never edited:
 
