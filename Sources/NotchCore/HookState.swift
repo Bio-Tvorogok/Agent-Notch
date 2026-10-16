@@ -36,6 +36,8 @@ public struct HookState: Sendable, Equatable {
         var at: Double
         var ended: Bool
         var interrupted: Bool
+        /// Without a transcript match, only a prompt after receipt can supersede a Stop.
+        var receiptOrdered: Bool
     }
     private var turns: [String: Turn] = [:]
     /// Tool hooks clear the overlay, but cannot erase evidence of a newer prompt.
@@ -47,7 +49,6 @@ public struct HookState: Sendable, Equatable {
     public mutating func receive(_ e: HookEvent, ticket: Int?, now: Double) -> [Int] {
         // Some SubagentStop payloads name only the parent session. They say nothing about its turn.
         if e.name == "SubagentStop", e.agentId == nil { return [] }
-        if e.vendor == .claude, e.name == "Stop", e.occurredAt == nil { return [] }
         if ["Stop", "SubagentStop", "SessionEnd", "UserPromptSubmit"].contains(e.name) {
             let at = e.occurredAt ?? now
             if let prompt = prompts[e.agentKey], at < prompt { return [] }
@@ -59,7 +60,8 @@ public struct HookState: Sendable, Equatable {
             if e.name == "UserPromptSubmit" { prompts[e.agentKey] = at }
             let interrupted = e.name == "SessionEnd"
                 && (turns[e.agentKey]?.ended != true || turns[e.agentKey]?.interrupted == true)
-            turns[e.agentKey] = Turn(at: at, ended: e.name != "UserPromptSubmit", interrupted: interrupted)
+            turns[e.agentKey] = Turn(at: at, ended: e.name != "UserPromptSubmit", interrupted: interrupted,
+                                    receiptOrdered: e.vendor == .claude && e.name == "Stop" && e.occurredAt == nil)
         } else if ["PreToolUse", "PostToolUse"].contains(e.name) {
             turns[e.agentKey] = nil
         }
@@ -136,7 +138,7 @@ public struct HookState: Sendable, Equatable {
         let live = pending.filter { !expired($0, agents: ids, now: now) }
         var out = agents.map { a -> Agent in
             var a = a
-            if let turn = turns[a.id], a.lastAt <= turn.at {
+            if let turn = turns[a.id], isCurrent(turn, for: a) {
                 a.interrupted = turn.ended && ((a.interrupted && !a.interruptionInferred) || (turn.interrupted && !a.turnEnded))
                 a.interruptionInferred = false
                 a.turnEnded = turn.ended && !a.interrupted
@@ -167,8 +169,13 @@ public struct HookState: Sendable, Equatable {
                              ask: e.askLine, startedAt: p.at, cwd: e.cwd, chatId: e.sessionId))
         }
         return Tree.withHelpers(out).filter { a in
-            guard a.state == .done, let turn = turns[a.id], turn.ended, a.lastAt <= turn.at else { return true }
+            guard a.state == .done, let turn = turns[a.id], turn.ended, isCurrent(turn, for: a) else { return true }
             return now - max(turn.at, a.retainedAt) < finishedRetention
         }
+    }
+
+    private func isCurrent(_ turn: Turn, for agent: Agent) -> Bool {
+        let activity = turn.receiptOrdered ? agent.promptAt ?? 0 : agent.turnActivityAt ?? agent.lastAt
+        return activity <= turn.at
     }
 }

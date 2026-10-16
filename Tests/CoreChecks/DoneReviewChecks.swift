@@ -16,27 +16,29 @@ struct DoneReviewChecks {
     func stopSurvivesExit() throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("stop-exit-" + UUID().uuidString + ".jsonl")
         defer { try? FileManager.default.removeItem(at: file) }
-        try write([assistant("finished", at: "1970-01-01T00:01:40Z")], to: file)
+        let final = assistant("finished", at: "1970-01-01T00:01:40Z")
+        let summary: Rec = ["type": "system", "subtype": "stop_hook_summary", "timestamp": "1970-01-01T00:01:44Z"]
+        try write([final, summary], to: file)
         var log = SessionLog(id: "exit", vendor: .claude)
-        log.lastAt = 100
-        let working = log.agent(now: 101, project: { _ in "p" })!
+        for row in [final, summary] { ClaudeLine.apply(row, to: &log, isSubagent: false) }
+        let working = log.agent(now: 105, project: { _ in "p" })!
         var watcher = FinishWatcher(), sound = SoundAgentWatcher()
-        _ = watcher.update([working], now: 101)
+        _ = watcher.update([working], now: 105)
         _ = sound.update([working])
         var hooks = HookState()
         let stop = try XCTUnwrap(HookEvent(vendor: .claude, payload: ["session_id": log.id, "hook_event_name": "Stop",
             "transcript_path": file.path, "last_assistant_message": "finished"]))
-        _ = hooks.receive(stop, ticket: nil, now: 102)
+        _ = hooks.receive(stop, ticket: nil, now: 106)
         log.live = ClaudeLive(status: "busy", waitingFor: nil, name: nil, alive: false)
-        let exited = log.agent(now: 103, project: { _ in "p" })!
+        let exited = log.agent(now: 107, project: { _ in "p" })!
         XCTAssertTrue(exited.interrupted)
-        let completed = hooks.apply(to: [exited], now: 103, project: { _ in "p" })
+        let completed = hooks.apply(to: [exited], now: 107, project: { _ in "p" })
         XCTAssertEqual(completed.first?.turnEnded, true)
         XCTAssertEqual(completed.first?.interrupted, false)
-        XCTAssertEqual(watcher.update(completed, now: 103).count, 1)
+        XCTAssertEqual(watcher.update(completed, now: 107).count, 1)
         XCTAssertTrue(sound.update(completed).contains(.agentFinished))
         log.interrupted = true
-        let aborted = hooks.apply(to: [log.agent(now: 103, project: { _ in "p" })!], now: 103, project: { _ in "p" })
+        let aborted = hooks.apply(to: [log.agent(now: 107, project: { _ in "p" })!], now: 107, project: { _ in "p" })
         XCTAssertEqual(aborted.first?.interrupted, true, "an explicit abort still wins")
     }
 
@@ -152,15 +154,88 @@ struct DoneReviewChecks {
         _ = shown.receive(try stop("first answer"), ticket: nil, now: now + 1)
         XCTAssertEqual(shown.apply(to: [working], now: now + 1, project: { _ in "p" }).first?.state, .waiting)
 
-        // Missing or ambiguous source evidence cannot complete the active turn.
+        // Missing source evidence uses receipt time; an old prompt does not veto it.
         for event in [HookEvent(vendor: .claude, name: "Stop", sessionId: log.id), try stop("not in transcript")] {
             var unknown = HookState()
             _ = unknown.receive(event, ticket: nil, now: now + 6)
-            XCTAssertEqual(unknown.apply(to: [working], now: now + 6, project: { _ in "p" }).first?.state, .working)
+            XCTAssertEqual(unknown.apply(to: [working], now: now + 6, project: { _ in "p" }).first?.state, .done)
         }
         try write([old, prompt, assistant("first answer", at: "2026-10-16T10:01:01Z")], to: file)
         var ambiguous = HookState()
         _ = ambiguous.receive(try stop("first answer"), ticket: nil, now: now + 7)
-        XCTAssertEqual(ambiguous.apply(to: [working], now: now + 7, project: { _ in "p" }).first?.state, .working)
+        XCTAssertEqual(ambiguous.apply(to: [working], now: now + 7, project: { _ in "p" }).first?.state, .done)
+    }
+
+    func stopTail(_ variant: String) throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("stop-tail-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("session.jsonl")
+        let old = assistant("Done.", at: "1970-01-01T00:00:50Z")
+        let prompt: Rec = ["type": "user", "timestamp": "1970-01-01T00:01:30Z", "message": ["content": "finish this"]]
+        var final = assistant("Done.", at: "1970-01-01T00:01:40Z")
+        final["message"] = ["stop_reason": "end_turn", "content": [["type": "text", "text": "Done."]]]
+        let summary: Rec = ["type": "system", "subtype": "stop_hook_summary", "timestamp": "1970-01-01T00:01:44Z"]
+        try write(variant == "duplicate" ? [old, prompt] : [prompt], to: file)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        if variant == "large" {
+            let padding = try JSONSerialization.data(withJSONObject: ["type": "system", "padding": String(repeating: "x", count: 1024)]) + [10]
+            for _ in 0..<8200 { try handle.write(contentsOf: padding) }
+        }
+        try handle.write(contentsOf: JSONSerialization.data(withJSONObject: final) + [10])
+        if variant == "invalid" { try handle.write(contentsOf: Data("not json\n".utf8)) }
+        try handle.write(contentsOf: JSONSerialization.data(withJSONObject: summary))
+        if variant != "no-newline" { try handle.write(contentsOf: Data([10])) }
+        if variant == "partial" { try handle.write(contentsOf: Data("{\"type\":\"system\",\"subtype\":".utf8)) }
+        try handle.close()
+
+        var log = SessionLog(id: "tail", vendor: .claude)
+        ClaudeLine.apply(prompt, to: &log, isSubagent: false)
+        log.live = ClaudeLive(status: "busy", waitingFor: nil, name: nil, alive: true)
+        var watcher = FinishWatcher()
+        _ = watcher.update([log.agent(now: 99, project: { _ in "p" })!], now: 99)
+        for row in [final, summary] { ClaudeLine.apply(row, to: &log, isSubagent: false) }
+        let stop = try XCTUnwrap(HookEvent(vendor: .claude, payload: ["session_id": log.id, "hook_event_name": "Stop",
+            "transcript_path": file.path, "last_assistant_message": "Done."]))
+        XCTAssertEqual(stop.occurredAt, 100, variant)
+        var hooks = HookState()
+        _ = hooks.receive(stop, ticket: nil, now: 105)
+        let completed = hooks.apply(to: [log.agent(now: 105, project: { _ in "p" })!], now: 105, project: { _ in "p" })
+        XCTAssertEqual(completed.first?.state, .done, variant)
+        log.live?.alive = false
+        let exited = hooks.apply(to: [log.agent(now: 106, project: { _ in "p" })!], now: 106, project: { _ in "p" })
+        XCTAssertEqual(exited.first?.turnEnded, true)
+        XCTAssertEqual(exited.first?.interrupted, false)
+        XCTAssertEqual(watcher.update(exited, now: 106).count, 1)
+    }
+
+    func uncorrelatedStopUsesReceiptTime() {
+        var log = SessionLog(id: "fallback", vendor: .claude)
+        let old: Rec = ["type": "user", "timestamp": "1970-01-01T00:01:30Z", "message": ["content": "old prompt"]]
+        ClaudeLine.apply(old, to: &log, isSubagent: false)
+        // System and meta rows after receipt are not new prompts.
+        ClaudeLine.apply(["type": "system", "timestamp": "1970-01-01T00:01:45Z"], to: &log, isSubagent: false)
+        ClaudeLine.apply(["type": "user", "isMeta": true, "timestamp": "1970-01-01T00:01:46Z",
+                          "message": ["content": "metadata"]], to: &log, isSubagent: false)
+        var hooks = HookState()
+        _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: log.id), ticket: nil, now: 100)
+        XCTAssertEqual(hooks.apply(to: [log.agent(now: 107, project: { _ in "p" })!], now: 107, project: { _ in "p" }).first?.state, .done)
+        // Tool results alone do not start a new turn.
+        ClaudeLine.apply(["type": "user", "timestamp": "1970-01-01T00:01:47Z",
+                          "message": ["content": [["type": "tool_result", "tool_use_id": "t", "content": "ok"]]]], to: &log, isSubagent: false)
+        XCTAssertEqual(hooks.apply(to: [log.agent(now: 108, project: { _ in "p" })!], now: 108, project: { _ in "p" }).first?.state, .done)
+        // The next scan can reveal a prompt newer than receipt, including prompts without text.
+        let contents: [Any] = ["new prompt", [["type": "text", "text": "new prompt"]],
+            [["type": "image", "source": ["type": "url", "url": "https://example.test/image.png"]]],
+            [["type": "document", "source": ["type": "url", "url": "https://example.test/input.pdf"]]]]
+        for content in contents {
+            var next = log
+            ClaudeLine.apply(["type": "user", "timestamp": "1970-01-01T00:01:41Z", "message": ["content": content]], to: &next, isSubagent: false)
+            let newer = next.agent(now: 108, project: { _ in "p" })!
+            XCTAssertEqual(hooks.apply(to: [newer], now: 108, project: { _ in "p" }).first?.state, .working)
+            var missedPromptHook = HookState()
+            _ = missedPromptHook.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: log.id), ticket: nil, now: 100)
+            XCTAssertEqual(missedPromptHook.apply(to: [newer], now: 108, project: { _ in "p" }).first?.state, .working)
+        }
     }
 }

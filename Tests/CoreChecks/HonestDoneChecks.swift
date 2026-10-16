@@ -114,7 +114,10 @@ struct HonestDoneChecks {
         var hooks = HookState()
         _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: a.id, occurredAt: now), ticket: nil, now: now)
         XCTAssertEqual(hooks.apply(to: [a], now: now + 1, project: { _ in "p" }).first?.state, .done)
-        var fresh = a; fresh.lastAt = now + 2
+        var active = s
+        ClaudeLine.apply(["type": "assistant", "timestamp": "2026-10-16T10:00:12Z",
+                          "message": ["content": [["type": "text", "text": "new activity"]]]], to: &active, isSubagent: false)
+        let fresh = active.agent(now: now + 3, project: { _ in "p" })!
         XCTAssertEqual(hooks.apply(to: [fresh], now: now + 3, project: { _ in "p" }).first?.state, .working)
         _ = hooks.receive(HookEvent(vendor: .claude, name: "UserPromptSubmit", sessionId: a.id), ticket: nil, now: now + 2)
         XCTAssertEqual(hooks.apply(to: [a], now: now + 3, project: { _ in "p" }).first?.state, .working)

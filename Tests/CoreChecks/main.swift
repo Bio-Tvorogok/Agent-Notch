@@ -360,6 +360,10 @@ run("stopSurvivesProcessExit") { try doneReview.stopSurvivesExit() }
 run("lastHelperRestoresCompletedParent") { doneReview.lastHelperRestoresParent() }
 run("parentRetainedAfterFinalHelper") { try doneReview.parentRetainedAfterHelper() }
 run("delayedStopDoesNotFinishNextTurn") { try doneReview.delayedStopDoesNotFinishNextTurn() }
+for variant in ["summary", "large", "duplicate", "invalid", "partial", "no-newline"] {
+    run("stopTail-" + variant) { try doneReview.stopTail(variant) }
+}
+run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptTime() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

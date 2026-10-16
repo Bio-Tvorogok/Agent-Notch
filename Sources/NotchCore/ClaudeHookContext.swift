@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// Claude's async hooks carry message text, but no turn id or event timestamp.
-/// Only an unambiguous transcript match can order a Stop against a later prompt.
+/// The newest matching row in a bounded tail orders a Stop against a later prompt.
 enum ClaudeHookContext {
     static func time(payload: Rec) -> Double? {
         let stop = payload["hook_event_name"] as? String == "Stop"
@@ -15,13 +15,17 @@ enum ClaudeHookContext {
         let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         defer { try? handle.close() }
         var info = stat()
-        // A tail alone cannot establish uniqueness: the same answer may occur in an older turn.
         guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_size > 0, info.st_size <= 8 << 20,
-              let data = try? handle.read(upToCount: Int(info.st_size)), data.last == 10 else { return nil }
-        var matched: Double?
-        for line in data.split(separator: 10) {
-            guard let row = try? JSONSerialization.jsonObject(with: Data(line)) as? Rec else { return nil }
+              info.st_size > 0 else { return nil }
+        let count = min(Int(info.st_size), 256 << 10)
+        let offset = UInt64(info.st_size) - UInt64(count)
+        do { try handle.seek(toOffset: offset) } catch { return nil }
+        guard let data = try? handle.read(upToCount: count) else { return nil }
+        let lines = data.split(separator: 10, omittingEmptySubsequences: false)
+        for (index, line) in lines.enumerated().reversed() {
+            // The first slice may start inside a row; a partial final row simply fails JSON parsing.
+            if offset > 0 && index == 0 { continue }
+            guard let row = try? JSONSerialization.jsonObject(with: Data(line)) as? Rec else { continue }
             if let id = row["sessionId"] as? String, id != session { continue }
             guard row["type"] as? String == (stop ? "assistant" : "user"),
                   row["isSidechain"] as? Bool != true, row["isMeta"] as? Bool != true,
@@ -31,9 +35,8 @@ enum ClaudeHookContext {
                 block["type"] as? String == "text" ? block["text"] as? String : nil
             }.joined(separator: "\n")
             guard body == text else { continue }
-            guard matched == nil, let at = LogText.time(row["timestamp"]) else { return nil }
-            matched = at
+            return LogText.time(row["timestamp"])
         }
-        return matched
+        return nil
     }
 }

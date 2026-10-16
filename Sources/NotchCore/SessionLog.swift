@@ -11,6 +11,8 @@ public struct SessionLog: Sendable {
     public var effort: Effort?
     public var startedAt: Double?
     public var lastAt: Double = 0
+    /// Claude turn activity, excluding system and meta bookkeeping.
+    var turnActivityAt: Double?
     /// The agent finished its turn and waits for the next prompt.
     public var turnEnded = false
     public var interrupted = false
@@ -32,7 +34,7 @@ public struct SessionLog: Sendable {
 
     var customTitle: String?
     var prompt: String?
-    /// Latest Codex turn, so a retained exec stream cannot override a later interactive turn.
+    /// Latest user prompt or Codex turn, also used to order hooks and retained exec streams.
     var turnStartedAt: Double?
     var subTitle: String?
     var pendingTools: [String: String] = [:]
@@ -82,6 +84,8 @@ public struct SessionLog: Sendable {
                      activity: state == .done ? nil : activity, logPath: path,
                      branch: branch, worktree: Self.worktreeName(cwd: cwd))
         agent.lastAt = lastAt
+        agent.turnActivityAt = turnActivityAt
+        agent.promptAt = turnStartedAt
         agent.turnEnded = turnEnded || (parentId == nil && live?.status == "idle")
         agent.interruptionInferred = !interrupted && live?.alive == false && !agent.turnEnded
         agent.interrupted = interrupted || agent.interruptionInferred

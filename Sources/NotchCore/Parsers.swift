@@ -19,10 +19,12 @@ enum ClaudeLine {
             if r["subtype"] as? String == "api_error" { s.errorStreak += 1 }
         case "assistant":
             s.touch(at)
+            if r["isMeta"] as? Bool != true, let at { s.turnActivityAt = max(s.turnActivityAt ?? 0, at) }
             assistant(r, &s)
         case "user":
             s.touch(at)
-            user(r, &s)
+            if r["isMeta"] as? Bool != true, let at { s.turnActivityAt = max(s.turnActivityAt ?? 0, at) }
+            user(r, at, &s)
         default: break
         }
     }
@@ -44,22 +46,18 @@ enum ClaudeLine {
         if handedBack { s.activity = nil }
     }
 
-    private static func user(_ r: Rec, _ s: inout SessionLog) {
+    private static func user(_ r: Rec, _ at: Double?, _ s: inout SessionLog) {
         if r["isMeta"] as? Bool == true { return }
         let content = (r["message"] as? Rec)?["content"]
-        if content is String {
+        let blocks = content as? [Rec] ?? []
+        if content is String || blocks.contains(where: { $0["type"] as? String != "tool_result" }) {
+            if let at { s.turnStartedAt = max(s.turnStartedAt ?? 0, at) }
             s.turnEnded = false
             s.interrupted = false
-            return
         }
-        for block in content as? [Rec] ?? [] {
-            if block["type"] as? String == "tool_result" {
-                let name = s.toolResult(id: block["tool_use_id"] as? String, isError: block["is_error"] as? Bool == true)
-                if let name, asking[name] != nil { s.ask = nil }
-            } else if block["type"] as? String == "text" {
-                s.turnEnded = false
-                s.interrupted = false
-            }
+        for block in blocks where block["type"] as? String == "tool_result" {
+            let name = s.toolResult(id: block["tool_use_id"] as? String, isError: block["is_error"] as? Bool == true)
+            if let name, asking[name] != nil { s.ask = nil }
         }
     }
 

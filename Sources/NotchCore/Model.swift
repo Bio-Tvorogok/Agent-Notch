@@ -46,6 +46,8 @@ public struct Agent: Identifiable, Equatable, Sendable {
     public var branch: String?
     public var worktree: String?
     public var lastAt: Double = 0
+    var turnActivityAt: Double?
+    var promptAt: Double?
     public var turnEnded = false
     public var interrupted = false
     /// Process exit is weaker evidence than an explicit abort or a successful Stop.
