@@ -83,7 +83,8 @@ public struct SessionLog: Sendable {
                      branch: branch, worktree: Self.worktreeName(cwd: cwd))
         agent.lastAt = lastAt
         agent.turnEnded = turnEnded || (parentId == nil && live?.status == "idle")
-        agent.interrupted = interrupted || (live?.alive == false && !agent.turnEnded)
+        agent.interruptionInferred = !interrupted && live?.alive == false && !agent.turnEnded
+        agent.interrupted = interrupted || agent.interruptionInferred
         agent.hasPendingAsk = state == .waiting && (self.ask != nil || live?.waitingFor != "input needed")
         if agent.interrupted { agent.activity = SessionText.interrupted }
         return agent

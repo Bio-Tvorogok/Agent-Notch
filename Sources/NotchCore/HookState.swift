@@ -38,6 +38,8 @@ public struct HookState: Sendable, Equatable {
         var interrupted: Bool
     }
     private var turns: [String: Turn] = [:]
+    /// Tool hooks clear the overlay, but cannot erase evidence of a newer prompt.
+    private var prompts: [String: Double] = [:]
 
     public init() {}
 
@@ -45,10 +47,19 @@ public struct HookState: Sendable, Equatable {
     public mutating func receive(_ e: HookEvent, ticket: Int?, now: Double) -> [Int] {
         // Some SubagentStop payloads name only the parent session. They say nothing about its turn.
         if e.name == "SubagentStop", e.agentId == nil { return [] }
+        if e.vendor == .claude, e.name == "Stop", e.occurredAt == nil { return [] }
         if ["Stop", "SubagentStop", "SessionEnd", "UserPromptSubmit"].contains(e.name) {
+            let at = e.occurredAt ?? now
+            if let prompt = prompts[e.agentKey], at < prompt { return [] }
+            if let previous = turns[e.agentKey], at < previous.at { return [] }
+            if e.name == "Stop" {
+                let newerAsk = pending.contains { $0.event.agentKey == e.agentKey && $0.at > at }
+                if newerAsk || (shown[e.agentKey].map { $0.at > at } ?? false) { return [] }
+            }
+            if e.name == "UserPromptSubmit" { prompts[e.agentKey] = at }
             let interrupted = e.name == "SessionEnd"
                 && (turns[e.agentKey]?.ended != true || turns[e.agentKey]?.interrupted == true)
-            turns[e.agentKey] = Turn(at: now, ended: e.name != "UserPromptSubmit", interrupted: interrupted)
+            turns[e.agentKey] = Turn(at: at, ended: e.name != "UserPromptSubmit", interrupted: interrupted)
         } else if ["PreToolUse", "PostToolUse"].contains(e.name) {
             turns[e.agentKey] = nil
         }
@@ -126,8 +137,10 @@ public struct HookState: Sendable, Equatable {
         var out = agents.map { a -> Agent in
             var a = a
             if let turn = turns[a.id], a.lastAt <= turn.at {
-                a.interrupted = turn.ended && (a.interrupted || (turn.interrupted && !a.turnEnded))
+                a.interrupted = turn.ended && ((a.interrupted && !a.interruptionInferred) || (turn.interrupted && !a.turnEnded))
+                a.interruptionInferred = false
                 a.turnEnded = turn.ended && !a.interrupted
+                if turn.ended { a.retentionAt = max(a.retentionAt, turn.at) }
                 a.state = turn.ended ? .done : .working
                 a.ask = nil
                 a.hasPendingAsk = false
@@ -155,7 +168,7 @@ public struct HookState: Sendable, Equatable {
         }
         return Tree.withHelpers(out).filter { a in
             guard a.state == .done, let turn = turns[a.id], turn.ended, a.lastAt <= turn.at else { return true }
-            return now - turn.at < finishedRetention
+            return now - max(turn.at, a.retainedAt) < finishedRetention
         }
     }
 }

@@ -355,5 +355,11 @@ run("honestHookRetention") { honestDone.hookRetention() }
 run("honestHelperHookCount") { honestDone.helperHookCount() }
 run("honestToast") { try honestDone.toast() }
 
+let doneReview = DoneReviewChecks()
+run("stopSurvivesProcessExit") { try doneReview.stopSurvivesExit() }
+run("lastHelperRestoresCompletedParent") { doneReview.lastHelperRestoresParent() }
+run("parentRetainedAfterFinalHelper") { try doneReview.parentRetainedAfterHelper() }
+run("delayedStopDoesNotFinishNextTurn") { try doneReview.delayedStopDoesNotFinishNextTurn() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

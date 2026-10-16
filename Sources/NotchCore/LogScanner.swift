@@ -166,7 +166,7 @@ public final class LogScanner: @unchecked Sendable {
                                     uniquingKeysWith: { a, _ in a })
         let picked = Lineage.resolve(candidates, known: Set(agents.map(\.id)))
         for i in agents.indices where agents[i].parentId == nil { agents[i].parentId = picked[agents[i].id] }
-        agents = Tree.withHelpers(agents).filter { $0.state.isLive || t - $0.lastAt < finishedRetention }
+        agents = Tree.withHelpers(agents).filter { $0.state.isLive || t - $0.retainedAt < finishedRetention }
         let retained = Set(agents.map(\.id))
         files = files.filter { path, f in retained.contains(f.log.id) || mtime(path) > t - window }
         return agents

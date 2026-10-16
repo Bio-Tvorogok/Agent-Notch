@@ -25,6 +25,16 @@ public struct ProjectNode: Identifiable, Equatable, Sendable {
 public enum Tree {
     /// A process may wait for input while its background helpers are still working.
     public static func withHelpers(_ agents: [Agent]) -> [Agent] {
+        let agents = agents.map { original -> Agent in
+            var a = original
+            // A previous pass may have promoted this completed turn for its helpers.
+            if a.helperCount > 0 {
+                if a.state == .working, !a.hasPendingAsk, a.turnEnded || a.interrupted { a.state = .done }
+                a.activity = a.interrupted ? SessionText.interrupted : nil
+                a.helperCount = 0
+            }
+            return a
+        }
         let byId = Dictionary(agents.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         // Include every ancestor that will be kept working by a live descendant.
         var live = Set(agents.filter { $0.state.isLive }.map(\.id))
@@ -37,18 +47,19 @@ public enum Tree {
             }
         }
         var counts: [String: Int] = [:]
-        for child in agents where live.contains(child.id) {
+        var retained: [String: Double] = [:]
+        for child in agents {
             var parent = child.parentId
             var seen: Set<String> = [child.id]
             while let id = parent, let ancestor = byId[id], seen.insert(id).inserted {
-                counts[id, default: 0] += 1
+                if live.contains(child.id) { counts[id, default: 0] += 1 }
+                retained[id] = max(retained[id] ?? 0, child.retainedAt)
                 parent = ancestor.parentId
             }
         }
         return agents.map { original in
             var a = original
-            a.helperCount = 0
-            if original.helperCount > 0 { a.activity = a.interrupted ? SessionText.interrupted : nil }
+            a.retentionAt = max(a.retentionAt, retained[a.id] ?? 0)
             if let count = counts[a.id], !a.hasPendingAsk, a.state != .error {
                 a.state = .working
                 a.helperCount = count

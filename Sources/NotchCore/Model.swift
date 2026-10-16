@@ -48,6 +48,11 @@ public struct Agent: Identifiable, Equatable, Sendable {
     public var lastAt: Double = 0
     public var turnEnded = false
     public var interrupted = false
+    /// Process exit is weaker evidence than an explicit abort or a successful Stop.
+    var interruptionInferred = false
+    /// Later hook or descendant activity extends retention without changing this log's time.
+    var retentionAt: Double = 0
+    var retainedAt: Double { max(lastAt, retentionAt) }
     /// A real question or approval, rather than the process waiting for its next prompt.
     public var hasPendingAsk = false
     public var helperCount = 0

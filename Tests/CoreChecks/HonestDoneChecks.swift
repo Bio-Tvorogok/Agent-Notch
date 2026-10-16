@@ -112,7 +112,7 @@ struct HonestDoneChecks {
         let now = s.lastAt + 10
         let a = s.agent(now: now, project: { _ in "p" })!
         var hooks = HookState()
-        _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: a.id), ticket: nil, now: now)
+        _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: a.id, occurredAt: now), ticket: nil, now: now)
         XCTAssertEqual(hooks.apply(to: [a], now: now + 1, project: { _ in "p" }).first?.state, .done)
         var fresh = a; fresh.lastAt = now + 2
         XCTAssertEqual(hooks.apply(to: [fresh], now: now + 3, project: { _ in "p" }).first?.state, .working)
@@ -206,7 +206,7 @@ struct HonestDoneChecks {
     func hookRetention() {
         var hooks = HookState()
         let a = Agent(id: "stopped", vendor: .claude, title: "stopped", state: .working, project: "p")
-        _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: a.id), ticket: nil, now: 1)
+        _ = hooks.receive(HookEvent(vendor: .claude, name: "Stop", sessionId: a.id, occurredAt: 1), ticket: nil, now: 1)
         XCTAssertEqual(hooks.apply(to: [a], now: 2, project: { _ in "p" }).first?.state, .done)
         XCTAssertTrue(hooks.apply(to: [a], now: 3602, project: { _ in "p" }).isEmpty)
     }
