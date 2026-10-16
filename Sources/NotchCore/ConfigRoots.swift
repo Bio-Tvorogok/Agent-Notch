@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// User-wide Claude Code and Codex configuration folders.
@@ -21,6 +22,23 @@ struct ConfigRoots {
             return home.appendingPathComponent(String(value.dropFirst(2))).standardizedFileURL
         }
         return URL(fileURLWithPath: (value as NSString).expandingTildeInPath).standardizedFileURL
+    }
+
+    /// Foundation can preserve /tmp while directory enumeration and FSEvents return /private/tmp.
+    /// Resolve the existing prefix with the filesystem so all scanner keys use the same spelling.
+    static func physical(_ url: URL) -> URL {
+        var cursor = url
+        var suffix: [String] = []
+        while true {
+            if let path = realpath(cursor.path, nil) {
+                let root = URL(fileURLWithPath: String(cString: path))
+                free(path)
+                return suffix.reversed().reduce(root) { $0.appendingPathComponent($1) }
+            }
+            if cursor.path == "/" { return url }
+            suffix.append(cursor.lastPathComponent)
+            cursor.deleteLastPathComponent()
+        }
     }
 
     var claudeState: URL {

@@ -40,6 +40,14 @@ final class Store: ObservableObject {
     private var polling = false
     private var pollCompletions: [() -> Void] = []
     private var timer: Timer?
+    private var livenessTimer: Timer?
+    private var retentionTimer: Timer?
+    private var retentionExpiry: Date?
+    private var watcher: FileWatcher?
+    private var processWatcher: ProcessWatcher?
+    private var watchedPaths: [String] = []
+    private var watchedRoots: [String] = []
+    private var pendingChanges: FileChanges?
     private var server: HookServer?
     private var deliverySounds: [Int: SoundEvent] = [:]
     private var deliveryAudit: [Int: (HookEvent, HookDecision)] = [:]
@@ -79,22 +87,69 @@ final class Store: ObservableObject {
 
     func start() {
         usage.start()
+        processWatcher = ProcessWatcher { [weak self] in
+            Task { @MainActor in self?.poll(changes: .processes) }
+        }
+        watch(scanner.watchPaths)
         poll()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.poll() }
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if self?.watcher?.isWatching == false { self?.watchedPaths = [] }
+                self?.processWatcher?.repair()
+                self?.poll()
+            }
         }
         startHooks()
     }
 
     /// One scan now; the callback runs on the main actor after the agents are published.
-    func poll(then done: (() -> Void)? = nil) {
+    private func watch(_ paths: [String]) {
+        let targets = FileWatcher.roots(for: paths, shallowPaths: scanner.watchRootPaths)
+        guard paths != watchedPaths || targets != watchedRoots else { return }
+        watchedPaths = paths
+        watchedRoots = targets
+        watcher = FileWatcher(paths: paths, shallowPaths: scanner.watchRootPaths) { [weak self] changes in
+            Task { @MainActor in self?.poll(changes: changes) }
+        }
+    }
+
+    private func updateLivenessTimer() {
+        let live = agents.contains { $0.state != .done } || !hooks.pending.isEmpty || watcher?.isWatching != true
+        if live, livenessTimer == nil {
+            livenessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.poll(changes: self.watcher?.isWatching == true ? .paths([]) : .full)
+                }
+            }
+        } else if !live {
+            livenessTimer?.invalidate()
+            livenessTimer = nil
+        }
+        retentionTimer?.invalidate()
+        retentionTimer = nil
+        if !live, let expiry = retentionExpiry {
+            let timer = Timer(fire: max(expiry, Date().addingTimeInterval(0.001)), interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.poll(changes: .paths([])) }
+            }
+            retentionTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    func poll(then done: (() -> Void)? = nil, changes: FileChanges = .full) {
         if let done { pollCompletions.append(done) }
-        guard !polling else { return }
+        if polling {
+            pendingChanges = pendingChanges.map { $0.merging(changes) } ?? changes
+            return
+        }
         polling = true
         let scanner = scanner
         let retention = Double(settings.appearance.finishedMinutes) * 60
         queue.async {
-            let next = scanner.poll(finishedRetention: retention)
+            let next = scanner.poll(finishedRetention: retention, changes: changes)
+            let paths = changes == .paths([]) ? nil : scanner.watchPaths
+            let expiry = scanner.nextRetentionExpiry
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.polling = false
@@ -108,6 +163,14 @@ final class Store: ObservableObject {
                 if let next {
                     self.finisher.check(self.settings.listFilter.apply(self.hooks.apply(to: next, now: Date().timeIntervalSince1970, finishedRetention: retention, project: self.names.name(for:))))
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
+                }
+                if let paths { self.watch(paths) }
+                self.retentionExpiry = expiry
+                self.updateLivenessTimer()
+                if let pending = self.pendingChanges {
+                    self.pendingChanges = nil
+                    self.poll(changes: pending)
+                    return
                 }
                 let completions = self.pollCompletions
                 self.pollCompletions.removeAll()
@@ -184,6 +247,7 @@ final class Store: ObservableObject {
         if e.name == "PostToolUse", !hooks.pending.contains(where: { $0.event.agentKey == e.agentKey }) {
             soundWatcher.finishedTool(e)
         }
+        updateLivenessTimer()
         let owner = agents.first { $0.id == e.agentKey }
         let visible = owner.map { settings.listFilter.includes(vendor: $0.vendor, project: $0.project, cwd: $0.cwd) }
             ?? settings.listFilter.includes(vendor: e.vendor, project: names.name(for: e.cwd), cwd: e.cwd)
