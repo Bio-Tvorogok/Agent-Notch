@@ -12,9 +12,12 @@ public final class LogScanner: @unchecked Sendable {
         var isExec = false
         var device: dev_t?
         var inode: ino_t?
+        var modified: Double = 0
+        let physicalPath: String
 
         init(log: SessionLog, offset: UInt64, isSubagent: Bool, isExec: Bool = false, initial: SessionLog? = nil) {
             self.log = log
+            physicalPath = log.path.map { ConfigRoots.physical(URL(fileURLWithPath: $0)).path } ?? ""
             self.initial = initial ?? log
             self.offset = offset
             self.isSubagent = isSubagent
@@ -27,15 +30,18 @@ public final class LogScanner: @unchecked Sendable {
     var didStat: ((String) -> Void)?
     var didList: ((String) -> Void)?
 
-    private let claudeRoot: URL
-    private let claudeSessions: URL
-    private let codexRoot: URL
+    private var claudeRoot: URL
+    private var claudeSessions: URL
+    private var codexRoot: URL
+    private let config: ConfigRoots
     private let names = ProjectNames()
     private let fm = FileManager.default
     private var files: [String: Tracked] = [:]
     private let scanLock = NSLock()
     private var scanning = false
-    private var pending: (Date, Double)?
+    private var pending: (Date, Double, FileChanges?)?
+    private var liveFiles: [String: (String, ClaudeLive)] = [:]
+    private var runs: [ExecRun] = []
     private struct DirectoryStamp: Equatable {
         let modified: Date
         let inode: UInt64
@@ -60,25 +66,38 @@ public final class LogScanner: @unchecked Sendable {
     public init(home: URL = FileManager.default.homeDirectoryForCurrentUser, execRuns: @escaping () -> [ExecRun] = ExecRun.running,
                 rolloutParents: (() -> [String: [String]])? = nil) {
         self.execRuns = execRuns
-        claudeRoot = ConfigRoots(home: home).logs(.claude)
-        claudeSessions = ConfigRoots(home: home).root(.claude).appendingPathComponent("sessions")
-        codexRoot = ConfigRoots(home: home).logs(.codex)
-        let root = codexRoot
-        self.rolloutParents = rolloutParents ?? { Proc.rolloutParents(in: root) }
+        config = ConfigRoots(home: home)
+        claudeRoot = ConfigRoots.physical(ConfigRoots(home: home).logs(.claude))
+        claudeSessions = ConfigRoots.physical(ConfigRoots(home: home).root(.claude).appendingPathComponent("sessions"))
+        codexRoot = ConfigRoots.physical(ConfigRoots(home: home).logs(.codex))
+        let root = ConfigRoots(home: home).logs(.codex)
+        self.rolloutParents = rolloutParents ?? { Proc.rolloutParents(in: ConfigRoots.physical(root)) }
     }
 
-    public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone) -> [Agent]? {
+    /// Roots include configured locations even when they do not exist yet.
+    public var watchPaths: [String] {
+        // Keep logical config entries as well as independently symlinked log/status directories.
+        ([config.root(.claude).path, config.root(.codex).path,
+          claudeRoot.path, claudeSessions.path, codexRoot.path] +
+            Set(runs.map { URL(fileURLWithPath: $0.log).deletingLastPathComponent().path }).sorted()).sorted()
+    }
+
+    public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone,
+                     changes: FileChanges? = nil) -> [Agent]? {
         scanLock.lock()
         if scanning {
-            pending = (now, finishedRetention)
+            let merged: FileChanges?
+            if let old = pending { merged = (old.2 ?? .full).merging(changes ?? .full) }
+            else { merged = changes }
+            pending = (now, finishedRetention, merged)
             scanLock.unlock()
             return nil
         }
         scanning = true
         scanLock.unlock()
-        var request = (now, finishedRetention)
+        var request = (now, finishedRetention, changes)
         while true {
-            let result = scan(now: request.0, finishedRetention: request.1)
+            let result = scan(now: request.0, finishedRetention: request.1, changes: request.2)
             scanLock.lock()
             if let next = pending {
                 pending = nil
@@ -92,18 +111,65 @@ public final class LogScanner: @unchecked Sendable {
         }
     }
 
-    private func scan(now: Date, finishedRetention: Double) -> [Agent] {
+    private func scan(now: Date, finishedRetention: Double, changes: FileChanges?) -> [Agent] {
         let t = now.timeIntervalSince1970
-        // Retention affects finished rows, never the lifetime of a waiting request or a running tool.
         let window = max(finishedRetention, SessionLog.longTool, 3_600)
-        if t - lastDiscovery >= 5 || lastRetention != finishedRetention {
+        var changed = changes?.changedPaths.map { Set($0.map { ConfigRoots.physical(URL(fileURLWithPath: $0)).path }) }
+        var full = changes == .full
+        if full || changed?.isEmpty == false {
+            let claude = ConfigRoots.physical(config.logs(.claude))
+            let codex = ConfigRoots.physical(config.logs(.codex))
+            let sessions = ConfigRoots.physical(config.root(.claude).appendingPathComponent("sessions"))
+            if claude.path != claudeRoot.path || codex.path != codexRoot.path || sessions.path != claudeSessions.path {
+                claudeRoot = claude
+                codexRoot = codex
+                claudeSessions = sessions
+                files = files.filter { $0.value.isExec }
+                full = true
+            }
+        }
+        if full { changed = nil }
+        if full {
+            // A safety/drop scan must not trust directory stamps or cold-day caches.
+            codexDirectories.removeAll()
+            codexDays.removeAll()
+        }
+        if full || (changes == nil && (t - lastDiscovery >= 5 || lastRetention != finishedRetention)) {
             lastDiscovery = t
             lastRetention = finishedRetention
             discover(now: t, window: window)
+        } else if let changed {
+            discoverChanged(changed, now: t, window: window)
         }
-        let live = ClaudeLive.read(claudeSessions)
+        if changes?.refreshProcesses == true, !full {
+            let previous = Set(runs.map(\.log))
+            discoverProcesses()
+            // Process exit may beat the delayed FSEvents delivery. Drain stdout before unwatching it.
+            changed?.formUnion(previous.union(runs.map(\.log)).map { ConfigRoots.physical(URL(fileURLWithPath: $0)).path })
+        }
+        if changed == nil || changed?.contains(where: { contains($0, claudeSessions.path) }) == true {
+            liveFiles.removeAll()
+            for file in children(claudeSessions) where file.pathExtension == "json" { refreshLive(file) }
+        } else if let changed {
+            for path in changed where contains(claudeSessions.path, path) {
+                let url = URL(fileURLWithPath: path)
+                if url.pathExtension == "json" { refreshLive(url) }
+                else {
+                    liveFiles = liveFiles.filter { !contains(path, $0.key) }
+                    for file in children(url) where file.pathExtension == "json" { refreshLive(file) }
+                }
+            }
+        }
+        // No directory listing or JSON parsing on liveness-only ticks.
+        for path in Array(liveFiles.keys) {
+            if let pid = liveFiles[path]?.1.pid { liveFiles[path]?.1.alive = pid > 0 && ClaudeLive.isRunning(pid) }
+        }
+        let live = Dictionary(liveFiles.values.map { ($0.0, $0.1) }, uniquingKeysWith: { a, b in a.alive ? a : b })
+        execAlive = Set(runs.filter { ClaudeLive.isRunning($0.pid) }.map(\.log))
         for path in Array(files.keys) {
-            read(path, now: t)
+            if changed == nil || changed!.contains(where: { contains($0, path) || contains($0, files[path]?.physicalPath ?? path) }) || files[path]?.inode == nil {
+                read(path, now: t)
+            }
             if let f = files[path], f.log.vendor == .codex, !f.isExec {
                 files[path]?.log.parentCandidates = threadParents[f.log.id] ?? []
             }
@@ -113,13 +179,13 @@ public final class LogScanner: @unchecked Sendable {
                 if f.log.parentId == nil, let pid = l?.pid, pid > 0, l?.alive == true { files[path]?.log.parentCandidates = parents(of: pid) }
             }
             if let f = files[path], f.isExec {
-                // The process is the only sign of life: no session status file, no timestamps in the stream.
-                let alive = execAlive.contains(path)
+                // Legacy callers inject process snapshots; event callers check the cached pids.
+                let alive = changes == nil ? runs.contains { $0.log == path } : execAlive.contains(path)
                 files[path]?.log.live = ClaudeLive(status: f.log.turnEnded ? "idle" : "busy", waitingFor: nil, name: nil, alive: alive)
             }
         }
-        files = files.filter { path, f in
-            f.log.state(now: t, finishedRetention: finishedRetention) != nil || mtime(path) > t - window
+        files = files.filter { _, f in
+            f.log.state(now: t, finishedRetention: finishedRetention) != nil || f.modified > t - window
         }
         let threads = Set(files.values.filter { $0.log.vendor == .codex }.map { $0.log.id })
         threadParents = threadParents.filter { threads.contains($0.key) }
@@ -135,7 +201,7 @@ public final class LogScanner: @unchecked Sendable {
             var log = ordered[0].log
             if !ordered[0].isExec, let exec = ordered.first(where: { $0.isExec }) {
                 let busy = exec.log.live?.alive == true && !exec.log.turnEnded
-                let laterTurn = log.turnStartedAt.map { $0 > mtime(exec.log.path ?? "") } ?? false
+                let laterTurn = log.turnStartedAt.map { $0 > exec.modified } ?? false
                 if busy || !laterTurn {
                     log.live = exec.log.live
                     log.lastAt = max(log.lastAt, exec.log.lastAt)
@@ -163,14 +229,7 @@ public final class LogScanner: @unchecked Sendable {
 
     private func discover(now: Double, window: Double) {
         let fresh = now - window
-        for (id, parents) in rolloutParents() {
-            for parent in parents where !threadParents[id, default: []].contains(parent) {
-                threadParents[id, default: []].append(parent)
-            }
-        }
-        let runs = execRuns()
-        execAlive = Set(runs.map(\.log))
-        for run in runs where files[run.log] == nil { track(exec: run) }
+        discoverProcesses()
         for project in children(claudeRoot) {
             let items = children(project)
             let dates = Dictionary(uniqueKeysWithValues: items.filter { $0.pathExtension == "jsonl" }.map {
@@ -224,6 +283,54 @@ public final class LogScanner: @unchecked Sendable {
         }
         codexDirectories = codexDirectories.filter { visited.contains($0.key) }
         codexDays = codexDays.filter { visited.contains($0.key) }
+    }
+
+    private func discoverProcesses() {
+        for (id, parents) in rolloutParents() {
+            for parent in parents where !threadParents[id, default: []].contains(parent) {
+                threadParents[id, default: []].append(parent)
+            }
+        }
+        runs = execRuns()
+        execAlive = Set(runs.map(\.log))
+        for run in runs where files[run.log] == nil { track(exec: run) }
+    }
+
+    private func contains(_ root: String, _ path: String) -> Bool {
+        path == root || path.hasPrefix(root + "/")
+    }
+
+    private func refreshLive(_ file: URL) {
+        liveFiles[file.path] = ClaudeLive.readFile(file)
+    }
+
+    /// An event for a directory visits only that subtree; a file event never lists its siblings.
+    private func discoverChanged(_ paths: Set<String>, now: Double, window: Double) {
+        func visit(_ url: URL) {
+            let path = url.path
+            guard contains(claudeRoot.path, path) || contains(codexRoot.path, path) else { return }
+            if url.pathExtension == "jsonl" {
+                guard files[path] == nil, mtime(path) > now - window else { return }
+                if contains(codexRoot.path, path) { track(codex: url) }
+                else {
+                    let parts = Array(url.pathComponents.dropFirst(claudeRoot.pathComponents.count))
+                    if parts.count == 2 { track(claude: url, parent: nil) }
+                    else if parts.count >= 4, parts[2] == "subagents", url.lastPathComponent.hasPrefix("agent-") {
+                        track(claude: url, parent: parts[1])
+                    }
+                }
+            } else {
+                var directory: ObjCBool = false
+                if fm.fileExists(atPath: path, isDirectory: &directory), directory.boolValue {
+                    for child in children(url) { visit(child) }
+                }
+            }
+        }
+        for path in paths {
+            if contains(path, claudeRoot.path) { visit(claudeRoot) }
+            else if contains(path, codexRoot.path) { visit(codexRoot) }
+            else { visit(URL(fileURLWithPath: path)) }
+        }
     }
 
     private func codexChildren(_ dir: URL, now: Double) -> [URL] {
@@ -331,6 +438,7 @@ public final class LogScanner: @unchecked Sendable {
             }
             f.offset = size > Self.tailBytes ? size - Self.tailBytes : 0
         }
+        f.modified = Double(info.st_mtimespec.tv_sec) + Double(info.st_mtimespec.tv_nsec) / 1_000_000_000
         f.inode = info.st_ino
         f.device = info.st_dev
         files[path] = f

@@ -65,6 +65,13 @@ run("updateLaunchModes") { UpdateChecks().launchModes() }
 run("codexAutomaticReviewRouting") { try HookTests().testCodexAutomaticReviewDoesNotWaitForAHuman() }
 run("codexAutomaticMCPRoundTrip") { try HookTests().testCodexAutomaticMCPReturnsToCodexWithoutAPrompt() }
 let l = LogTests(), t = TreeTests(), w = WingTests()
+run("watcherTargetedPaths") { try FileWatcherChecks().changedPathsAndLiveness() }
+run("watcherSubagentsAndCodex") { try FileWatcherChecks().subagentsAndOldCodexPaths() }
+run("watcherProcessExit") { try FileWatcherChecks().processExitNeedsNoDiskRead() }
+run("watcherExecDiscoveryAndExit") { try FileWatcherChecks().processDiscoveryDrainsExitedStreams() }
+run("watcherSymlinkRoots") { try FileWatcherChecks().remapsSymlinkedRootsAndStatusDirectories() }
+run("watcherQueuedDrop") { try FileWatcherChecks().queuedDropSurvivesLegacyPoll() }
+run("watcherDrops") { FileWatcherChecks().droppedEventsRequestFullScan() }
 let discovery = CodexDiscoveryChecks()
 run("codexResumedOldFolder") { try discovery.resumedOldFolderAndAppendedTail() }
 run("codexTruncatedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: false) }

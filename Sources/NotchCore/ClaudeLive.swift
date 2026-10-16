@@ -17,14 +17,18 @@ public struct ClaudeLive: Sendable, Equatable {
         var out: [String: ClaudeLive] = [:]
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         for f in files where f.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: f), data.count < 64 << 10,
-                  let r = try? JSONSerialization.jsonObject(with: data) as? Rec,
-                  let id = r["sessionId"] as? String, let status = r["status"] as? String else { continue }
-            let pid = (r["pid"] as? NSNumber)?.int32Value ?? 0
-            out[id] = ClaudeLive(status: status, waitingFor: r["waitingFor"] as? String, name: r["name"] as? String,
-                                 alive: pid > 0 && alive(pid), pid: pid)
+            if let (id, live) = readFile(f, alive: alive) { out[id] = live }
         }
         return out
+    }
+
+    static func readFile(_ file: URL, alive: (Int32) -> Bool = ClaudeLive.isRunning) -> (String, ClaudeLive)? {
+        guard let data = try? Data(contentsOf: file), data.count < 64 << 10,
+              let r = try? JSONSerialization.jsonObject(with: data) as? Rec,
+              let id = r["sessionId"] as? String, let status = r["status"] as? String else { return nil }
+        let pid = (r["pid"] as? NSNumber)?.int32Value ?? 0
+        return (id, ClaudeLive(status: status, waitingFor: r["waitingFor"] as? String, name: r["name"] as? String,
+                              alive: pid > 0 && alive(pid), pid: pid))
     }
 
     static func isRunning(_ pid: Int32) -> Bool {
