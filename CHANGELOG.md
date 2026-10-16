@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows [Kee
 
 Nothing yet.
 
+## [0.6.0] - 2026-10-16
+
+### Added
+
+- Claude and Codex each get their own icon in Settings → Appearance: Auto, a built-in style, or any SF Symbol found by search. A chosen icon stays the same under every theme (#28).
+- Codex CLI sessions open in their own Terminal or iTerm2 tab, like Claude sessions. When only the project folder could be opened, a toast says so and offers "Copy resume command"; the command is copied, never run (#29).
+- The done toast shows unfinished plan items ("2 of 7 left") and the commit made by that session, not the repository HEAD (#30).
+
+### Changed
+
+- Logs are followed through file-system events instead of a 1.5 s disk poll, with a full rescan every 30 s as a safety net. With 200 live sessions and 10,000 archived logs: idle CPU 2.08% → 0.51% of one core, update latency p95 1448 → 291 ms, memory 37 MB (#31).
+
+### Fixed
+
+- An agent that waits for its background helpers shows "working · waiting for N helpers" instead of "waiting for you" or "done" (#30).
+- Silence no longer counts as done. A session that exits without finishing its turn is marked interrupted and gets no success toast (#30).
+- If the terminal tab cannot be selected (for example, Automation is denied), the terminal is still brought forward instead of opening Claude Desktop or the folder (#29).
+
 ## [0.5.0] - 2026-10-15
 
 The app code is the same as in 0.4.1, which was built after these changes landed. This release names them.
