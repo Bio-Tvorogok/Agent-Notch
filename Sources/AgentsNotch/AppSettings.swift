@@ -12,6 +12,7 @@ final class AppSettings: ObservableObject {
     private var resetting = false
     var visibilityObservers: [ObjectIdentifier: () -> Void] = [:]
 
+    @Published var vendorIcons: VendorIconPrefs { didSet { save(vendorIcons, "vendorIcons") } }
     @Published var appearance: AppearancePrefs { didSet { save(appearance, "appearance") } }
     /// Kept apart from «appearance» so older saved appearance blobs keep decoding.
     @Published var theme: ThemeID {
@@ -62,6 +63,7 @@ final class AppSettings: ObservableObject {
         func load<T: Codable>(_ key: String, _ fallback: T) -> T {
             SettingsStorage.read(T.self, key: key, default: fallback, in: defaults)
         }
+        vendorIcons = load("vendorIcons", VendorIconPrefs())
         appearance = load("appearance", AppearancePrefs())
         theme = load("theme", ThemeID.terminal)
         themeMarks = load("themeMarks", false)
@@ -102,6 +104,7 @@ final class AppSettings: ObservableObject {
         resetting = true
         defer { resetting = false }
         let hidden = behavior.hiddenProjects
+        vendorIcons = VendorIconPrefs()
         appearance = AppearancePrefs()
         theme = .terminal
         themeMarks = false
