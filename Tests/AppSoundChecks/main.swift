@@ -5,9 +5,9 @@ import NotchCore
 
 // These checks run against the app settings with an isolated suite, never the user's preferences.
 @MainActor func checkSoundSettings() throws {
-    let suite = "AgentsNotch.sound-checks." + UUID().uuidString
-    guard let defaults = UserDefaults(suiteName: suite) else { fatalError("suite unavailable") }
-    defer { defaults.removePersistentDomain(forName: suite) }
+    guard let scratch = ScratchDefaults("app-sound-checks") else { fatalError("suite unavailable") }
+    let defaults = scratch.defaults
+    defer { scratch.remove() }
     func expect(_ condition: Bool, _ message: String) { if !condition { fatalError(message) } }
     var legacy = BehaviorPrefs()
     legacy.soundName = "Ping"

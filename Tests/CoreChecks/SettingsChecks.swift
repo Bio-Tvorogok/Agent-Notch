@@ -27,9 +27,9 @@ struct SettingsChecks {
     }
 
     func storage() throws {
-        let suite = "NOTCH-settings-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let scratch = try XCTUnwrap(ScratchDefaults("settings-checks"))
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         defaults.set(false, forKey: "answerFromNotch")
         XCTAssertFalse(SettingsStorage.read(Bool.self, key: "answerFromNotch", default: true, in: defaults))
         XCTAssertTrue(SettingsStorage.read(Bool.self, key: "sounds", default: true, in: defaults))
@@ -38,6 +38,22 @@ struct SettingsChecks {
         XCTAssertEqual(SettingsStorage.read([DisplayPart<RowPart>].self, key: "parts", default: initial, in: defaults), initial)
         SettingsStorage.write(initial, key: "parts", in: defaults)
         XCTAssertEqual(SettingsStorage.read([DisplayPart<RowPart>].self, key: "parts", default: [], in: defaults), initial)
+    }
+
+    func scratchDefaults() throws {
+        let preferences = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences")
+        let before = Set((try? FileManager.default.contentsOfDirectory(atPath: preferences.path)) ?? [])
+        let scratch = try XCTUnwrap(ScratchDefaults("scratch-checks"))
+        scratch.defaults.set("value", forKey: "key")
+        XCTAssertEqual(scratch.defaults.string(forKey: "key"), "value")
+        XCTAssertNil(UserDefaults.standard.string(forKey: "key"))
+        let other = try XCTUnwrap(ScratchDefaults("scratch-checks"))
+        XCTAssertNil(other.defaults.string(forKey: "key"))
+        other.remove()
+        _ = scratch.defaults.synchronize()
+        scratch.remove()
+        let after = Set((try? FileManager.default.contentsOfDirectory(atPath: preferences.path)) ?? [])
+        XCTAssertEqual(after.subtracting(before).filter { $0.contains("scratch-checks") }, [])
     }
 
     func shortcuts() throws {
