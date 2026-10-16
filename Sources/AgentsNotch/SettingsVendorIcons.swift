@@ -55,7 +55,7 @@ struct SettingsVendorIconRow: View {
                 Button(SettingsText.resetConfirmButton) { choice.wrappedValue = .auto; query = ""; searchFocused = false }
                     .controlSize(.small).disabled(choice.wrappedValue == .auto)
             }
-            TextField(SettingsText.symbolSearch, text: $query)
+            TextField(SettingsText.symbolSearch, text: $query, prompt: Text(SettingsText.symbolSearch))
                 .labelsHidden()
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: .infinity)

@@ -128,7 +128,7 @@ enum SettingsText {
 
     static var moveUp: String { Loc.t("Up", "Выше") }
     static var moveDown: String { Loc.t("Down", "Ниже") }
-    static var vendorIcons: String { Loc.t("Vendor icons", "Значки агентов") }
+    static var vendorIcons: String { Loc.t("Claude and Codex icons", "Значки Claude и Codex") }
     static var vendorIcon: String { Loc.t("Icon", "Значок") }
     static var vendorIconHelp: String { Loc.t("Auto follows the theme and icon style. Other choices stay the same in every theme.", "Авто следует теме и стилю значков. Другие варианты сохраняются при смене темы.") }
     static var symbolSearch: String { Loc.t("Search SF Symbols", "Поиск SF Symbols") }
