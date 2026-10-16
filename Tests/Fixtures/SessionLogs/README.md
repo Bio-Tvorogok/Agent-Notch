@@ -40,7 +40,7 @@ assertion and makes the command exit nonzero while the bug remains:
 ## Sensitivity check
 
 The six default checks pass with production sources extracted from the baseline
-revision above. With the opt-in flag, exactly the two known-bug checks fail.
+revision above. With the opt-in flag, the known-bug check fails.
 A separate temporary copy with these deliberate reader regressions fails all
 six default checks (15 assertions); the checkout's readers were never edited:
 
