@@ -33,6 +33,10 @@ final class NotchController {
         })
         listPanel.contentView = list
         store.finisher.onNotice = { [weak self] n in self?.showToast(n) }
+        store.jumpScreen = { [weak self] in
+            guard let self else { return nil }
+            return self.notchScreen ?? self.statusItem?.button?.window?.screen ?? self.listPanel.screen
+        }
         _ = cardPanel
         store.objectWillChange.merge(with: store.settings.objectWillChange)
             .receive(on: RunLoop.main)

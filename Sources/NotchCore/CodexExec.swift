@@ -62,6 +62,47 @@ public struct ExecRun: Equatable, Sendable {
     }
 }
 
+/// Open rollout files identify interactive/resumed sessions; redirected stdout identifies exec runs.
+public struct CodexProcess: Equatable {
+    public let pid: Int32
+    public let paths: [String]
+    public let hasTTY: Bool
+
+    public init(pid: Int32, paths: [String], hasTTY: Bool = false) {
+        self.pid = pid
+        self.hasTTY = hasTTY
+        self.paths = paths.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path }
+    }
+
+    static func isCLI(args: [String]) -> Bool {
+        guard let at = args.prefix(2).firstIndex(where: { ($0 as NSString).lastPathComponent == "codex" }) else { return false }
+        let valueOptions: Set<String> = [
+            "-c", "--config", "-m", "--model", "-p", "--profile", "-s", "--sandbox",
+            "-a", "--ask-for-approval", "-C", "--cd", "--add-dir", "--enable", "--disable",
+            "-i", "--image", "--local-provider"
+        ]
+        var i = at + 1
+        while i < args.count {
+            let arg = args[i]
+            i += 1
+            if arg == "--" { return true }
+            if valueOptions.contains(arg) { i += 1; continue }
+            // Only the subcommand identifies the server; a prompt or option value may also say app-server.
+            if !arg.hasPrefix("-") { return arg != "app-server" }
+        }
+        return true
+    }
+
+    public static func running() -> [CodexProcess] {
+        Proc.all().sorted().compactMap { pid in
+            guard ["codex", "node"].contains(Proc.name(pid)) else { return nil }
+            let args = Proc.argsAndEnv(pid).0
+            guard isCLI(args: args) else { return nil }
+            return CodexProcess(pid: pid, paths: Proc.openPaths(pid), hasTTY: Proc.hasTTYInAncestry(pid))
+        }
+    }
+}
+
 /// One line of the `codex exec --json` stream. The stream has no timestamps: lines count as read now.
 enum ExecLine {
     static func apply(_ r: Rec, to s: inout SessionLog, at: Double) {
@@ -183,6 +224,19 @@ enum Proc {
             i += 1
         }
         return (args, env)
+    }
+
+    static func hasTTYInAncestry(_ pid: Int32) -> Bool {
+        var current = pid
+        var seen: Set<Int32> = []
+        while current > 1, seen.count < 128, seen.insert(current).inserted {
+            var info = proc_bsdinfo()
+            let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+            guard proc_pidinfo(current, PROC_PIDTBSDINFO, 0, &info, size) == size else { return false }
+            if info.e_tdev != UInt32.max { return true }
+            current = Int32(info.pbi_ppid)
+        }
+        return false
     }
 
     static func stdoutPath(_ pid: Int32) -> String? {

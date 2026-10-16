@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--snapshot-honest-done"), i + 1 < args.count {
             exit(Snapshot.runHonestDone(into: args[i + 1]) ? 0 : 1)
         }
+        if let i = args.firstIndex(of: "--snapshot-toast"), i + 1 < args.count {
+            exit(Snapshot.runToast(into: args[i + 1]) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot-delivery"), i + 1 < args.count {
             exit(Snapshot.runDelivery(into: args[i + 1]) ? 0 : 1)
         }

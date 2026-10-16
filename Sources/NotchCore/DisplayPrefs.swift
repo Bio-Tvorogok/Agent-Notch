@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MarkStyle: String, Codable, CaseIterable, Sendable { case dots, logos, logosMono, letters }
+public enum MarkStyle: String, Codable, CaseIterable, Hashable, Sendable { case dots, logos, logosMono, letters }
 public enum MarkSize: String, Codable, CaseIterable, Sendable {
     case small, medium, large
     public var points: Double { switch self { case .small: 6; case .medium: 9; case .large: 12 } }

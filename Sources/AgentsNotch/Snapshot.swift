@@ -6,6 +6,47 @@ import NotchCore
 /// Lets a check see the real SwiftUI output without screen-recording permission.
 @MainActor
 enum Snapshot {
+    /// `--snapshot-toast <dir>` renders the folder fallback in both languages.
+    static func runToast(into dir: String) -> Bool {
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        let suite = "AgentsNotch.toastSnapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        let settings = AppSettings(defaults: defaults)
+        let forced = Loc.forced
+        defer { Loc.forced = forced; defaults.removePersistentDomain(forName: suite) }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            for terminalOrigin in [true, false] {
+                let name = terminalOrigin ? "fallback" : "app-fallback"
+                ok = host(JumpToastView(canResume: true, terminalOrigin: terminalOrigin, onCopy: {}).environmentObject(settings),
+                          to: url.appendingPathComponent("\(name)-\(language.rawValue).png")) && ok
+            }
+            let themes = ThemeID.allCases.map { id in
+                let themed = AppSettings(defaults: defaults)
+                themed.theme = id
+                return themed
+            }
+            let grid = HStack(alignment: .top, spacing: 16) {
+                ForEach(0..<3) { column in
+                    VStack(spacing: 16) {
+                        ForEach(themes.indices.filter { $0 % 3 == column }, id: \.self) { index in
+                            let themeSettings = themes[index]
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(themeSettings.theme.rawValue).foregroundStyle(.white)
+                                JumpToastView(canResume: true, onCopy: {}).environmentObject(themeSettings)
+                            }
+                        }
+                    }
+                }
+            }.padding(16).background(Color(white: 0.3))
+            ok = host(grid, to: url.appendingPathComponent("themes-\(language.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     static func run(into dir: String) {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suite) else { return }
@@ -135,13 +176,20 @@ enum Snapshot {
                 .formStyle(.grouped).environment(\.colorScheme, .light),
                 size: NSSize(width: 570, height: 850), to: URL(fileURLWithPath: path))
         }
+        if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] != nil {
+            settings.theme = .paper
+            if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
+                settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            }
+        }
         let prompts = promptFixture()
         let skills = skillFixture()
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
-            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light),
+            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light)
+                .environment(\.vendorIconSearchQuery, ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" ? "bolt" : ""),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
         }
-        guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path)) }
+        guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path), height: ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == nil ? SettingsView.size.height : 1800) }
         let dir = URL(fileURLWithPath: path, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var ok = true
@@ -231,8 +279,22 @@ enum Snapshot {
         guard let defaults = UserDefaults(suiteName: suite) else { return false }
         defer { defaults.removePersistentDomain(forName: suite) }
         let detail = log.map { DetailReader.read(path: $0, vendor: $0.contains("/.codex/") ? .codex : .claude) } ?? CardFixture.detail
+        let settings = AppSettings(defaults: defaults)
+        if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
+            settings.theme = .paper
+            settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            let store = Store(settings: settings)
+            store.useFixture([CardFixture.agent])
+            return host(VStack(spacing: 12) {
+                WingView(layout: store.layout).frame(height: 30).background(Color.black)
+                CardView(agent: CardFixture.agent, detail: detail,
+                         context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
+                         cost: SessionCost(tokens: 1, usd: 1.37), tab: tab)
+            }.environmentObject(settings).environment(\.theme, settings.currentTheme),
+            size: NSSize(width: 340, height: 530), to: URL(fileURLWithPath: file))
+        }
         return host(CardView(agent: CardFixture.agent, detail: detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
-                      cost: SessionCost(tokens: 1, usd: 1.37), tab: tab).environmentObject(AppSettings(defaults: defaults)),
+                      cost: SessionCost(tokens: 1, usd: 1.37), tab: tab).environmentObject(settings),
              size: NSSize(width: 340, height: 480), to: URL(fileURLWithPath: file))
     }
 
