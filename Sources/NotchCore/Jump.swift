@@ -7,6 +7,11 @@ public enum JumpTarget: Equatable {
     case folder(String)
 }
 
+public struct JumpPlan {
+    public let targets: [JumpTarget]
+    public let resumeCommand: String?
+}
+
 /// Resolves the owning session without launching anything or changing its logs.
 public enum JumpResolver {
     /// The agent «Открыть» should show: a run with no chat of its own (an ephemeral `codex exec`) opens whoever started it.
@@ -19,9 +24,13 @@ public enum JumpResolver {
     }
 
     public static func resolve(agent: Agent, home: URL) -> [JumpTarget] {
+        plan(agent: agent, home: home).targets
+    }
+
+    public static func plan(agent: Agent, home: URL, processes: [CodexProcess]? = nil) -> JumpPlan {
         var id = agent.parentId ?? agent.chatId ?? agent.id
         var path = agent.logPath.map { URL(fileURLWithPath: $0) }
-        if agent.parentId != nil { path = JumpLog.find(id: id, vendor: agent.vendor, home: home, near: path) }
+        if agent.parentId != nil || path == nil { path = JumpLog.find(id: id, vendor: agent.vendor, home: home, near: path) }
         var meta = JumpLog.read(path, vendor: agent.vendor)
         // Codex workers can themselves have workers; open the outermost known owner.
         var seen: Set<String> = [id]
@@ -33,7 +42,12 @@ public enum JumpResolver {
         if agent.parentId == nil && seen.count == 1, let thread = meta["id"] as? String ?? meta["session_id"] as? String { id = thread }
         let live = agent.vendor == .claude ? JumpLog.live(id: id, home: home) : [:]
         let cwd = absolute(meta["cwd"] as? String) ?? absolute(live["cwd"] as? String) ?? absolute(agent.cwd)
-        let pid = JumpLog.pid(live["pid"])
+        let pid: Int32?
+        if agent.vendor == .codex {
+            pid = path.flatMap { file in
+                (processes ?? CodexProcess.running()).first { $0.paths.contains(file.resolvingSymlinksInPath().standardizedFileURL.path) }?.pid
+            }
+        } else { pid = JumpLog.pid(live["pid"]) }
         let origin = live["entrypoint"] as? String ?? meta[agent.vendor == .claude ? "entrypoint" : "originator"] as? String
         var targets: [JumpTarget] = []
         if agent.vendor == .claude {
@@ -62,10 +76,22 @@ public enum JumpResolver {
             }
         } else {
             if origin == "codex_vscode" { targets.append(.editor(bundleId: "com.microsoft.VSCode", cwd: cwd)) }
-            targets.append(.terminal(pid: nil, cwd: cwd))
+            targets.append(.terminal(pid: pid, cwd: cwd))
         }
         targets.append(.folder(cwd ?? home.path))
-        return targets
+        let command: String?
+        let canResume = agent.vendor == .claude || agent.chatId != nil
+            || (meta["id"] != nil && meta["exec_stream"] == nil) || meta["session_id"] != nil
+            || (meta["exec_stream"] != nil && JumpLog.find(id: id, vendor: .codex, home: home, near: path) != nil)
+        if canResume, !id.isEmpty, !id.contains("\0") {
+            let tool = agent.vendor == .claude ? "claude --resume" : "codex resume"
+            command = "cd \(quote(cwd ?? home.path)) && \(tool) \(quote(id))"
+        } else { command = nil }
+        return JumpPlan(targets: targets, resumeCommand: command)
+    }
+
+    private static func quote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
     private static func absolute(_ path: String?) -> String? {

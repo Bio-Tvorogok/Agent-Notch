@@ -5,7 +5,7 @@ import NotchCore
 
 struct JumpChecks {
     func fixture(_ body: (URL) throws -> Void) throws {
-        let home = FileManager.default.temporaryDirectory.appendingPathComponent("jump-\(UUID())")
+        let home = URL(fileURLWithPath: "/tmp/an06-t8-jump-\(UUID())")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         try body(home)
@@ -109,6 +109,51 @@ struct JumpChecks {
             _ = try write(home, ".claude/sessions/123.json", ["sessionId": a.id, "pid": 4294967297])
             XCTAssertEqual(JumpResolver.resolve(agent: a, home: home).first,
                            .terminal(pid: nil, cwd: "/tmp/project"))
+        }
+    }
+
+    func preciseCodexAndResume() throws {
+        try fixture { home in
+            for origin in ["codex_cli_rs", "codex_exec", "codex_vscode", "Codex Desktop"] {
+                let path = try write(home, ".codex/sessions/rollout-test.jsonl",
+                    ["type": "session_meta", "payload": ["id": "thread-test", "originator": origin, "cwd": "/tmp/a b'c"]])
+                let a = agent(.codex, path)
+                let plan = JumpResolver.plan(agent: a, home: home,
+                    processes: [CodexProcess(pid: 321, paths: [path])])
+                if origin == "Codex Desktop" {
+                    XCTAssertEqual(plan.targets.first, .codexApp(try XCTUnwrap(URL(string: "codex://threads/thread-test"))))
+                } else if origin == "codex_vscode" {
+                    XCTAssertEqual(plan.targets.first, .editor(bundleId: "com.microsoft.VSCode", cwd: "/tmp/a b'c"))
+                    XCTAssertTrue(plan.targets.contains(.terminal(pid: 321, cwd: "/tmp/a b'c")))
+                } else {
+                    XCTAssertEqual(plan.targets.first, .terminal(pid: 321, cwd: "/tmp/a b'c"))
+                }
+                XCTAssertEqual(plan.resumeCommand, "cd '/tmp/a b'\"'\"'c' && codex resume 'thread-test'")
+            }
+            let path = try write(home, ".claude/projects/cli.jsonl", ["cwd": "/tmp/a b'c", "entrypoint": "cli"])
+            let a = agent(.claude, path)
+            XCTAssertEqual(JumpResolver.plan(agent: a, home: home).resumeCommand,
+                "cd '/tmp/a b'\"'\"'c' && claude --resume '\(a.id)'")
+            let exec = try write(home, "exec.jsonl", ["type": "thread.started", "thread_id": "exec-thread"])
+            XCTAssertEqual(JumpResolver.plan(agent: agent(.codex, exec), home: home,
+                processes: [CodexProcess(pid: 654, paths: [exec])]).targets.first, .terminal(pid: 654, cwd: "/tmp/project"))
+            XCTAssertNil(JumpResolver.plan(agent: agent(.codex, exec), home: home).resumeCommand)
+            _ = try write(home, ".codex/sessions/saved.jsonl", ["type": "session_meta", "payload": ["id": "exec-thread"]])
+            XCTAssertEqual(JumpResolver.plan(agent: agent(.codex, exec), home: home).resumeCommand,
+                "cd '/tmp/project' && codex resume 'exec-thread'")
+
+            let id = "33333333-3333-4333-8333-333333333333"
+            let saved = try write(home, ".codex/sessions/rollout-\(id).jsonl",
+                ["type": "session_meta", "payload": ["id": id, "originator": "codex_cli_rs"]])
+            let alias = home.appendingPathComponent("linked-sessions")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: home.appendingPathComponent(".codex/sessions"))
+            let linked = alias.appendingPathComponent("rollout-\(id).jsonl").path
+            var hook = agent(.codex, nil)
+            hook.chatId = id
+            XCTAssertEqual(JumpResolver.plan(agent: hook, home: home,
+                processes: [CodexProcess(pid: 987, paths: [saved])]).targets.first, .terminal(pid: 987, cwd: hook.cwd))
+            XCTAssertEqual(JumpResolver.plan(agent: agent(.codex, linked), home: home,
+                processes: [CodexProcess(pid: 987, paths: [saved])]).targets.first, .terminal(pid: 987, cwd: hook.cwd))
         }
     }
 

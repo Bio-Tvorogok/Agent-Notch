@@ -177,6 +177,7 @@ run("usageCachedSpend") { try usage.cachedSpend() }
 run("usageSpendCopiesAndSynthetic") { try usage.spendCopiesAndSynthetic() }
 // NOTCH-jump
 let j = JumpChecks()
+run("jumpPreciseCodexAndResume") { try j.preciseCodexAndResume() }
 run("jumpClaudeCLI") { try j.claudeCLI() }
 run("jumpClaudeDesktop") { try j.claudeDesktop() }
 run("jumpCodexCLI") { try j.codex("codex_exec", desktop: false) }

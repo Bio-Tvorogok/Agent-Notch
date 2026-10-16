@@ -87,3 +87,62 @@ private struct ToastSurface: ViewModifier {
         if theme.id == .terminal { content } else { content.themeSurface(theme, radius: min(theme.radius, 18)) }
     }
 }
+
+@MainActor
+final class JumpToast {
+    private let panel: NSPanel = {
+        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        p.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.hidesOnDeactivate = false
+        return p
+    }()
+    private var timer: Timer?
+
+    func show(command: String?, screen: NSScreen, settings: AppSettings) {
+        let host = NSHostingView(rootView: JumpToastView(canResume: command != nil) { [weak self] in
+            if let command {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+            }
+            self?.panel.orderOut(nil)
+        }.environmentObject(settings))
+        let size = host.fittingSize
+        panel.contentView = host
+        let top = screen.safeAreaInsets.top > 0 ? screen.frame.maxY - screen.safeAreaInsets.top : screen.visibleFrame.maxY
+        panel.setFrame(NSRect(x: screen.frame.midX - size.width / 2, y: top - 8 - size.height,
+                              width: size.width, height: size.height), display: true)
+        panel.orderFrontRegardless()
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 8, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.panel.orderOut(nil) }
+        }
+    }
+}
+
+struct JumpToastView: View {
+    let canResume: Bool
+    let onCopy: () -> Void
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(Loc.t("Terminal not found — opened the project folder", "Терминал не найден — открыл папку проекта"))
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(Ink.strong)
+                .fixedSize(horizontal: false, vertical: true)
+            if canResume {
+                Button(Loc.t("Copy resume command", "Скопировать команду продолжения"), action: onCopy)
+                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Ink.askText)
+            }
+        }
+        .frame(width: 300, alignment: .leading)
+        .padding(12)
+        .background { if settings.theme == .terminal { RoundedRectangle(cornerRadius: 12).fill(Color(white: 0.11)) } }
+        .overlay { if settings.theme == .terminal { RoundedRectangle(cornerRadius: 12).stroke(Color(white: 0.23), lineWidth: 1) } }
+        .modifier(ToastSurface(theme: settings.currentTheme))
+        .themed(settings.currentTheme)
+    }
+}

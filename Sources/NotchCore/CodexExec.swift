@@ -62,6 +62,26 @@ public struct ExecRun: Equatable, Sendable {
     }
 }
 
+/// Open rollout files identify interactive/resumed sessions; redirected stdout identifies exec runs.
+public struct CodexProcess: Equatable {
+    public let pid: Int32
+    public let paths: [String]
+
+    public init(pid: Int32, paths: [String]) {
+        self.pid = pid
+        self.paths = paths.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path }
+    }
+
+    public static func running() -> [CodexProcess] {
+        Proc.all().sorted().compactMap { pid in
+            guard ["codex", "node"].contains(Proc.name(pid)) else { return nil }
+            let args = Proc.argsAndEnv(pid).0
+            guard args.prefix(2).contains(where: { ($0 as NSString).lastPathComponent == "codex" }) else { return nil }
+            return CodexProcess(pid: pid, paths: Proc.openPaths(pid))
+        }
+    }
+}
+
 /// One line of the `codex exec --json` stream. The stream has no timestamps: lines count as read now.
 enum ExecLine {
     static func apply(_ r: Rec, to s: inout SessionLog, at: Double) {

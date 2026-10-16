@@ -270,9 +270,19 @@ final class Store: ObservableObject {
 
     func select(_ agent: Agent) { selected = agent.id }
 
+    var jumpScreen: () -> NSScreen? = { nil }
+    private let jumpToast = JumpToast()
+
     func open(_ agent: Agent) {
         play(.agentOpened)
-        Opener.open(agent: JumpResolver.owner(of: agent, in: shown))
+        let screen = NSApp.currentEvent?.window?.screen ?? jumpScreen()
+            ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+        Opener.open(agent: JumpResolver.owner(of: agent, in: shown)) { [weak self] command in
+            MainActor.assumeIsolated {
+                guard let self, let screen else { return }
+                self.jumpToast.show(command: command, screen: screen, settings: self.settings)
+            }
+        }
     }
 }
 

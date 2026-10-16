@@ -6,6 +6,22 @@ import NotchCore
 /// Lets a check see the real SwiftUI output without screen-recording permission.
 @MainActor
 enum Snapshot {
+    /// `--snapshot-toast <dir>` renders the folder fallback in both languages.
+    static func runToast(into dir: String) -> Bool {
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        let forced = Loc.forced
+        defer { Loc.forced = forced }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            ok = host(JumpToastView(canResume: true, onCopy: {}).environmentObject(AppSettings.shared),
+                      to: url.appendingPathComponent("fallback-\(language.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     static func run(into dir: String) {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suite) else { return }
