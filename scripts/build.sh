@@ -45,6 +45,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>AgentNotchSourceDirty</key><$SOURCE_DIRTY/>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Agent Notch selects the terminal tab for the session you open.</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 Nikita Udalov. MIT License.</string>

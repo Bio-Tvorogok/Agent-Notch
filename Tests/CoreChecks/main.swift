@@ -177,6 +177,11 @@ run("usageCachedSpend") { try usage.cachedSpend() }
 run("usageSpendCopiesAndSynthetic") { try usage.spendCopiesAndSynthetic() }
 // NOTCH-jump
 let j = JumpChecks()
+run("jumpPreferTerminalProcess") { try j.preferTerminalProcess() }
+run("jumpSkipAppServer") { j.skipAppServer() }
+run("jumpResumeControls") { try j.resumeControls() }
+run("jumpTerminalSelectionFallback") { j.terminalSelectionFallback() }
+run("jumpPreciseCodexAndResume") { try j.preciseCodexAndResume() }
 run("jumpClaudeCLI") { try j.claudeCLI() }
 run("jumpClaudeDesktop") { try j.claudeDesktop() }
 run("jumpCodexCLI") { try j.codex("codex_exec", desktop: false) }

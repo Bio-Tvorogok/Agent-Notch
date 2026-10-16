@@ -6,6 +6,47 @@ import NotchCore
 /// Lets a check see the real SwiftUI output without screen-recording permission.
 @MainActor
 enum Snapshot {
+    /// `--snapshot-toast <dir>` renders the folder fallback in both languages.
+    static func runToast(into dir: String) -> Bool {
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        let suite = "AgentsNotch.toastSnapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        let settings = AppSettings(defaults: defaults)
+        let forced = Loc.forced
+        defer { Loc.forced = forced; defaults.removePersistentDomain(forName: suite) }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            for terminalOrigin in [true, false] {
+                let name = terminalOrigin ? "fallback" : "app-fallback"
+                ok = host(JumpToastView(canResume: true, terminalOrigin: terminalOrigin, onCopy: {}).environmentObject(settings),
+                          to: url.appendingPathComponent("\(name)-\(language.rawValue).png")) && ok
+            }
+            let themes = ThemeID.allCases.map { id in
+                let themed = AppSettings(defaults: defaults)
+                themed.theme = id
+                return themed
+            }
+            let grid = HStack(alignment: .top, spacing: 16) {
+                ForEach(0..<3) { column in
+                    VStack(spacing: 16) {
+                        ForEach(themes.indices.filter { $0 % 3 == column }, id: \.self) { index in
+                            let themeSettings = themes[index]
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(themeSettings.theme.rawValue).foregroundStyle(.white)
+                                JumpToastView(canResume: true, onCopy: {}).environmentObject(themeSettings)
+                            }
+                        }
+                    }
+                }
+            }.padding(16).background(Color(white: 0.3))
+            ok = host(grid, to: url.appendingPathComponent("themes-\(language.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     static func run(into dir: String) {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
         guard let defaults = UserDefaults(suiteName: suite) else { return }
