@@ -341,17 +341,23 @@ private struct TreeLine: View {
 
 struct Pill: ButtonStyle {
     let primary: Bool
-    func makeBody(configuration: Configuration) -> some View { PillBody(configuration: configuration, primary: primary) }
+    var bordered = false
+    var hovered = false
+    func makeBody(configuration: Configuration) -> some View {
+        PillBody(configuration: configuration, primary: primary, bordered: bordered, hovered: hovered)
+    }
 }
 
 private struct PillBody: View {
     let configuration: ButtonStyleConfiguration
     let primary: Bool
+    let bordered: Bool
+    let hovered: Bool
     @Environment(\.theme) private var theme
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: theme.pillRadius, style: theme.cornerStyle)
         let pressed = configuration.isPressed
-        if theme.bracketPills {
+        if theme.bracketPills && !bordered {
             // A terminal menu item: brackets, inverted when it is the default choice.
             HStack(spacing: 0) { Text("[ "); configuration.label; Text(" ]") }
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -373,12 +379,12 @@ private struct PillBody: View {
                 if primary, let colors = theme.primaryGradient {
                     shape.fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
                 } else {
-                    shape.fill(primary ? Ink.primary : Ink.pill)
+                    shape.fill(primary ? Ink.primary : hovered ? Ink.optionOn : Ink.pill)
                 }
             }
             .overlay {
                 if theme.hardShadow { shape.strokeBorder(Color.black, lineWidth: 1.5) }
-                else if !primary { shape.strokeBorder(Ink.pillStroke, lineWidth: theme.id == .synthwave || theme.id == .phosphor || theme.id == .blueprint ? 1 : 0.5) }
+                else if !primary { shape.strokeBorder(bordered ? AnyShapeStyle(Ink.pillText.opacity(hovered ? 0.65 : 0.35)) : AnyShapeStyle(Ink.pillStroke), lineWidth: theme.id == .synthwave || theme.id == .phosphor || theme.id == .blueprint ? 1 : 0.5) }
             }
             .foregroundStyle(primary ? Ink.primaryText : Ink.pillText)
             // Neo-brutal buttons sit on a hard black shadow and sink into it when pressed.

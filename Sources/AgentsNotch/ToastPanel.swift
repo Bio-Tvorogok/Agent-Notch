@@ -108,7 +108,10 @@ final class JumpToast {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(command, forType: .string)
             }
-            self?.panel.orderOut(nil)
+            self?.timer?.invalidate()
+            self?.timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.panel.orderOut(nil) }
+            }
         }.environmentObject(settings))
         let size = host.fittingSize
         panel.contentView = host
@@ -127,6 +130,8 @@ struct JumpToastView: View {
     let canResume: Bool
     var terminalOrigin = true
     let onCopy: () -> Void
+    @State private var copied = false
+    @State private var hovered = false
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
@@ -137,8 +142,21 @@ struct JumpToastView: View {
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(Ink.strong)
                 .fixedSize(horizontal: false, vertical: true)
             if canResume {
-                Button(Loc.t("Copy resume command", "Скопировать команду продолжения"), action: onCopy)
-                    .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(Ink.askText)
+                Button {
+                    guard !copied else { return }
+                    copied = true
+                    onCopy()
+                } label: {
+                    Text(copied ? Loc.t("Copied", "Скопировано") : Loc.t("Copy resume command", "Скопировать команду"))
+                }
+                .buttonStyle(Pill(primary: false, bordered: true, hovered: hovered))
+                .onHover { hovered = $0 }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active: NSCursor.pointingHand.set()
+                    case .ended: NSCursor.arrow.set()
+                    }
+                }
             }
         }
         .frame(width: 300, alignment: .leading)
