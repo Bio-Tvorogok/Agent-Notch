@@ -11,11 +11,11 @@ enum Snapshot {
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
         catch { return false }
-        let suite = "AgentsNotch.toastSnapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
         let settings = AppSettings(defaults: defaults)
         let forced = Loc.forced
-        defer { Loc.forced = forced; defaults.removePersistentDomain(forName: suite) }
+        defer { Loc.forced = forced; scratch.remove() }
         var ok = true
         for language in [Loc.Language.en, .ru] {
             Loc.forced = language
@@ -48,9 +48,9 @@ enum Snapshot {
     }
 
     static func run(into dir: String) {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        guard let scratch = ScratchDefaults("snapshot") else { return }
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         let settings = AppSettings(defaults: defaults)
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -69,10 +69,10 @@ enum Snapshot {
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
         catch { return false }
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
         let forced = Loc.forced
-        defer { defaults.removePersistentDomain(forName: suite); Loc.forced = forced }
+        defer { scratch.remove(); Loc.forced = forced }
         let settings = AppSettings(defaults: defaults)
         settings.setRowPart(.activity, shown: true)
         let fixture = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -98,10 +98,10 @@ enum Snapshot {
 
     /// `--snapshot-delivery <dir>`: the same permission before countdown, near timeout, in flight, and after failure.
     static func runDelivery(into dir: String) -> Bool {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
         let forced = Loc.forced
-        defer { defaults.removePersistentDomain(forName: suite); Loc.forced = forced }
+        defer { scratch.remove(); Loc.forced = forced }
         let settings = AppSettings(defaults: defaults)
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
@@ -131,9 +131,9 @@ enum Snapshot {
 
     /// `--snapshot-live <file.png>`: scans this Mac's session logs once and renders what it found.
     static func runLive(to file: String) async {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        guard let scratch = ScratchDefaults("snapshot") else { return }
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         let settings = AppSettings(defaults: defaults)
         // The cost is off in the default preset; the live shot shows it so a check can see real amounts.
         settings.setRowPart(.cost, shown: true)
@@ -151,9 +151,9 @@ enum Snapshot {
 
     /// A `.png` path renders «Внешний вид»; a folder gets every section plus «Внешний вид» under each preset and «Своё».
     static func runSettings(to path: String) -> Bool {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         let libraryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("notch-snapshot-library-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: libraryDirectory) }
         let settings = AppSettings(defaults: defaults, soundLibraryDirectory: libraryDirectory)
@@ -254,9 +254,9 @@ enum Snapshot {
 
     /// `--snapshot-themes <dir>`: per theme, the list with requests, the list with projects and the card, over one wallpaper.
     static func runThemes(into dir: String) -> Bool {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         let settings = AppSettings(defaults: defaults)
         let url = URL(fileURLWithPath: dir, isDirectory: true)
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -293,9 +293,9 @@ enum Snapshot {
     }
 
     static func runCard(to file: String, tab: CardTab = .done, log: String? = nil) -> Bool {
-        let suite = "AgentsNotch.snapshot." + UUID().uuidString
-        guard let defaults = UserDefaults(suiteName: suite) else { return false }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         let detail = log.map { DetailReader.read(path: $0, vendor: $0.contains("/.codex/") ? .codex : .claude) } ?? CardFixture.detail
         let settings = AppSettings(defaults: defaults)
         if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {

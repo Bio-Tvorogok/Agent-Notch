@@ -224,6 +224,7 @@ run("settingsOrdering") { settings.ordering() }
 run("settingsCodable") { try settings.roundTrip() }
 run("settingsLimits") { settings.limits() }
 run("settingsStorage") { try settings.storage() }
+run("scratchDefaults") { try settings.scratchDefaults() }
 run("settingsShortcuts") { try settings.shortcuts() }
 
 // NOTCH-ui-hooks

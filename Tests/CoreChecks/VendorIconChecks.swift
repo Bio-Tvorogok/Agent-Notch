@@ -2,9 +2,9 @@ import Foundation
 
 struct VendorIconChecks {
     func preferences() throws {
-        let suite = "AN-icons-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let scratch = try XCTUnwrap(ScratchDefaults("icon-checks"))
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         XCTAssertEqual(SettingsStorage.read(VendorIconPrefs.self, key: "vendorIcons", default: VendorIconPrefs(), in: defaults), VendorIconPrefs())
         var prefs = VendorIconPrefs()
         prefs[.codex] = .symbol("bolt.fill")

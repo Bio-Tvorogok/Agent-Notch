@@ -8,9 +8,9 @@ struct SoundChecks {
         prefs[.agentFinished] = "Hero"
         prefs[.permissionRequested] = ""
         prefs.volume = 0.35
-        let suite = "NOTCH-sounds-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let scratch = try XCTUnwrap(ScratchDefaults("sound-checks"))
+        let defaults = scratch.defaults
+        defer { scratch.remove() }
         SettingsStorage.write(prefs, key: "soundEvents", in: defaults)
         let restored = SettingsStorage.read(SoundPrefs.self, key: "soundEvents", default: SoundPrefs(), in: defaults)
         XCTAssertEqual(restored[.agentFinished], "Hero")
