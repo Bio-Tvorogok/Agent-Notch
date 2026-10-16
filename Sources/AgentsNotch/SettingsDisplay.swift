@@ -16,6 +16,11 @@ struct SettingsAppearance: View {
             Section(SettingsText.theme) {
                 SettingsThemePicker(settings: settings)
             }
+            Section(SettingsText.vendorIcons) {
+                SettingsVendorIconRow(settings: settings, vendor: .claude)
+                SettingsVendorIconRow(settings: settings, vendor: .codex)
+                Text(SettingsText.vendorIconHelp).font(.caption).foregroundStyle(.secondary)
+            }
             Section(SettingsText.marks) {
                 HStack(spacing: 10) {
                     ForEach([MarkStyle.dots, .logos, .logosMono], id: \.self) { style in

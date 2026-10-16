@@ -9,6 +9,7 @@ struct StatusMark: View {
     let isLight: Bool
     var style: MarkStyle = .dots
     var size: CGFloat = 6
+    var symbol: String? = nil
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -45,22 +46,29 @@ struct StatusMark: View {
 
     private var drawing: some View {
         ZStack(alignment: .bottomTrailing) {
-            switch style {
-            case .dots:
-                if vendor == .claude { mark(Circle()) }
-                else { mark(RoundedRectangle(cornerRadius: size * 0.22)) }
-            case .logos:
-                if let icon = appIcon { Image(nsImage: icon).resizable().interpolation(.high).opacity(isLight ? 0.55 : 1) }
-                else { vendorLogo }
-            case .logosMono: vendorLogo
-            case .letters:
-                mark(Circle())
-                Text(vendor == .claude ? "C" : "X")
-                    .font(.system(size: size * 0.62, weight: .bold, design: .rounded))
-                    .foregroundStyle(isLight ? tint : Color.black)
-                    .frame(width: size, height: size)
+            if let symbol {
+                Image(systemName: symbol)
+                    .resizable().scaledToFit()
+                    .fontWeight(isLight ? .regular : .semibold)
+                    .foregroundStyle(state.color).opacity(isLight ? 0.55 : 1)
+            } else {
+                switch style {
+                case .dots:
+                    if vendor == .claude { mark(Circle()) }
+                    else { mark(RoundedRectangle(cornerRadius: size * 0.22)) }
+                case .logos:
+                    if let icon = appIcon { Image(nsImage: icon).resizable().interpolation(.high).opacity(isLight ? 0.55 : 1) }
+                    else { vendorLogo }
+                case .logosMono: vendorLogo
+                case .letters:
+                    mark(Circle())
+                    Text(vendor == .claude ? "C" : "X")
+                        .font(.system(size: size * 0.62, weight: .bold, design: .rounded))
+                        .foregroundStyle(isLight ? tint : Color.black)
+                        .frame(width: size, height: size)
+                }
             }
-            if style == .logos {
+            if symbol == nil && style == .logos {
                 let dot = max(3, size * 0.36)
                 Circle().fill(state.color)
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.85), lineWidth: max(0.8, dot * 0.22)))
@@ -84,20 +92,32 @@ struct AgentStatusMark: View {
     let agent: Agent
     var small = false
     @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        ResolvedVendorMark(vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
+                           size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)
+    }
+}
+
+/// One resolution path for wings, rows, cards, toasts and summary counts.
+struct ResolvedVendorMark: View {
+    let vendor: Vendor
+    let state: AgentState
+    let isLight: Bool
+    let size: CGFloat
+    var onDark = false
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.theme) private var theme
 
     var body: some View {
-        if settings.usesThemeMarks {
-            ThemeMark(theme: theme, vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
-                      size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)
-        } else {
-            plain
+        switch settings.vendorIcons[vendor].resolve(themeMarks: settings.usesThemeMarks, style: settings.appearance.markStyle) {
+        case .theme:
+            ThemeMark(theme: onDark ? settings.currentTheme : theme, vendor: vendor, state: state,
+                      isLight: isLight, size: size, onDark: onDark)
+        case .builtIn(let style):
+            StatusMark(vendor: vendor, state: state, isLight: isLight, style: style, size: size)
+        case .symbol(let name):
+            StatusMark(vendor: vendor, state: state, isLight: isLight, size: size, symbol: name)
         }
-    }
-
-    private var plain: some View {
-        StatusMark(vendor: agent.vendor, state: agent.state, isLight: agent.isLight,
-                   style: settings.appearance.markStyle,
-                   size: small ? settings.wingDisplay.childSize : settings.appearance.markSize.points)
     }
 }
