@@ -47,7 +47,7 @@ struct RowParts: View {
         case .worktree:
             if let worktree = agent.worktree, !worktree.isEmpty { metadata(RowPartsText.worktree(worktree), width: 110) }
         case .activity:
-            if agent.state == .working, let activity = agent.activity, !activity.isEmpty {
+            if (agent.state == .working || agent.interrupted), let activity = agent.activity, !activity.isEmpty {
                 Text(activity).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(dim)
                     .lineLimit(1).truncationMode(.tail)
             }

@@ -53,7 +53,7 @@ struct SessionLogFixtureChecks {
             let agents = LogScanner(home: root, execRuns: { [] }).poll(now: now)!
             XCTAssertEqual(agents.count, 3)
             let main = try XCTUnwrap(agents.first { $0.id == "parent" })
-            XCTAssertEqual(main.state, .done)
+            XCTAssertEqual(main.state, .working)
             XCTAssertEqual(main.model, "claude-sonnet-4-6")
             XCTAssertEqual(main.title, "fixture/readers")
             XCTAssertEqual(main.chatId, "parent")

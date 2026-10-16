@@ -32,10 +32,26 @@ public struct HookState: Sendable, Equatable {
         var at: Double
     }
 
+    private struct Turn: Sendable, Equatable {
+        var at: Double
+        var ended: Bool
+        var interrupted: Bool
+    }
+    private var turns: [String: Turn] = [:]
+
     public init() {}
 
     /// Takes one event. Returns the tickets that went stale: the agent moved on without our answer, so they get `.pass`.
     public mutating func receive(_ e: HookEvent, ticket: Int?, now: Double) -> [Int] {
+        // Some SubagentStop payloads name only the parent session. They say nothing about its turn.
+        if e.name == "SubagentStop", e.agentId == nil { return [] }
+        if ["Stop", "SubagentStop", "SessionEnd", "UserPromptSubmit"].contains(e.name) {
+            let interrupted = e.name == "SessionEnd"
+                && (turns[e.agentKey]?.ended != true || turns[e.agentKey]?.interrupted == true)
+            turns[e.agentKey] = Turn(at: now, ended: e.name != "UserPromptSubmit", interrupted: interrupted)
+        } else if ["PreToolUse", "PostToolUse"].contains(e.name) {
+            turns[e.agentKey] = nil
+        }
         if let ticket {
             let stale = pending.filter { $0.event.agentKey == e.agentKey && $0.delivery == .notDelivered }
             pending.removeAll { p in stale.contains { $0.ticket == p.ticket } }
@@ -104,17 +120,27 @@ public struct HookState: Sendable, Equatable {
 
     /// The agents with hook knowledge laid over: open requests and shown prompts make them wait.
     /// A request from a session the logs do not show yet becomes its own row.
-    public func apply(to agents: [Agent], now: Double, project: (String?) -> String) -> [Agent] {
+    public func apply(to agents: [Agent], now: Double, finishedRetention: Double = SessionLog.keepDone, project: (String?) -> String) -> [Agent] {
         let ids = Set(agents.map(\.id))
         let live = pending.filter { !expired($0, agents: ids, now: now) }
         var out = agents.map { a -> Agent in
             var a = a
+            if let turn = turns[a.id], a.lastAt <= turn.at {
+                a.interrupted = turn.ended && (a.interrupted || (turn.interrupted && !a.turnEnded))
+                a.turnEnded = turn.ended && !a.interrupted
+                a.state = turn.ended ? .done : .working
+                a.ask = nil
+                a.hasPendingAsk = false
+                a.activity = a.interrupted ? SessionText.interrupted : nil
+            }
             if let p = live.first(where: { $0.event.agentKey == a.id }) {
                 a.state = p.delivery == .notDelivered ? .error : .waiting
                 a.ask = p.event.askLine
+                a.hasPendingAsk = true
             } else if let s = shown[a.id], now - s.at < 3600 {
                 a.state = .waiting
                 a.ask = s.text
+                a.hasPendingAsk = true
             }
             return a
         }
@@ -127,6 +153,9 @@ public struct HookState: Sendable, Equatable {
                              project: project(e.cwd), parentId: e.agentId == nil ? nil : e.sessionId,
                              ask: e.askLine, startedAt: p.at, cwd: e.cwd, chatId: e.sessionId))
         }
-        return out
+        return Tree.withHelpers(out).filter { a in
+            guard a.state == .done, let turn = turns[a.id], turn.ended, a.lastAt <= turn.at else { return true }
+            return now - turn.at < finishedRetention
+        }
     }
 }

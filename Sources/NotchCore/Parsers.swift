@@ -39,6 +39,7 @@ enum ClaudeLine {
             if let id = block["id"] as? String { s.pendingTools[id] = name }
             if let what = asking[name] { s.ask = what } else { s.activity = ToolText.summary(name, block["input"]) }
         }
+        s.interrupted = false
         s.turnEnded = handedBack || msg["stop_reason"] as? String == "end_turn"
         if handedBack { s.activity = nil }
     }
@@ -48,6 +49,7 @@ enum ClaudeLine {
         let content = (r["message"] as? Rec)?["content"]
         if content is String {
             s.turnEnded = false
+            s.interrupted = false
             return
         }
         for block in content as? [Rec] ?? [] {
@@ -56,6 +58,7 @@ enum ClaudeLine {
                 if let name, asking[name] != nil { s.ask = nil }
             } else if block["type"] as? String == "text" {
                 s.turnEnded = false
+                s.interrupted = false
             }
         }
     }
@@ -122,8 +125,10 @@ enum CodexLine {
         switch t {
         case "task_started", "user_message":
             s.turnEnded = false
+            s.interrupted = false
             s.turnStartedAt = at ?? s.turnStartedAt
         case "task_complete", "turn_aborted":
+            s.interrupted = t == "turn_aborted"
             s.turnEnded = true
             s.activity = nil
         case "error", "stream_error": s.errorStreak += 1

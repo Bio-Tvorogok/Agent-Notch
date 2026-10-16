@@ -336,5 +336,24 @@ run("configCodexDiscovery") { try configRoots.discovery(.codex) }
 run("configClaudeProjects") { try configRoots.claudeProjects() }
 run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
 
+let honestDone = HonestDoneChecks()
+run("honestSilence") { try honestDone.silence() }
+run("honestInterrupted") { try honestDone.interrupted() }
+run("honestHelpers") {
+    let forced = Loc.forced
+    Loc.forced = .en
+    defer { Loc.forced = forced }
+    try honestDone.helpers()
+}
+run("honestNestedHelpers") { honestDone.nestedHelpers() }
+run("honestAborted") { honestDone.aborted() }
+run("honestHookEnds") { try honestDone.hookEnds() }
+run("honestRetainedFailedExec") { try honestDone.retainedFailedExec() }
+run("honestRetainedParent") { try honestDone.retainedParent() }
+run("honestColdCodexParent") { try honestDone.coldCodexParent() }
+run("honestHookRetention") { honestDone.hookRetention() }
+run("honestHelperHookCount") { honestDone.helperHookCount() }
+run("honestToast") { try honestDone.toast() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

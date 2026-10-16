@@ -92,7 +92,8 @@ struct ExecIdentityChecks {
         running = []
         let ended = scanner.poll(now: now.addingTimeInterval(12))!
         XCTAssertEqual(ended.map(\.state), [.done], "a process exit ends the run even without a final rollout event")
-        XCTAssertEqual(sounds.update(ended), [.agentFinished])
+        XCTAssertEqual(ended.first?.activity, "прервано")
+        XCTAssertEqual(sounds.update(ended), [], "exit without an end of turn is not success")
         XCTAssertEqual(sounds.update(scanner.poll(now: now.addingTimeInterval(18))!), [])
         let handle = try FileHandle(forWritingTo: session)
         try handle.seekToEnd()

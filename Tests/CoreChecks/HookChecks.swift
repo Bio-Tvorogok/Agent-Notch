@@ -145,7 +145,7 @@ struct HookTests {
     }
 
     func socketPath() -> String {
-        "/tmp/notch-\(UUID().uuidString.prefix(8)).sock"
+        "/tmp/an06-t7-notch-\(UUID().uuidString.prefix(8)).sock"
     }
 
     func testPermissionWaitsForTheClickAndNothingWithoutTheApp() throws {

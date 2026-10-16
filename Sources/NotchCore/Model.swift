@@ -45,6 +45,12 @@ public struct Agent: Identifiable, Equatable, Sendable {
     public var logPath: String?
     public var branch: String?
     public var worktree: String?
+    public var lastAt: Double = 0
+    public var turnEnded = false
+    public var interrupted = false
+    /// A real question or approval, rather than the process waiting for its next prompt.
+    public var hasPendingAsk = false
+    public var helperCount = 0
 
     /// haiku, luna and *-mini models draw as rings, the rest as solid marks.
     public var isLight: Bool {
@@ -68,6 +74,7 @@ public struct Agent: Identifiable, Equatable, Sendable {
         self.id = id; self.vendor = vendor; self.title = title; self.model = model; self.effort = effort
         self.state = state; self.project = project; self.parentId = parentId; self.ask = ask; self.startedAt = startedAt
         self.branch = branch; self.worktree = worktree
+        self.hasPendingAsk = ask != nil
         self.cwd = cwd; self.chatId = chatId; self.activity = activity; self.logPath = logPath
     }
 }

@@ -5,7 +5,7 @@ struct DeliveryFixChecks {
     // Run the real helper against a trusted app-shaped peer, with stdout either usable or broken.
     func helperStdout(_ mode: String) throws {
         let (dir, helper, _) = try SafeUninstallChecks.tools.get()
-        let root = URL(fileURLWithPath: "/tmp/nd-" + UUID().uuidString.prefix(8))
+        let root = URL(fileURLWithPath: "/tmp/an06-t7-nd-" + UUID().uuidString.prefix(8))
         defer { try? FileManager.default.removeItem(at: root) }
         let app = root.appendingPathComponent("Test.app/Contents/MacOS/AgentsNotch")
         try FileManager.default.createDirectory(at: app.deletingLastPathComponent(), withIntermediateDirectories: true)

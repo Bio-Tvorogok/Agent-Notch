@@ -1,0 +1,1 @@
+{"type": "assistant", "timestamp": "2026-10-16T10:00:00Z", "message": {"content": [{"type": "tool_use", "id": "h1", "name": "Agent", "input": {"run_in_background": true, "description": "one"}}, {"type": "tool_use", "id": "h2", "name": "Task", "input": {"run_in_background": true, "description": "two"}}], "stop_reason": "end_turn"}}

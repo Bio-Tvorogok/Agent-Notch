@@ -52,7 +52,7 @@ final class FinishToast {
     }
 }
 
-private struct ToastView: View {
+struct ToastView: View {
     let notice: FinishNotice
     let onOpen: () -> Void
     @EnvironmentObject private var settings: AppSettings
@@ -63,7 +63,7 @@ private struct ToastView: View {
                 AgentStatusMark(agent: notice.agent)
                 Text(notice.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Ink.strong).lineLimit(1)
             }
-            Text(notice.line).font(.system(size: 11)).foregroundStyle(Ink.askText).lineLimit(1)
+            Text(notice.line).font(.system(size: 11)).foregroundStyle(Ink.askText).lineLimit(2)
             if let p = notice.preview {
                 Text(p).font(.system(size: 11)).foregroundStyle(dim).lineLimit(2)
             }
