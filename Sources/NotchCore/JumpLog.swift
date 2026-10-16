@@ -16,7 +16,7 @@ enum JumpLog {
                 buffer.removeSubrange(...end)
                 if let record = try? JSONSerialization.jsonObject(with: line) as? [String: Any] {
                     if vendor == .codex {
-                        return record["type"] as? String == "session_meta" ? record["payload"] as? [String: Any] ?? [:] : [:]
+                        return codexMetadata(record)
                     }
                     for key in ["entrypoint", "cwd", "sessionId"] {
                         if let value = record[key] as? String { result[key] = value }
@@ -28,11 +28,17 @@ enum JumpLog {
         }
         if let record = try? JSONSerialization.jsonObject(with: buffer) as? [String: Any] {
             if vendor == .codex {
-                return record["type"] as? String == "session_meta" ? record["payload"] as? [String: Any] ?? [:] : [:]
+                return codexMetadata(record)
             }
             return record
         }
         return result
+    }
+
+    private static func codexMetadata(_ record: [String: Any]) -> [String: Any] {
+        if record["type"] as? String == "session_meta" { return record["payload"] as? [String: Any] ?? [:] }
+        if record["type"] as? String == "thread.started", let id = record["thread_id"] as? String { return ["id": id, "exec_stream": true] }
+        return [:]
     }
 
     static func find(id: String, vendor: Vendor, home: URL, near: URL?) -> URL? {

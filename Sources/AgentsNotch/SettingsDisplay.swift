@@ -3,6 +3,7 @@ import NotchCore
 
 struct SettingsAppearance: View {
     @ObservedObject var settings: AppSettings
+    @Environment(\.vendorIconSearchQuery) private var vendorIconSearchQuery
     @State private var rowOrder = false
     @State private var cardOrder = false
     private let rowSwitches: [RowPart] = [.model, .effort, .activity, .branch, .runningTime, .context, .cost]
@@ -31,6 +32,11 @@ struct SettingsAppearance: View {
                 Picker(SettingsText.markSize, selection: $settings.appearance.markSize) {
                     ForEach(MarkSize.allCases, id: \.self) { Text(SettingsText.name($0.rawValue)).tag($0) }
                 }.pickerStyle(.segmented)
+            }
+            Section(SettingsText.vendorIcons) {
+                SettingsVendorIconRow(settings: settings, vendor: .claude)
+                SettingsVendorIconRow(settings: settings, vendor: .codex, initialQuery: vendorIconSearchQuery)
+                Text(SettingsText.vendorIconHelp).font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 ForEach(rowSwitches, id: \.self) { part in

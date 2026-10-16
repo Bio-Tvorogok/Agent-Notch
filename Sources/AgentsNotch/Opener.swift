@@ -5,19 +5,17 @@ import NotchCore
 enum Opener {
     private static let queue = DispatchQueue(label: "agents-notch.jump", qos: .userInitiated)
 
-    static func open(agent: Agent, home: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        queue.async { open(JumpResolver.resolve(agent: agent, home: home)) }
-    }
-
-    static func open(_ targets: [JumpTarget]) {
-        if !Thread.isMainThread {
-            DispatchQueue.main.async { open(targets) }
-            return
+    static func open(agent: Agent, home: URL = FileManager.default.homeDirectoryForCurrentUser,
+                     onFolder: @escaping (String?, Bool) -> Void = { _, _ in }) {
+        queue.async {
+            let plan = JumpResolver.plan(agent: agent, home: home)
+            DispatchQueue.main.async {
+                attempt(ArraySlice(plan.targets), resume: plan.resumeCommand, onFolder: { onFolder($0, plan.terminalOrigin) })
+            }
         }
-        attempt(ArraySlice(targets))
     }
 
-    private static func attempt(_ targets: ArraySlice<JumpTarget>) {
+    private static func attempt(_ targets: ArraySlice<JumpTarget>, resume: String?, onFolder: @escaping (String?) -> Void) {
         guard let target = targets.first else {
             MainActor.assumeIsolated { SoundPlayer.shared.play(.operationFailed) }
             return
@@ -25,31 +23,33 @@ enum Opener {
         let rest = targets.dropFirst()
         switch target {
         case .claudeApp(let url), .codexApp(let url):
-            if !NSWorkspace.shared.open(url) { attempt(rest) }
+            if !NSWorkspace.shared.open(url) { attempt(rest, resume: resume, onFolder: onFolder) }
         case .terminal(let pid, _):
-            // ps and AppleScript block for a while: do them off the main thread, then come back for the activation.
             queue.async {
                 let plan = ownerPlan(pid)
+                var exact: Bool?
+                if let plan, let bundle = plan.app.bundleIdentifier,
+                   ["com.apple.Terminal", "com.googlecode.iterm2"].contains(bundle) {
+                    exact = plan.tty.map { selectTab(bundle: bundle, tty: $0) } ?? false
+                }
+                let selected = exact
                 DispatchQueue.main.async {
-                    if let plan, plan.app.activate(options: []) {
-                        if let tty = plan.tty, let bundle = plan.app.bundleIdentifier { queue.async { selectTab(bundle: bundle, tty: tty) } }
-                    } else { attempt(rest) }
+                    if JumpTerminalSelection.succeeded(hasOwner: plan != nil, selected: selected,
+                        activate: { plan?.app.activate(options: []) ?? false }) { return }
+                    attempt(rest, resume: resume, onFolder: onFolder)
                 }
             }
         case .editor(let bundleId, let cwd):
             guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
-                attempt(rest); return
+                attempt(rest, resume: resume, onFolder: onFolder); return
             }
             let folders = cwd.map { [URL(fileURLWithPath: $0, isDirectory: true)] } ?? []
             NSWorkspace.shared.open(folders, withApplicationAt: app, configuration: .init()) { _, error in
-                if error != nil { DispatchQueue.main.async { attempt(rest) } }
+                if error != nil { DispatchQueue.main.async { attempt(rest, resume: resume, onFolder: onFolder) } }
             }
         case .folder(let path):
-            let folder = URL(fileURLWithPath: path, isDirectory: true)
-            if !NSWorkspace.shared.open(folder) {
-                if !rest.isEmpty { attempt(rest) }
-                else { NSWorkspace.shared.open(FileManager.default.homeDirectoryForCurrentUser) }
-            }
+            if NSWorkspace.shared.open(URL(fileURLWithPath: path, isDirectory: true)) { onFolder(resume) }
+            else { attempt(rest, resume: resume, onFolder: onFolder) }
         }
     }
 
@@ -102,9 +102,9 @@ enum Opener {
         return table
     }
 
-    private static func selectTab(bundle: String, tty: String) {
+    private static func selectTab(bundle: String, tty: String) -> Bool {
         // Only ps's device name enters AppleScript; reject anything that could be source text.
-        guard tty.range(of: "^[A-Za-z0-9/]+$", options: .regularExpression) != nil else { return }
+        guard tty.range(of: "^[A-Za-z0-9/]+$", options: .regularExpression) != nil else { return false }
         let device = tty.hasPrefix("/dev/") ? tty : "/dev/" + tty
         let source: String
         switch bundle {
@@ -115,11 +115,14 @@ enum Opener {
                     repeat with t in tabs of w
                         if tty of t is "\(device)" then
                             set selected tab of w to t
+                            set miniaturized of w to false
                             set index of w to 1
-                            return
+                            activate
+                            return true
                         end if
                     end repeat
                 end repeat
+                return false
             end tell
             """
         case "com.googlecode.iterm2":
@@ -129,19 +132,23 @@ enum Opener {
                     repeat with t in tabs of w
                         repeat with s in sessions of t
                             if tty of s is "\(device)" then
+                                set miniaturized of w to false
+                                select w
                                 select t
                                 select s
-                                set index of w to 1
-                                return
+                                activate
+                                return true
                             end if
                         end repeat
                     end repeat
                 end repeat
+                return false
             end tell
             """
-        default: return
+        default: return false
         }
         var error: NSDictionary?
-        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+        return error == nil && result?.booleanValue == true
     }
 }

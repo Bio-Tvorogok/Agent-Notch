@@ -14,6 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--snapshot-toast"), i + 1 < args.count {
+            exit(Snapshot.runToast(into: args[i + 1]) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot-delivery"), i + 1 < args.count {
             exit(Snapshot.runDelivery(into: args[i + 1]) ? 0 : 1)
         }

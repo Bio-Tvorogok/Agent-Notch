@@ -190,6 +190,11 @@ run("usageCachedSpend") { try usage.cachedSpend() }
 run("usageSpendCopiesAndSynthetic") { try usage.spendCopiesAndSynthetic() }
 // NOTCH-jump
 let j = JumpChecks()
+run("jumpPreferTerminalProcess") { try j.preferTerminalProcess() }
+run("jumpSkipAppServer") { j.skipAppServer() }
+run("jumpResumeControls") { try j.resumeControls() }
+run("jumpTerminalSelectionFallback") { j.terminalSelectionFallback() }
+run("jumpPreciseCodexAndResume") { try j.preciseCodexAndResume() }
 run("jumpClaudeCLI") { try j.claudeCLI() }
 run("jumpClaudeDesktop") { try j.claudeDesktop() }
 run("jumpCodexCLI") { try j.codex("codex_exec", desktop: false) }
@@ -348,6 +353,9 @@ run("configClaudeDiscovery") { try configRoots.discovery(.claude) }
 run("configCodexDiscovery") { try configRoots.discovery(.codex) }
 run("configClaudeProjects") { try configRoots.claudeProjects() }
 run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
+
+run("vendorIconPreferences") { try VendorIconChecks().preferences() }
+run("vendorIconResolution") { VendorIconChecks().resolution() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
