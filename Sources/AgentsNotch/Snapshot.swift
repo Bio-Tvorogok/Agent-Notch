@@ -144,13 +144,20 @@ enum Snapshot {
                 .formStyle(.grouped).environment(\.colorScheme, .light),
                 size: NSSize(width: 570, height: 850), to: URL(fileURLWithPath: path))
         }
+        if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] != nil {
+            settings.theme = .paper
+            if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
+                settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            }
+        }
         let prompts = promptFixture()
         let skills = skillFixture()
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
-            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light),
+            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light)
+                .environment(\.vendorIconSearchQuery, ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" ? "bolt" : ""),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
         }
-        guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path)) }
+        guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path), height: ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == nil ? SettingsView.size.height : 1800) }
         let dir = URL(fileURLWithPath: path, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         var ok = true
@@ -240,8 +247,22 @@ enum Snapshot {
         guard let defaults = UserDefaults(suiteName: suite) else { return false }
         defer { defaults.removePersistentDomain(forName: suite) }
         let detail = log.map { DetailReader.read(path: $0, vendor: $0.contains("/.codex/") ? .codex : .claude) } ?? CardFixture.detail
+        let settings = AppSettings(defaults: defaults)
+        if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
+            settings.theme = .paper
+            settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            let store = Store(settings: settings)
+            store.useFixture([CardFixture.agent])
+            return host(VStack(spacing: 12) {
+                WingView(layout: store.layout).frame(height: 30).background(Color.black)
+                CardView(agent: CardFixture.agent, detail: detail,
+                         context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
+                         cost: SessionCost(tokens: 1, usd: 1.37), tab: tab)
+            }.environmentObject(settings).environment(\.theme, settings.currentTheme),
+            size: NSSize(width: 340, height: 530), to: URL(fileURLWithPath: file))
+        }
         return host(CardView(agent: CardFixture.agent, detail: detail, context: ContextUsage(usedTokens: 84_000, windowTokens: 200_000),
-                      cost: SessionCost(tokens: 1, usd: 1.37), tab: tab).environmentObject(AppSettings(defaults: defaults)),
+                      cost: SessionCost(tokens: 1, usd: 1.37), tab: tab).environmentObject(settings),
              size: NSSize(width: 340, height: 480), to: URL(fileURLWithPath: file))
     }
 

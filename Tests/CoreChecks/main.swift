@@ -341,5 +341,8 @@ run("configCodexDiscovery") { try configRoots.discovery(.codex) }
 run("configClaudeProjects") { try configRoots.claudeProjects() }
 run("configSkillsLiveAndRules") { try configRoots.skillsLiveAndRules() }
 
+run("vendorIconPreferences") { try VendorIconChecks().preferences() }
+run("vendorIconResolution") { VendorIconChecks().resolution() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
