@@ -108,6 +108,7 @@ enum ExecLine {
 
 /// Reading other processes of the same user: pid list, name, argv and open files.
 enum Proc {
+    static let arguments = ProcessArgumentsCache()
     /// Rollout thread → inherited parent ids, including detached exec runs and interactive sessions.
     static func rolloutParents(in root: URL) -> [String: [String]] {
         var out: [String: [String]] = [:]
@@ -152,7 +153,9 @@ enum Proc {
         guard n > 0 else { return [] }
         var pids = [Int32](repeating: 0, count: Int(n) + 64)
         let got = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<Int32>.size))
-        return Array(pids.prefix(Int(max(got, 0)))).filter { $0 > 0 }
+        let found = Array(pids.prefix(Int(max(got, 0)))).filter { $0 > 0 }
+        arguments.retain(pids: Set(found))
+        return found
     }
 
     static func name(_ pid: Int32) -> String {
@@ -162,7 +165,18 @@ enum Proc {
     }
 
     /// argv and the environment from KERN_PROCARGS2: argc, the exec path, padding, argc strings, then the environment.
+    static func startTime(_ pid: Int32) -> ProcessStart? {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+        return ProcessStart(seconds: info.pbi_start_tvsec, microseconds: info.pbi_start_tvusec)
+    }
+
     static func argsAndEnv(_ pid: Int32) -> ([String], [String]) {
+        arguments.value(pid: pid, start: startTime(pid)) { readArgsAndEnv(pid) }
+    }
+
+    private static func readArgsAndEnv(_ pid: Int32) -> ([String], [String]) {
         var mib = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return ([], []) }
@@ -202,5 +216,41 @@ enum Proc {
         guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
         let path = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
         return path.isEmpty ? nil : path
+    }
+}
+
+struct ProcessStart: Equatable {
+    let seconds: UInt64
+    let microseconds: UInt64
+}
+
+/// Shared by exec and rollout discovery; a reused pid cannot inherit another process's environment.
+final class ProcessArgumentsCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [Int32: (ProcessStart, ([String], [String]))] = [:]
+
+    func value(pid: Int32, start: ProcessStart?, read: () -> ([String], [String])) -> ([String], [String]) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let start else {
+            entries.removeValue(forKey: pid)
+            return read()
+        }
+        if let entry = entries[pid], entry.0 == start { return entry.1 }
+        let result = read()
+        entries[pid] = (start, result)
+        return result
+    }
+
+    func retain(pids: Set<Int32>) {
+        lock.lock()
+        defer { lock.unlock() }
+        entries = entries.filter { pids.contains($0.key) }
+    }
+
+    func invalidate(_ pid: Int32) {
+        lock.lock()
+        defer { lock.unlock() }
+        entries.removeValue(forKey: pid)
     }
 }

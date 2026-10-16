@@ -50,6 +50,7 @@ public final class LogScanner: @unchecked Sendable {
     private var codexDirectories: [String: (DirectoryStamp, [URL])] = [:]
     private var codexDays: [String: (newest: Double, checked: Double)] = [:]
     private var lastDiscovery: Double = 0
+    public private(set) var nextRetentionExpiry: Date?
     private var lastRetention: Double?
     private let execRuns: () -> [ExecRun]
     private let rolloutParents: () -> [String: [String]]
@@ -75,11 +76,13 @@ public final class LogScanner: @unchecked Sendable {
     }
 
     /// Roots include configured locations even when they do not exist yet.
+    public var watchRootPaths: [String] { [config.root(.claude).path, config.root(.codex).path] }
+
     public var watchPaths: [String] {
         // Keep logical config entries as well as independently symlinked log/status directories.
         ([config.root(.claude).path, config.root(.codex).path,
           claudeRoot.path, claudeSessions.path, codexRoot.path] +
-            Set(runs.map { URL(fileURLWithPath: $0.log).deletingLastPathComponent().path }).sorted()).sorted()
+            Set(runs.map(\.log)).sorted()).sorted()
     }
 
     public func poll(now: Date = Date(), finishedRetention: Double = SessionLog.keepDone,
@@ -217,6 +220,8 @@ public final class LogScanner: @unchecked Sendable {
             }
             return log
         }
+        nextRetentionExpiry = logs.filter { $0.state(now: t, finishedRetention: finishedRetention) == .done }
+            .map { Date(timeIntervalSince1970: $0.lastAt + finishedRetention) }.min()
         var agents = logs.compactMap { $0.agent(now: t, finishedRetention: finishedRetention, project: names.name(for:)) }
         let candidates = Dictionary(logs.filter { !$0.parentCandidates.isEmpty }.map { ($0.id, $0.parentCandidates) },
                                     uniquingKeysWith: { a, _ in a })
@@ -411,13 +416,8 @@ public final class LogScanner: @unchecked Sendable {
         files[run.log] = Tracked(log: log, offset: startOffset(run.log), isSubagent: false, isExec: true)
     }
 
-    /// A process's environment does not change: read it once per pid.
-    private var envParents: [Int32: [String]] = [:]
     private func parents(of pid: Int32) -> [String] {
-        if let known = envParents[pid] { return known }
-        let found = Lineage.parents(env: Proc.argsAndEnv(pid).1)
-        envParents[pid] = found
-        return found
+        Lineage.parents(env: Proc.argsAndEnv(pid).1)
     }
 
     // MARK: reading

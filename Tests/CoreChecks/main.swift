@@ -71,7 +71,13 @@ run("watcherProcessExit") { try FileWatcherChecks().processExitNeedsNoDiskRead()
 run("watcherExecDiscoveryAndExit") { try FileWatcherChecks().processDiscoveryDrainsExitedStreams() }
 run("watcherSymlinkRoots") { try FileWatcherChecks().remapsSymlinkedRootsAndStatusDirectories() }
 run("watcherQueuedDrop") { try FileWatcherChecks().queuedDropSurvivesLegacyPoll() }
+run("watcherCanonicalAndLiveDelivery") { try FileWatcherChecks().canonicalEventsAndLiveDelivery() }
+run("watcherExactExecInterests") { try FileWatcherChecks().execInterestsStayOnFiles() }
+run("watcherNarrowRoots") { try FileWatcherChecks().narrowRootsAndInterests() }
+run("watcherRetentionExpiry") { try FileWatcherChecks().nextFinishedExpiry() }
 run("watcherDrops") { FileWatcherChecks().droppedEventsRequestFullScan() }
+run("processRefreshRateLimit") { ProcessEventChecks().coalescesChurnWithTrailingRefresh() }
+run("processArgumentsCache") { ProcessEventChecks().cachesArgumentsUntilExitReuseOrExec() }
 let discovery = CodexDiscoveryChecks()
 run("codexResumedOldFolder") { try discovery.resumedOldFolderAndAppendedTail() }
 run("codexTruncatedBoundedRead") { try discovery.resetReadsBoundedTail(replaced: false) }

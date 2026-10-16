@@ -25,12 +25,12 @@ func publish(_ agents: [Agent]?) {
 let processes = ProcessWatcher {
     DispatchQueue.main.async { publish(scanner.poll(changes: .processes)) }
 }
-let watcher = FileWatcher(paths: scanner.watchPaths) { changes in
+let watcher = FileWatcher(paths: scanner.watchPaths, shallowPaths: scanner.watchRootPaths) { changes in
     DispatchQueue.main.async { publish(scanner.poll(changes: changes)) }
 }
 publish(scanner.poll(changes: .full))
 let safety = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in publish(scanner.poll(changes: .full)) }
-let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in publish(scanner.poll(changes: .paths([]))) }
+let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in publish(scanner.poll(changes: watcher.isWatching ? .paths([]) : .full)) }
 #else
 publish(scanner.poll())
 let timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { _ in publish(scanner.poll()) }

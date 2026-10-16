@@ -5,10 +5,11 @@ import Foundation
 public final class ProcessWatcher: @unchecked Sendable {
     private let queue = DispatchQueue(label: "agents-notch.process-events", qos: .utility)
     private var sources: [Int32: DispatchSourceProcess] = [:]
-    private var scheduled = false
+    private var gate = ProcessRefreshGate()
     private var names: [Int32: String] = [:]
     private var candidates: Set<Int32> = []
     private var executed: Set<Int32> = []
+    private var forceRefresh = false
     private let receive: @Sendable () -> Void
 
     public init(receive: @escaping @Sendable () -> Void) {
@@ -19,8 +20,7 @@ public final class ProcessWatcher: @unchecked Sendable {
     public func repair() {
         queue.async { [weak self] in
             self?.names.removeAll()
-            _ = self?.refresh()
-            self?.receive()
+            self?.changed(force: true)
         }
     }
 
@@ -40,9 +40,11 @@ public final class ProcessWatcher: @unchecked Sendable {
                     let data = self.sources[pid]?.data ?? []
                     if data.contains(.exec) {
                         self.names.removeValue(forKey: pid)
+                        Proc.arguments.invalidate(pid)
                         self.executed.insert(pid)
                     }
                     if data.contains(.exit) {
+                        Proc.arguments.invalidate(pid)
                         self.names.removeValue(forKey: pid)
                         self.sources.removeValue(forKey: pid)?.cancel()
                     }
@@ -59,15 +61,36 @@ public final class ProcessWatcher: @unchecked Sendable {
         return relevant
     }
 
-    private func changed() {
-        guard !scheduled else { return }
-        scheduled = true
-        queue.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+    private func changed(force: Bool = false) {
+        forceRefresh = forceRefresh || force
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let deadline = gate.request(now: now) else { return }
+        queue.asyncAfter(deadline: .now() + max(0, deadline - now)) { [weak self] in
             guard let self else { return }
-            self.scheduled = false
-            if self.refresh() { self.receive() }
+            let relevant = self.refresh()
+            let forced = self.forceRefresh
+            self.forceRefresh = false
+            if relevant || forced { self.receive() }
+            self.gate.refreshed(at: ProcessInfo.processInfo.systemUptime)
         }
     }
 
     deinit { for source in sources.values { source.cancel() } }
+}
+
+/// One pending trailing refresh, bounded even during continuous host process churn.
+struct ProcessRefreshGate {
+    private var lastRefresh: Double = -.infinity
+    private var pending = false
+
+    mutating func request(now: Double) -> Double? {
+        guard !pending else { return nil }
+        pending = true
+        return max(now + 0.1, lastRefresh + 1.5)
+    }
+
+    mutating func refreshed(at now: Double) {
+        pending = false
+        lastRefresh = now
+    }
 }

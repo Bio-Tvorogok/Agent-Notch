@@ -41,6 +41,8 @@ final class Store: ObservableObject {
     private var pollCompletions: [() -> Void] = []
     private var timer: Timer?
     private var livenessTimer: Timer?
+    private var retentionTimer: Timer?
+    private var retentionExpiry: Date?
     private var watcher: FileWatcher?
     private var processWatcher: ProcessWatcher?
     private var watchedPaths: [String] = []
@@ -102,24 +104,36 @@ final class Store: ObservableObject {
 
     /// One scan now; the callback runs on the main actor after the agents are published.
     private func watch(_ paths: [String]) {
-        let targets = FileWatcher.roots(for: paths)
+        let targets = FileWatcher.roots(for: paths, shallowPaths: scanner.watchRootPaths)
         guard paths != watchedPaths || targets != watchedRoots else { return }
         watchedPaths = paths
         watchedRoots = targets
-        watcher = FileWatcher(paths: paths) { [weak self] changes in
+        watcher = FileWatcher(paths: paths, shallowPaths: scanner.watchRootPaths) { [weak self] changes in
             Task { @MainActor in self?.poll(changes: changes) }
         }
     }
 
     private func updateLivenessTimer() {
-        let live = agents.contains { $0.state != .done } || !hooks.pending.isEmpty
+        let live = agents.contains { $0.state != .done } || !hooks.pending.isEmpty || watcher?.isWatching != true
         if live, livenessTimer == nil {
             livenessTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.poll(changes: .paths([])) }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.poll(changes: self.watcher?.isWatching == true ? .paths([]) : .full)
+                }
             }
         } else if !live {
             livenessTimer?.invalidate()
             livenessTimer = nil
+        }
+        retentionTimer?.invalidate()
+        retentionTimer = nil
+        if !live, let expiry = retentionExpiry {
+            let timer = Timer(fire: max(expiry, Date().addingTimeInterval(0.001)), interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.poll(changes: .paths([])) }
+            }
+            retentionTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
         }
     }
 
@@ -135,6 +149,7 @@ final class Store: ObservableObject {
         queue.async {
             let next = scanner.poll(finishedRetention: retention, changes: changes)
             let paths = changes == .paths([]) ? nil : scanner.watchPaths
+            let expiry = scanner.nextRetentionExpiry
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.polling = false
@@ -150,6 +165,7 @@ final class Store: ObservableObject {
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
                 }
                 if let paths { self.watch(paths) }
+                self.retentionExpiry = expiry
                 self.updateLivenessTimer()
                 if let pending = self.pendingChanges {
                     self.pendingChanges = nil
