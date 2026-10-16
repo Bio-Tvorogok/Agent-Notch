@@ -106,14 +106,20 @@ struct ResolvedVendorMark: View {
     let isLight: Bool
     let size: CGFloat
     var onDark = false
+    /// A candidate the settings picker draws instead of the saved choice.
+    var icon: VendorIcon? = nil
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.theme) private var theme
 
     var body: some View {
-        switch settings.vendorIcons[vendor].resolve(themeMarks: settings.usesThemeMarks, style: settings.appearance.markStyle) {
+        switch (icon ?? settings.vendorIcons[vendor]).resolve(themeMarks: settings.usesThemeMarks, style: settings.appearance.markStyle) {
         case .theme:
             ThemeMark(theme: onDark ? settings.currentTheme : theme, vendor: vendor, state: state,
                       isLight: isLight, size: size, onDark: onDark)
+        case .themeMark(let id):
+            // A mark borrowed from a light theme takes the terminal's state colours on a dark surface.
+            ThemeMark(theme: .of(id), vendor: vendor, state: state, isLight: isLight, size: size,
+                      onDark: onDark || (onDark ? settings.currentTheme : theme).scheme == .dark)
         case .builtIn(let style):
             StatusMark(vendor: vendor, state: state, isLight: isLight, style: style, size: size)
         case .symbol(let name):

@@ -384,6 +384,7 @@ for variant in ["summary", "large", "duplicate", "invalid", "partial", "no-newli
 run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptTime() }
 run("vendorIconPreferences") { try VendorIconChecks().preferences() }
 run("vendorIconResolution") { VendorIconChecks().resolution() }
+run("vendorIconThemeChoice") { try VendorIconChecks().themeChoice() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

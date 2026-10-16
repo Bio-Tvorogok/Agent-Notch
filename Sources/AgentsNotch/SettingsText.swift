@@ -131,6 +131,9 @@ enum SettingsText {
     static var vendorIcons: String { Loc.t("Claude and Codex icons", "Значки Claude и Codex") }
     static var vendorIcon: String { Loc.t("Icon", "Значок") }
     static var vendorIconHelp: String { Loc.t("Auto follows the theme and icon style. Other choices stay the same in every theme.", "Авто следует теме и стилю значков. Другие варианты сохраняются при смене темы.") }
+    static var vendorIconThemes: String { Loc.t("Theme marks", "Значки тем") }
+    static var vendorIconStyles: String { Loc.t("Styles", "Стили") }
+    static var moreSymbols: String { Loc.t("More symbols…", "Ещё символы…") }
     static var symbolSearch: String { Loc.t("Search SF Symbols", "Поиск SF Symbols") }
     static var noSymbols: String { Loc.t("No symbols found. Try an exact SF Symbol name.", "Символы не найдены. Попробуйте точное имя SF Symbol.") }
     static let claude = "Claude"
