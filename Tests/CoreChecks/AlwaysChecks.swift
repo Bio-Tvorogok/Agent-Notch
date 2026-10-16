@@ -178,7 +178,7 @@ extension AlwaysChecks {
     }
 
     func socketRoundTrip() throws {
-        let path = "/tmp/notch-al-\(UUID().uuidString.prefix(8)).sock"
+        let path = "/tmp/an06-t7-al-\(UUID().uuidString.prefix(8)).sock"
         let server = HookServer(path: path)
         let ticket = Box<Int?>(nil)
         let got = DispatchSemaphore(value: 0)

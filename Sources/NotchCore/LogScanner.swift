@@ -187,9 +187,7 @@ public final class LogScanner: @unchecked Sendable {
                 files[path]?.log.live = ClaudeLive(status: f.log.turnEnded ? "idle" : "busy", waitingFor: nil, name: nil, alive: alive)
             }
         }
-        files = files.filter { _, f in
-            f.log.state(now: t, finishedRetention: finishedRetention) != nil || f.modified > t - window
-        }
+        readCodexParents(now: t)
         let threads = Set(files.values.filter { $0.log.vendor == .codex }.map { $0.log.id })
         threadParents = threadParents.filter { threads.contains($0.key) }
         // A retained exec thread has both a rollout and a stdout stream. Keep the rollout for
@@ -207,6 +205,8 @@ public final class LogScanner: @unchecked Sendable {
                 let laterTurn = log.turnStartedAt.map { $0 > exec.modified } ?? false
                 if busy || !laterTurn {
                     log.live = exec.log.live
+                    log.turnEnded = exec.log.turnEnded
+                    log.interrupted = exec.log.interrupted
                     log.lastAt = max(log.lastAt, exec.log.lastAt)
                     if log.ask != nil, busy { log.live?.status = "waiting" }
                 }
@@ -220,14 +220,44 @@ public final class LogScanner: @unchecked Sendable {
             }
             return log
         }
-        nextRetentionExpiry = logs.filter { $0.state(now: t, finishedRetention: finishedRetention) == .done }
-            .map { Date(timeIntervalSince1970: $0.lastAt + finishedRetention) }.min()
         var agents = logs.compactMap { $0.agent(now: t, finishedRetention: finishedRetention, project: names.name(for:)) }
+        // Retention cannot remove an ancestor while one of its descendants still works.
+        let byId = Dictionary(logs.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var known = Set(agents.map(\.id))
+        var pending = agents.flatMap { a in [a.parentId].compactMap { $0 } + (byId[a.id]?.parentCandidates ?? []) }
+        while let id = pending.popLast() {
+            guard known.insert(id).inserted, let log = byId[id],
+                  let parent = log.agent(now: t, finishedRetention: .infinity, project: names.name(for:)) else { continue }
+            agents.append(parent)
+            pending += [parent.parentId].compactMap { $0 } + log.parentCandidates
+        }
         let candidates = Dictionary(logs.filter { !$0.parentCandidates.isEmpty }.map { ($0.id, $0.parentCandidates) },
                                     uniquingKeysWith: { a, _ in a })
         let picked = Lineage.resolve(candidates, known: Set(agents.map(\.id)))
         for i in agents.indices where agents[i].parentId == nil { agents[i].parentId = picked[agents[i].id] }
+        agents = Tree.withHelpers(agents).filter { $0.state.isLive || t - $0.retainedAt < finishedRetention }
+        nextRetentionExpiry = agents.filter { !$0.state.isLive }
+            .map { Date(timeIntervalSince1970: $0.retainedAt + finishedRetention) }.min()
+        let retained = Set(agents.map(\.id))
+        files = files.filter { _, f in retained.contains(f.log.id) || f.modified > t - window }
         return agents
+    }
+
+    /// A fresh Codex helper names its parent even when the parent's rollout is cold.
+    private func readCodexParents(now: Double) {
+        var searched: Set<String> = []
+        while true {
+            let known = Set(files.values.map { $0.log.id })
+            let missing = Set(files.values.compactMap { $0.log.vendor == .codex ? $0.log.parentId : nil })
+                .subtracting(known).subtracting(searched)
+            if missing.isEmpty { return }
+            searched.formUnion(missing)
+            for file in codexDirectories.values.flatMap({ $0.1 }) where file.pathExtension == "jsonl" && files[file.path] == nil {
+                guard missing.contains(where: { file.lastPathComponent.hasSuffix("-\($0).jsonl") }) else { continue }
+                track(codex: file)
+                read(file.path, now: now)
+            }
+        }
     }
 
     // MARK: discovery
@@ -245,6 +275,8 @@ public final class LogScanner: @unchecked Sendable {
                     if files[item.path] == nil, (dates[item.lastPathComponent] ?? 0) > fresh { track(claude: item, parent: nil) }
                 } else if (dates[item.lastPathComponent + ".jsonl"] ?? 0) > now - 86_400 {
                     for sub in subagentLogs(in: item) where files[sub.path] == nil && mtime(sub) > fresh {
+                        let parent = project.appendingPathComponent(item.lastPathComponent + ".jsonl")
+                        if files[parent.path] == nil { track(claude: parent, parent: nil) }
                         track(claude: sub, parent: item.lastPathComponent)
                     }
                 }

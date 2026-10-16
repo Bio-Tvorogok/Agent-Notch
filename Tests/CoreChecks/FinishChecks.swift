@@ -13,19 +13,18 @@ struct FinishChecks {
         var d = AgentDetail(files: [FileChange(path: "a", added: 1, removed: 0), FileChange(path: "b", added: 2, removed: 1),
                                     FileChange(path: "c", added: 1, removed: 1)],
                             commands: [CommandRun(command: "make", ok: false, at: 90), tests,
-                                       CommandRun(command: "cd x && git commit -m wip", ok: true, at: 110)],
+                                       CommandRun(command: "cd x && git commit -m wip", ok: true, at: 110, commit: "abc1234")],
                             lastMessage: "\n  Готово: загрузка сжимается.\nВторая строка")
-        XCTAssertEqual(FinishSummary.line(d, commit: "abc1234"), "готово · 3 файла · тесты ✓ · коммит abc1234")
-        XCTAssertEqual(FinishSummary.line(d), "готово · 3 файла · тесты ✓ · коммит")
+        XCTAssertEqual(FinishSummary.line(d), "готово · 3 файла · тесты ✓ · коммит abc1234")
         XCTAssertEqual(FinishSummary.preview(d), "Готово: загрузка сжимается.")
         XCTAssertTrue(FinishSummary.madeCommit(d, since: 50))
         // Work stamped before this run does not count.
-        XCTAssertEqual(FinishSummary.line(d, since: 105), "готово · 3 файла · коммит")
+        XCTAssertEqual(FinishSummary.line(d, since: 105), "готово · 3 файла · коммит abc1234")
         XCTAssertFalse(FinishSummary.madeCommit(d, since: 120))
         // Files changed before this run are not counted; unstamped ones stay.
         d.files = [FileChange(path: "a", added: 1, removed: 0, at: 90), FileChange(path: "b", added: 1, removed: 0, at: 120),
                    FileChange(path: "c", added: 1, removed: 0)]
-        XCTAssertEqual(FinishSummary.line(d, since: 105), "готово · 2 файла · коммит")
+        XCTAssertEqual(FinishSummary.line(d, since: 105), "готово · 2 файла · коммит abc1234")
         XCTAssertEqual(FinishSummary.line(d, since: 200), "готово · 1 файл")
         d.files = [FileChange(path: "a", added: 1, removed: 0), FileChange(path: "b", added: 2, removed: 1),
                    FileChange(path: "c", added: 1, removed: 1)]

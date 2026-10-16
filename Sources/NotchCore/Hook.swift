@@ -23,6 +23,8 @@ public struct HookEvent: Sendable, Equatable {
     public var plan: String?
     /// The tool input as JSON, kept only for a question or a plan: the reply sends it back with the answer.
     public var toolInput: String?
+    /// Transcript time of the originating message; async delivery time is not event order.
+    public var occurredAt: Double?
 
     /// Confirmed automatic review for this Codex request; the hook must leave that decision to Codex.
     public private(set) var isAutomaticReview = false
@@ -54,11 +56,12 @@ public struct HookEvent: Sendable, Equatable {
 
     public init(vendor: Vendor, name: String, sessionId: String, agentId: String? = nil, cwd: String? = nil,
                 tool: String? = nil, toolUseID: String? = nil, detail: String? = nil, full: String? = nil, notificationType: String? = nil, message: String? = nil,
-                questions: [Question] = [], plan: String? = nil, toolInput: String? = nil) {
+                questions: [Question] = [], plan: String? = nil, toolInput: String? = nil, occurredAt: Double? = nil) {
         self.vendor = vendor; self.name = name; self.sessionId = sessionId; self.agentId = agentId; self.cwd = cwd
         self.tool = tool; self.toolUseID = toolUseID; self.detail = detail; self.full = full ?? detail
         self.notificationType = notificationType; self.message = message
         self.questions = questions; self.plan = plan; self.toolInput = toolInput
+        self.occurredAt = occurredAt
     }
 
     /// Parses the hook's stdin JSON. Nil when it names no session.
@@ -76,6 +79,7 @@ public struct HookEvent: Sendable, Equatable {
         if vendor == .codex, name == "PermissionRequest" {
             isAutomaticReview = CodexApprovalContext.isAutomatic(payload: p)
         }
+        if vendor == .claude { occurredAt = ClaudeHookContext.time(payload: p) }
     }
 
     /// Read identity without re-reading Codex's approval transcript on the reply path.

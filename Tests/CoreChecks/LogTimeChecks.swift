@@ -38,7 +38,8 @@ struct LogTimeChecks {
         try rows.write(to: file, atomically: false, encoding: .utf8)
         let now = Date(timeIntervalSince1970: 1_791_959_044)
         try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: file.path)
-        XCTAssertEqual(LogScanner(home: home, execRuns: { [] }).poll(now: now)!.map(\.state), [.done],
-                       "a malformed future timestamp must not keep an idle session working")
+        let agents = LogScanner(home: home, execRuns: { [] }).poll(now: now)!
+        XCTAssertEqual(agents.map(\.state), [.working], "silence has no completion evidence")
+        XCTAssertEqual(agents.first?.lastAt, 1_791_958_444, "an invalid timestamp must not extend the session")
     }
 }

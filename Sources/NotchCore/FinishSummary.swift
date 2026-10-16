@@ -31,13 +31,13 @@ public enum FinishSummary {
         detail.files.filter { f in since.map { s in f.at.map { $0 >= s } ?? true } ?? true }
     }
 
-    /// Whether the run made a commit that did not fail. The app then asks git for its short hash.
+    /// Whether the run made a commit that did not fail.
     public static func madeCommit(_ detail: AgentDetail, since: Double?) -> Bool {
         recent(detail, since: since).contains { isCommit($0) && $0.ok != false }
     }
 
     /// "done · 3 files · tests ✓ · commit abc123". Parts with nothing to say are left out.
-    public static func line(_ detail: AgentDetail, since: Double? = nil, commit: String? = nil) -> String {
+    public static func line(_ detail: AgentDetail, since: Double? = nil) -> String {
         let commands = recent(detail, since: since)
         var parts = [FinishText.done]
         let files = recentFiles(detail, since: since)
@@ -45,6 +45,9 @@ public enum FinishSummary {
         if let test = commands.last(where: { $0.isTest && $0.ok != nil }) {
             parts.append(test.ok == true ? FinishText.testsOk : FinishText.testsFailed)
         }
+        let left = detail.plan.filter { $0.status != .done }.count
+        if left > 0 { parts.append(Loc.t("\(left) of \(detail.plan.count) left", "осталось \(left) из \(detail.plan.count)")) }
+        let commit = commands.last(where: { isCommit($0) && $0.ok != false && $0.commit != nil })?.commit
         if commands.contains(where: { isCommit($0) && $0.ok != false }) {
             parts.append([FinishText.commit, commit].compactMap { $0 }.joined(separator: " "))
         }
@@ -76,10 +79,10 @@ public struct FinishWatcher: Sendable {
     public mutating func update(_ agents: [Agent], now: Double) -> [Finished] {
         var out: [Finished] = []
         var next: [String: Double] = [:]
-        for a in agents where a.parentId == nil {
+        for a in Tree.withHelpers(agents) where a.parentId == nil {
             // A pause to ask for permission or an error does not end the run: its start time is kept.
             if a.state != .done { if a.state == .working || working[a.id] != nil { next[a.id] = working[a.id] ?? now } }
-            else if let since = working[a.id] { out.append(Finished(agent: a, workedSince: since)) }
+            else if !a.interrupted, let since = working[a.id] { out.append(Finished(agent: a, workedSince: since)) }
         }
         working = next
         return out

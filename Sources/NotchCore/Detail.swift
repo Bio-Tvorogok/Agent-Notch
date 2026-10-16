@@ -30,13 +30,15 @@ public struct FileChange: Equatable, Sendable {
 
 public struct CommandRun: Equatable, Sendable {
     public var command: String
+    /// Hash printed by this command, never inferred from repository HEAD.
+    public var commit: String?
     public var ok: Bool?
     public var at: Double?
     public var isTest: Bool {
         command.range(of: #"\b(test|vitest|jest|pytest)\b|scripts/test"#, options: .regularExpression) != nil
     }
-    public init(command: String, ok: Bool? = nil, at: Double? = nil) {
-        self.command = command; self.ok = ok; self.at = at
+    public init(command: String, ok: Bool? = nil, at: Double? = nil, commit: String? = nil) {
+        self.command = command; self.ok = ok; self.at = at; self.commit = commit
     }
 }
 

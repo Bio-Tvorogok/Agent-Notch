@@ -35,3 +35,15 @@ public enum DeliveryText {
         Loc.t("Waiting: \(seconds)s left", "Ожидание: осталось \(seconds) с")
     }
 }
+
+public enum SessionText {
+    public static var interrupted: String { Loc.t("interrupted", "прервано") }
+    public static func helpers(_ n: Int) -> String {
+        let word: String
+        let last = n % 10, tens = n % 100
+        if Loc.isRussian {
+            word = last == 1 && tens != 11 ? "помощника" : "помощников"
+        } else { word = n == 1 ? "helper" : "helpers" }
+        return Loc.t("working · waiting for \(n) \(word)", "работает · ждёт \(n) \(word)")
+    }
+}

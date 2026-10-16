@@ -105,6 +105,12 @@ struct DetailState {
         if let id, let i = commandIds[id], detail.commands.indices.contains(i), let ok {
             detail.commands[i].ok = ok
         }
+        if let id, let i = commandIds[id], detail.commands.indices.contains(i),
+           FinishSummary.isCommit(detail.commands[i]), ok != false, let text {
+            // Normal and root commits: [branch abc1234] / [branch (root-commit) abc1234].
+            detail.commands[i].commit = text.firstMatch(#"(?m)^\[[^\]\r\n]+ (?:\(root-commit\) )?([0-9a-f]{7,40})\](?: |$)"#)
+                ?? detail.commands[i].commit
+        }
         if ok == false {
             if let id, !rejected.insert(id).inserted { return }
             if let id, let i = commandIds[id], !failedCommands.insert(i).inserted { return }

@@ -62,7 +62,7 @@ final class Store: ObservableObject {
     }
 
     /// Agents as drawn: the logs with open requests and on-screen prompts laid over.
-    var shown: [Agent] { settings.visibleAgents(hooks.apply(to: agents, now: Date().timeIntervalSince1970, project: names.name(for:)), store: self) }
+    var shown: [Agent] { settings.visibleAgents(hooks.apply(to: agents, now: Date().timeIntervalSince1970, finishedRetention: Double(settings.appearance.finishedMinutes) * 60, project: names.name(for:)), store: self) }
     var projects: [ProjectNode] { settings.projects(from: shown) }
     var layout: WingLayout { Wing.configuredLayout(projects, cramped: forceCramped || menuCramped, prefs: settings.wingDisplay) }
     /// The layout as it would be drawn with room to spare: the width MenuWatcher has to keep clear.
@@ -161,7 +161,7 @@ final class Store: ObservableObject {
                     self.deliverySounds[ticket] = nil
                 }
                 if let next {
-                    self.finisher.check(self.settings.listFilter.apply(next))
+                    self.finisher.check(self.settings.listFilter.apply(self.hooks.apply(to: next, now: Date().timeIntervalSince1970, finishedRetention: retention, project: self.names.name(for:))))
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
                 }
                 if let paths { self.watch(paths) }
@@ -235,6 +235,7 @@ final class Store: ObservableObject {
             server?.handBack(t)
             ticket = nil
         }
+        if e.name == "SubagentStop", e.agentId == nil { return }
         let wasWaiting = hooks.pending.count
         let stale = hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970)
         for ticket in stale { server?.handBack(ticket) }

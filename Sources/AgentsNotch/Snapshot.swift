@@ -64,6 +64,38 @@ enum Snapshot {
         }
     }
 
+    /// `--snapshot-honest-done <dir>`: helper row and finish toast, using the production views.
+    static func runHonestDone(into dir: String) -> Bool {
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        let suite = "AgentsNotch.snapshot." + UUID().uuidString
+        guard let defaults = UserDefaults(suiteName: suite) else { return false }
+        let forced = Loc.forced
+        defer { defaults.removePersistentDomain(forName: suite); Loc.forced = forced }
+        let settings = AppSettings(defaults: defaults)
+        settings.setRowPart(.activity, shown: true)
+        let fixture = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Tests/Fixtures/HonestDone/toast-claude.jsonl")
+        guard let detail = DetailReader.read(path: fixture.path, vendor: .claude) else { return false }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            let parent = Agent(id: "honest", vendor: .claude, title: "AN-0.6-7", state: .done, project: "Agent Notch")
+            let kids = (1...2).map { Agent(id: "helper-\($0)", vendor: .claude, title: Loc.t("Helper \($0)", "Помощник \($0)"),
+                state: .working, project: parent.project, parentId: parent.id) }
+            let store = Store(settings: settings)
+            store.useFixture([parent] + kids)
+            ok = write(Scene(store: store), to: url.appendingPathComponent("helpers-\(language.rawValue).png")) && ok
+            let notice = FinishNotice(agent: parent, title: parent.title, line: FinishSummary.line(detail),
+                                      preview: FinishSummary.preview(detail))
+            ok = write(ToastView(notice: notice, onOpen: {}).environmentObject(settings)
+                .padding(20).background(Color(white: 0.35)),
+                to: url.appendingPathComponent("toast-\(language.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     /// `--snapshot-delivery <dir>`: the same permission before countdown, near timeout, in flight, and after failure.
     static func runDelivery(into dir: String) -> Bool {
         let suite = "AgentsNotch.snapshot." + UUID().uuidString
