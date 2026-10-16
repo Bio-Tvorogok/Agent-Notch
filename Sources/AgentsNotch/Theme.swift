@@ -2,11 +2,6 @@ import AppKit
 import SwiftUI
 import NotchCore
 
-/// The look of the list, the card and the toast. The wing stays black: it sits on the camera housing.
-enum ThemeID: String, Codable, CaseIterable, Sendable {
-    case terminal, glass, paper, midnight, console, phosphor, synthwave, blueprint, brutal, hologram, wasteland, pixel, ducks
-}
-
 /// Colour roles every themed view draws with. `Ink` resolves a role against the theme in the environment.
 enum InkRole: CaseIterable {
     case text, strong, secondary, dim, faint, rule, hover, inset, option, optionOn

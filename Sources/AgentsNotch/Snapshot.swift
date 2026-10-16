@@ -176,6 +176,25 @@ enum Snapshot {
                 .formStyle(.grouped).environment(\.colorScheme, .light),
                 size: NSSize(width: 570, height: 850), to: URL(fileURLWithPath: path))
         }
+        // `AN_VENDOR_PICKER=1`: the icon section alone, with the Codex menu drawn open.
+        if ProcessInfo.processInfo.environment["AN_VENDOR_PICKER"] != nil {
+            settings.theme = .midnight
+            settings.themeMarks = true
+            settings.vendorIcons[.claude] = .theme(.ducks)
+            settings.vendorIcons[.codex] = .theme(.console)
+            let scene = ZStack(alignment: .topTrailing) {
+                Form {
+                    Section(SettingsText.vendorIcons) {
+                        SettingsVendorIconRow(settings: settings, vendor: .claude)
+                        SettingsVendorIconRow(settings: settings, vendor: .codex)
+                        Text(SettingsText.vendorIconHelp).font(.caption).foregroundStyle(.secondary)
+                    }
+                }.formStyle(.grouped)
+                VendorIconMenuDrawing(settings: settings, vendor: .codex).padding(.top, 150).padding(.trailing, 40)
+            }
+            return host(scene.environmentObject(settings).environment(\.colorScheme, .light),
+                        size: NSSize(width: 600, height: 760), to: URL(fileURLWithPath: path))
+        }
         if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] != nil {
             settings.theme = .paper
             if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
@@ -185,8 +204,7 @@ enum Snapshot {
         let prompts = promptFixture()
         let skills = skillFixture()
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
-            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light)
-                .environment(\.vendorIconSearchQuery, ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" ? "bolt" : ""),
+            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
         }
         guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path), height: ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == nil ? SettingsView.size.height : 1800) }
@@ -282,7 +300,9 @@ enum Snapshot {
         let settings = AppSettings(defaults: defaults)
         if ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == "after" {
             settings.theme = .paper
-            settings.vendorIcons[.codex] = .symbol("bolt.fill")
+            // `AN_VENDOR_ICON_THEME=<id>` borrows that theme's mark instead of the symbol.
+            settings.vendorIcons[.codex] = ProcessInfo.processInfo.environment["AN_VENDOR_ICON_THEME"]
+                .flatMap(ThemeID.init(rawValue:)).map(VendorIcon.theme) ?? .symbol("bolt.fill")
             let store = Store(settings: settings)
             store.useFixture([CardFixture.agent])
             return host(VStack(spacing: 12) {
