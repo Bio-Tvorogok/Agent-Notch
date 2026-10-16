@@ -102,8 +102,8 @@ final class JumpToast {
     }()
     private var timer: Timer?
 
-    func show(command: String?, screen: NSScreen, settings: AppSettings) {
-        let host = NSHostingView(rootView: JumpToastView(canResume: command != nil) { [weak self] in
+    func show(command: String?, terminalOrigin: Bool, screen: NSScreen, settings: AppSettings) {
+        let host = NSHostingView(rootView: JumpToastView(canResume: command != nil, terminalOrigin: terminalOrigin) { [weak self] in
             if let command {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(command, forType: .string)
@@ -125,12 +125,15 @@ final class JumpToast {
 
 struct JumpToastView: View {
     let canResume: Bool
+    var terminalOrigin = true
     let onCopy: () -> Void
     @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(Loc.t("Terminal not found — opened the project folder", "Терминал не найден — открыл папку проекта"))
+            Text(terminalOrigin
+                ? Loc.t("Terminal not found — opened the project folder", "Терминал не найден — открыл папку проекта")
+                : Loc.t("Couldn't open the app — opened the project folder", "Не удалось открыть приложение — открыл папку проекта"))
                 .font(.system(size: 12, weight: .medium)).foregroundStyle(Ink.strong)
                 .fixedSize(horizontal: false, vertical: true)
             if canResume {

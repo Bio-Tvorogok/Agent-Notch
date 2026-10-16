@@ -5,7 +5,8 @@ import NotchCore
 
 struct JumpChecks {
     func fixture(_ body: (URL) throws -> Void) throws {
-        let home = URL(fileURLWithPath: "/tmp/an06-t8-jump-\(UUID())")
+        let home = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("an06-t8-jump-\(UUID())")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         try body(home)
@@ -85,7 +86,9 @@ struct JumpChecks {
             let editor = agent(.claude, path)
             XCTAssertEqual(JumpResolver.resolve(agent: editor, home: home).first,
                            .editor(bundleId: "com.microsoft.VSCode", cwd: "/tmp/project"))
+            XCTAssertFalse(JumpResolver.plan(agent: editor, home: home).terminalOrigin)
             _ = try write(home, ".claude/sessions/123.json", ["sessionId": editor.id, "pid": 123])
+            XCTAssertFalse(JumpResolver.plan(agent: editor, home: home).terminalOrigin)
             XCTAssertEqual(JumpResolver.resolve(agent: editor, home: home).first,
                            .terminal(pid: 123, cwd: "/tmp/project"))
         }
@@ -120,6 +123,7 @@ struct JumpChecks {
                 let a = agent(.codex, path)
                 let plan = JumpResolver.plan(agent: a, home: home,
                     processes: [CodexProcess(pid: 321, paths: [path])])
+                XCTAssertEqual(plan.terminalOrigin, origin != "Codex Desktop" && origin != "codex_vscode")
                 if origin == "Codex Desktop" {
                     XCTAssertEqual(plan.targets.first, .codexApp(try XCTUnwrap(URL(string: "codex://threads/thread-test"))))
                 } else if origin == "codex_vscode" {
@@ -154,6 +158,58 @@ struct JumpChecks {
                 processes: [CodexProcess(pid: 987, paths: [saved])]).targets.first, .terminal(pid: 987, cwd: hook.cwd))
             XCTAssertEqual(JumpResolver.plan(agent: agent(.codex, linked), home: home,
                 processes: [CodexProcess(pid: 987, paths: [saved])]).targets.first, .terminal(pid: 987, cwd: hook.cwd))
+        }
+    }
+
+    func resumeControls() throws {
+        try fixture { home in
+            for value in Array(0...31) + [127] {
+                let control = String(UnicodeScalar(value)!)
+                for field in ["cwd", "id"] {
+                    var meta = ["id": "thread", "cwd": "/project", "originator": "codex_cli_rs"]
+                    meta[field]! += control
+                    let path = try write(home, ".codex/sessions/control.jsonl", ["type": "session_meta", "payload": meta])
+                    XCTAssertNil(JumpResolver.plan(agent: agent(.codex, path), home: home, processes: []).resumeCommand,
+                                 "control \(value) in \(field)")
+                }
+            }
+        }
+    }
+
+    func terminalSelectionFallback() {
+        for selected: Bool? in [false, nil] {
+            var activated = false
+            XCTAssertTrue(JumpTerminalSelection.succeeded(hasOwner: true, selected: selected) {
+                activated = true; return true
+            })
+            XCTAssertTrue(activated)
+            XCTAssertFalse(JumpTerminalSelection.succeeded(hasOwner: true, selected: selected, activate: { false }))
+        }
+        XCTAssertTrue(JumpTerminalSelection.succeeded(hasOwner: true, selected: true, activate: {
+            XCTAssertTrue(false, "selected tab needs no second activation"); return false
+        }))
+        XCTAssertFalse(JumpTerminalSelection.succeeded(hasOwner: false, selected: false, activate: {
+            XCTAssertTrue(false, "missing owner must fall through"); return true
+        }))
+    }
+
+    func skipAppServer() {
+        XCTAssertFalse(CodexProcess.isCLI(args: ["/bin/codex", "app-server"]))
+        XCTAssertFalse(CodexProcess.isCLI(args: ["/bin/node", "/bin/codex", "app-server", "--listen", "stdio://"]))
+        XCTAssertFalse(CodexProcess.isCLI(args: ["/bin/codex", "-c", "model=x", "app-server"]))
+        XCTAssertTrue(CodexProcess.isCLI(args: ["/bin/codex", "exec", "app-server"]))
+        XCTAssertTrue(CodexProcess.isCLI(args: ["/bin/codex", "-c", "app-server", "resume", "thread"]))
+        XCTAssertTrue(CodexProcess.isCLI(args: ["/bin/codex", "resume", "thread"]))
+        XCTAssertTrue(CodexProcess.isCLI(args: ["/bin/node", "/bin/codex", "exec", "--json"]))
+    }
+
+    func preferTerminalProcess() throws {
+        try fixture { home in
+            let path = try write(home, ".codex/sessions/rollout-test.jsonl",
+                ["type": "session_meta", "payload": ["id": "thread", "originator": "codex_cli_rs"]])
+            let processes = [CodexProcess(pid: 100, paths: [path]), CodexProcess(pid: 200, paths: [path], hasTTY: true)]
+            XCTAssertEqual(JumpResolver.plan(agent: agent(.codex, path), home: home, processes: processes).targets.first,
+                           .terminal(pid: 200, cwd: "/tmp/project"))
         }
     }
 

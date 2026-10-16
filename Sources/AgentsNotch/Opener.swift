@@ -6,10 +6,12 @@ enum Opener {
     private static let queue = DispatchQueue(label: "agents-notch.jump", qos: .userInitiated)
 
     static func open(agent: Agent, home: URL = FileManager.default.homeDirectoryForCurrentUser,
-                     onFolder: @escaping (String?) -> Void = { _ in }) {
+                     onFolder: @escaping (String?, Bool) -> Void = { _, _ in }) {
         queue.async {
             let plan = JumpResolver.plan(agent: agent, home: home)
-            DispatchQueue.main.async { attempt(ArraySlice(plan.targets), resume: plan.resumeCommand, onFolder: onFolder) }
+            DispatchQueue.main.async {
+                attempt(ArraySlice(plan.targets), resume: plan.resumeCommand, onFolder: { onFolder($0, plan.terminalOrigin) })
+            }
         }
     }
 
@@ -32,7 +34,8 @@ enum Opener {
                 }
                 let selected = exact
                 DispatchQueue.main.async {
-                    if let plan, selected == true || (selected == nil && plan.app.activate(options: [])) { return }
+                    if JumpTerminalSelection.succeeded(hasOwner: plan != nil, selected: selected,
+                        activate: { plan?.app.activate(options: []) ?? false }) { return }
                     attempt(rest, resume: resume, onFolder: onFolder)
                 }
             }

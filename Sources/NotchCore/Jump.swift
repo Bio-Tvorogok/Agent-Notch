@@ -10,6 +10,7 @@ public enum JumpTarget: Equatable {
 public struct JumpPlan {
     public let targets: [JumpTarget]
     public let resumeCommand: String?
+    public let terminalOrigin: Bool
 }
 
 /// Resolves the owning session without launching anything or changing its logs.
@@ -45,7 +46,10 @@ public enum JumpResolver {
         let pid: Int32?
         if agent.vendor == .codex {
             pid = path.flatMap { file in
-                (processes ?? CodexProcess.running()).first { $0.paths.contains(file.resolvingSymlinksInPath().standardizedFileURL.path) }?.pid
+                let matches = (processes ?? CodexProcess.running()).filter {
+                    $0.paths.contains(file.resolvingSymlinksInPath().standardizedFileURL.path)
+                }
+                return (matches.first(where: { $0.hasTTY }) ?? matches.first)?.pid
             }
         } else { pid = JumpLog.pid(live["pid"]) }
         let origin = live["entrypoint"] as? String ?? meta[agent.vendor == .claude ? "entrypoint" : "originator"] as? String
@@ -83,11 +87,17 @@ public enum JumpResolver {
         let canResume = agent.vendor == .claude || agent.chatId != nil
             || (meta["id"] != nil && meta["exec_stream"] == nil) || meta["session_id"] != nil
             || (meta["exec_stream"] != nil && JumpLog.find(id: id, vendor: .codex, home: home, near: path) != nil)
-        if canResume, !id.isEmpty, !id.contains("\0") {
+        let resumeCwd = meta["cwd"] as? String ?? live["cwd"] as? String ?? agent.cwd ?? home.path
+        if canResume, !id.isEmpty, !hasControls(id), !hasControls(resumeCwd), !hasControls(cwd ?? home.path) {
             let tool = agent.vendor == .claude ? "claude --resume" : "codex resume"
             command = "cd \(quote(cwd ?? home.path)) && \(tool) \(quote(id))"
         } else { command = nil }
-        return JumpPlan(targets: targets, resumeCommand: command)
+        let terminalOrigin = !["claude-desktop", "claude-vscode", "Codex Desktop", "codex_vscode"].contains(origin ?? "")
+        return JumpPlan(targets: targets, resumeCommand: command, terminalOrigin: terminalOrigin)
+    }
+
+    private static func hasControls(_ value: String) -> Bool {
+        value.unicodeScalars.contains { $0.value < 32 || $0.value == 127 }
     }
 
     private static func quote(_ value: String) -> String {
@@ -104,5 +114,12 @@ public enum JumpResolver {
         parts.scheme = "claude"; parts.host = host; parts.path = path
         if let session { parts.queryItems = [URLQueryItem(name: "session", value: session)] }
         if let url = parts.url { targets.append(.claudeApp(url)) }
+    }
+}
+
+/// Exact tab selection is optional when the owning terminal can still be activated.
+public enum JumpTerminalSelection {
+    public static func succeeded(hasOwner: Bool, selected: Bool?, activate: () -> Bool) -> Bool {
+        hasOwner && (selected == true || activate())
     }
 }

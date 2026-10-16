@@ -277,10 +277,10 @@ final class Store: ObservableObject {
         play(.agentOpened)
         let screen = NSApp.currentEvent?.window?.screen ?? jumpScreen()
             ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
-        Opener.open(agent: JumpResolver.owner(of: agent, in: shown)) { [weak self] command in
+        Opener.open(agent: JumpResolver.owner(of: agent, in: shown)) { [weak self] command, terminalOrigin in
             MainActor.assumeIsolated {
                 guard let self, let screen else { return }
-                self.jumpToast.show(command: command, screen: screen, settings: self.settings)
+                self.jumpToast.show(command: command, terminalOrigin: terminalOrigin, screen: screen, settings: self.settings)
             }
         }
     }

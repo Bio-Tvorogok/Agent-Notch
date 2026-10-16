@@ -16,8 +16,11 @@ enum Snapshot {
         var ok = true
         for language in [Loc.Language.en, .ru] {
             Loc.forced = language
-            ok = host(JumpToastView(canResume: true, onCopy: {}).environmentObject(AppSettings.shared),
-                      to: url.appendingPathComponent("fallback-\(language.rawValue).png")) && ok
+            for terminalOrigin in [true, false] {
+                let name = terminalOrigin ? "fallback" : "app-fallback"
+                ok = host(JumpToastView(canResume: true, terminalOrigin: terminalOrigin, onCopy: {}).environmentObject(AppSettings.shared),
+                          to: url.appendingPathComponent("\(name)-\(language.rawValue).png")) && ok
+            }
         }
         return ok
     }
