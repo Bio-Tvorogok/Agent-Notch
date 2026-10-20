@@ -414,6 +414,7 @@ const THEMES = {
     windows: [{ wall: 'R', a: 2.4, b: 4.6, z0: 32, z1: 52, curtain: '#e86a5a', cafe: true }],
     clock: { wall: 'R', at: 7.6, z: 56 }, hub: [4.2, 3.0, 0],
     spots: { wait: [[0.8, 1.4, 6.6], [0.8, 2.9, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [3.6, 1.7, 0], [7.4, 4.0, 0]],
+      cowork: [[0.8, 2.1, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [8.8, 6.0, 7]],
       sleep: [[8.8, 6.0, 7], [8.8, 6.7, 7]], pace: [[3.4, 3.4, 0], [7.4, 2.6, 0]], coffee: [[1.6, 1.7, 0]] },
     decor() {
       B(.4, .05, 32, 2.0, .6, 12, '#f4f0e6'); FY(1.38, 1.42, .651, 33, 43, '#c8c0b0'); B(1.1, .65, 36, .1, .05, 3, '#888'); B(1.65, .65, 36, .1, .05, 3, '#888');
@@ -499,7 +500,7 @@ const THEMES = {
   roof: {
     name: 'Крыша', shared: true, open: true, floor: { kind: 'deck', a: '#c89060', b: '#a87448' },
     windows: [], clock: null, hub: [5.0, 4.0, 0],
-    spots: { sleep: [[3.0, 2.2, 5], [5.0, 2.2, 5], [7.0, 2.2, 5]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
+    spots: { sleep: [[3.0, 2.2, 5], [5.0, 2.2, 5], [7.0, 2.2, 5]], cowork: [[3.0, 2.2, 5], [5.0, 2.2, 5], [7.0, 2.2, 5], [4.2, 5.6, 0]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
     decor() {},
     items(add, D) {
       const rail = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / .9); for (let i = 0; i <= n; i++) B(x0 + (x1 - x0) * i / n - .06, y0 + (y1 - y0) * i / n - .06, 0, .12, .12, 10, '#f4f0e8', 0, 1);
@@ -808,7 +809,7 @@ function layout() {
   for (const r of rooms) { x0 = Math.min(x0, r.ox - (r.NY + 1.5) * 8 * S); x1 = Math.max(x1, r.ox + (r.NX + 1.5) * 8 * S + 60 * S); y0 = Math.min(y0, r.oy - (WH + 12) * S); y1 = Math.max(y1, r.oy + (r.NX + r.NY + 2.4) * 4 * S + (SLAB + 16) * S); }
   if (yardOn()) { const b = shared('bath'); y1 = Math.max(y1, b.oy + (YD.x1 + b.NY + 2) * 4 * S + (SLAB + 18) * S); x1 = Math.max(x1, b.ox + (YD.x1 - YD.y0 + 1.5) * 8 * S); }
   DPR = devicePixelRatio || 1;
-  const fit = Math.min(innerWidth * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), innerHeight * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
+  const fit = Math.min(innerWidth * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), (innerHeight - INSETS.top - INSETS.bottom) * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
   // whole device pixels when small; above that, quarter steps fill the screen and the unevenness is a single device pixel
   VIEW.base = fit >= 3 ? Math.floor(fit * 4) / 4 : Math.max(1, Math.floor(fit * 2) / 2);
   VIEW.home = [(x0 + x1) / 2, (y0 + y1) / 2];
@@ -835,12 +836,14 @@ function applyView() {
   const w = Math.ceil(innerWidth * DPR / PXD), h = Math.ceil(innerHeight * DPR / PXD);
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; makeSkyline(); }
   cv.style.width = (cv.width * PXD / DPR) + 'px'; cv.style.height = (cv.height * PXD / DPR) + 'px';
-  for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + r.wy - VIEW.at[1]); }
+  const lift = Math.round((INSETS.top - INSETS.bottom) / 2 * DPR / PXD); // centred between the menu bar and the Dock
+  for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + lift + r.wy - VIEW.at[1]); }
   bridges = bridgePairs.map(p => [porchEnd(p[0], p), porchEnd(p[1], p), p[0], p[1]]);
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
   CAM.touched = performance.now();
+  y -= (INSETS.top - INSETS.bottom) / 2;
   const T = viewTarget(), z = Math.min(6, Math.max(1, T.zoom * factor));
   if (z <= 1.001) { followTo(1, VIEW.home); return; }
   const P = VIEW.base * T.zoom, P2 = VIEW.base * z;
@@ -938,6 +941,16 @@ function placeFor(sp) {
   if (cat === 'wait' && shared('kitchen')) return [shared('kitchen'), 'wait'];
   if (cat === 'sleep' && shared('roof') && sp.restOnRoof) return [shared('roof'), 'sleep'];
   if (cat === 'sleep' && sp.restInYard && yardOn()) return [YARD, 'sleep']; // on the bench or the swing
+  // a full room: the rest take a laptop to the kitchen, the roof or the yard
+  if (['work', 'read', 'web', 'task'].includes(cat)) {
+    const own = home.theme.spots[cat] || [], busy = [...sprites.values()].filter(o => o !== sp && o.goal && o.goal.room === home && o.goal.cat === cat).length;
+    if (own.length && busy >= own.length) {
+      const free = r => r && r.theme.spots.cowork && [...sprites.values()].filter(o => o !== sp && o.goal && o.goal.room === r && o.goal.cat === 'cowork').length < r.theme.spots.cowork.length;
+      if (sp.goal?.cat === 'cowork' && free(sp.goal.room)) return [sp.goal.room, 'cowork']; // stay where it settled
+      const room = [shared('kitchen'), shared('roof'), yardOn() ? YARD : null].find(free);
+      if (room) return [room, 'cowork'];
+    }
+  }
   return [home, cat];
 }
 function pickSpot(sp, room, cat) {
@@ -1163,7 +1176,7 @@ const YARD_THEME = {
   spots: { stroll: [[12.2, 3.7, 0], [9.9, 5.6, 0], [12.1, 6.85, 0], [5.4, 6.95, 0], [11.4, 3.8, 0], [8.1, 3.9, 0]],
     bench: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8]], swing: [[10.7, 7.05, 4.5]], sleep: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [10.7, 7.05, 4.5]],
     look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[9.9, 5.6, 0], [11.4, 3.8, 0]],
-    mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]] },
+    mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]], cowork: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [8.1, 3.9, 0], [11.4, 3.8, 0]] },
 };
 const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, seed: 11, born: 0, swinger: null,
   get ox() { const b = roomByKey.get('__bath'); return b ? b.ox : 0; },
@@ -1450,6 +1463,9 @@ let BACKDROP = (() => { let v = Q.get('backdrop'); if (!v) try { v = localStorag
 function setBackdrop(id) { if (!BACKDROPS[id]) return false; BACKDROP = id; try { localStorage.setItem('room.backdrop', id); } catch (e) {} return true; }
 const BD_PX = 6 * S, BD_PY = 2 * S, BD_M = 8 * S;
 const bdGround = H => (Math.floor(H / S) - 14) * S;
+// The menu bar and the Dock cover the top and bottom of the wallpaper; the app tells how much (CSS px).
+let INSETS = { top: 0, bottom: 0 };
+const insetBottom = () => Math.round(INSETS.bottom * DPR / PXD);
 const BDC = new Map();
 function bdLayer(name, key, w, h, paint) { // an offscreen canvas painted once per key; `g` points at it while painting
   let c = BDC.get(name);
@@ -1592,7 +1608,7 @@ function drawClouds(t, P) {
 function drawBackground(t, d) {
   stepParallax(t);
   const bd = BACKDROPS[BACKDROP] || BACKDROPS.city, W = cv.width, H = cv.height;
-  const P = { px: PAR.x, py: PAR.y, W, H, ground: bd.ground ? bd.ground(W, H) : bdGround(H), hr: d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600 };
+  const P = { px: PAR.x, py: PAR.y, W, H, ground: bd.ground ? bd.ground(W, H - insetBottom()) : bdGround(H - insetBottom()), hr: d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600 };
   drawSky(P);
   drawCelestial(t, d, P);
   bd.draw(t, d, P);
@@ -4070,6 +4086,7 @@ window.room = {
   setActive: on => { active = on; wake(); },
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setFps: n => { fpsCap = n; },
+  setInsets: o => { INSETS = { top: +o.top || 0, bottom: +o.bottom || 0 }; layout(); },
   setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),
   egg: name => eggTrigger(name),
 };

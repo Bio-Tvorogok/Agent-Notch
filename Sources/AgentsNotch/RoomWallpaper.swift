@@ -130,6 +130,17 @@ final class RoomWallpaper: NSObject {
         let fps = Self.fps
         if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
         extras.values.forEach { $0.sync(fps: fps) }
+        syncInsets()
+    }
+
+    /// The menu bar and the Dock cover part of the wallpaper; the page keeps the house and the city's street clear of them.
+    private var sentInsets: (CGFloat, CGFloat)?
+    private func syncInsets() {
+        guard let screen = NSScreen.screens.first, let web else { return }
+        let top = screen.frame.maxY - screen.visibleFrame.maxY, bottom = screen.visibleFrame.minY - screen.frame.minY
+        if let s = sentInsets, s == (top, bottom) { return }
+        sentInsets = (top, bottom)
+        web.evaluateJavaScript("room.setInsets({top: \(top), bottom: \(bottom)})")
     }
 
     static var fps: Int { AppSettings.shared.room.fps(lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, onBattery: onBattery) }
@@ -143,6 +154,7 @@ final class RoomWallpaper: NSObject {
         guard let w = window, let screen = NSScreen.screens.first else { return }
         w.setFrame(screen.frame, display: true)
         syncScreens()
+        syncInsets()
     }
 
     // MARK: agents
@@ -264,6 +276,7 @@ extension RoomWallpaper: WKNavigationDelegate {
             lastJSON = ""
             sentActive = nil
             sentFps = 0
+            sentInsets = nil
             pushRoomConfig()
             push()
             info.resend(store: store)
