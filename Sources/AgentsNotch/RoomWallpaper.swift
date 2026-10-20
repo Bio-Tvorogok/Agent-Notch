@@ -107,8 +107,24 @@ final class RoomWallpaper: NSObject {
     }
 
     /// A global monitor is never sent trackpad pinches (they go to the app under the cursor, Finder on the desktop),
-    /// so they are read from a listen-only event tap on the session; it needs no extra permission.
+    /// so they are read from a listen-only event tap on the session. macOS only feeds that tap with Input Monitoring
+    /// allowed: without it the app asks once, and the tap is made again as soon as the permission is given.
+    private var pinchTapAllowed = false
+    private var pinchWatch: Timer?
     private func startPinchTap() {
+        pinchTapAllowed = CGPreflightListenEventAccess()
+        if !pinchTapAllowed {
+            _ = CGRequestListenEventAccess()
+            pinchWatch?.invalidate()
+            pinchWatch = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] t in
+                MainActor.assumeIsolated {
+                    guard let self, CGPreflightListenEventAccess() else { return }
+                    t.invalidate(); self.pinchWatch = nil
+                    if let old = self.pinchTap { CGEvent.tapEnable(tap: old, enable: false); CFMachPortInvalidate(old); self.pinchTap = nil }
+                    self.startPinchTap()
+                }
+            }
+        }
         let callback: CGEventTapCallBack = { _, type, event, ref in
             guard let ref else { return Unmanaged.passUnretained(event) }
             let me = Unmanaged<RoomWallpaper>.fromOpaque(ref).takeUnretainedValue()
@@ -120,8 +136,8 @@ final class RoomWallpaper: NSObject {
             }
             return Unmanaged.passUnretained(event)
         }
-        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
-                                          eventsOfInterest: CGEventMask(1) << CGEventMask(NSEvent.EventType.magnify.rawValue),
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+                                          eventsOfInterest: CGEventMask(1) << 29 | CGEventMask(1) << CGEventMask(NSEvent.EventType.magnify.rawValue), // pinches come as gesture events (29)
                                           callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque())
         else { NSLog("agents-notch: no event tap for trackpad pinches"); return }
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
@@ -138,6 +154,7 @@ final class RoomWallpaper: NSObject {
         monitor = nil
         if let pinchTap { CGEvent.tapEnable(tap: pinchTap, enable: false); CFMachPortInvalidate(pinchTap) }
         pinchTap = nil
+        pinchWatch?.invalidate(); pinchWatch = nil
         subs.removeAll()
         removeExtras()
         info.stop()
@@ -391,3 +408,4 @@ private extension Color {
         self.init(red: Double(v >> 16 & 0xff) / 255, green: Double(v >> 8 & 0xff) / 255, blue: Double(v & 0xff) / 255)
     }
 }
+
