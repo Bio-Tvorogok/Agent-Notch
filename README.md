@@ -77,6 +77,14 @@ Nothing is approved without your click or shortcut. “Always allow” is Claude
 
 Pasting goes through the clipboard and a ⌘V the app presses, so it needs Accessibility access; without it the prompt is copied. By default, the clipboard is put back after a short delay, unless another app has changed it. Prompts live in `~/Library/Application Support/AgentsNotch/prompts.json`.
 
+## Agents' house on the desktop
+
+An optional animated pixel wallpaper: every project is a room, every agent walks around in it. Click a room or pinch to fly to it, Esc or a click outside goes back to the overview. Rooms show context batteries, limit tanks and a spend piggy bank.
+
+<img src="assets/readme/agent-house.gif" width="820" alt="The agents' house on the desktop: rooms on islands above a pixel city, the view flies in to one room and back">
+
+It is off by default. Turn it on in **Settings → Desktop house**, where you also pick the layout, frame rate, screens and a room per project. Nothing is drawn while windows cover the desktop. On Auto it draws 60 fps on power, 30 on battery and 20 in Low Power Mode.
+
 ## Themes and sounds
 
 Thirteen themes for the list, from plain Terminal to Phosphor, Blueprint, Pixel and Rubber Ducks. Every theme except Terminal can also restyle the marks in the wing.

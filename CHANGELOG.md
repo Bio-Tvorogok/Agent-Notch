@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- Agents' house on the desktop: an optional animated pixel wallpaper where every project is a room and every agent walks around in it. Click or pinch to fly to a room, Esc goes back to the overview. Off by default; turn it on in Settings → Desktop house. Nothing is drawn while the desktop is covered, and fewer frames are drawn on battery and in Low Power Mode.
 
 ## [0.6.0] - 2026-10-16
 
