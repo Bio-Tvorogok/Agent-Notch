@@ -653,7 +653,7 @@ function drawFloor(th) {
 // The shell is baked in two layers around the windows: A (ground, floor, walls) and B (rims, decor, door).
 function shellA(r) {
   const th = r.theme, NX = R.NX, NY = R.NY;
-  if (r.floor === 0) {
+  if (r.floor === 0 && !yardGround(r)) {
     const snow = weather === 'snow';
     const GY = NY + 2.0; // the ground reaches out in front, under the outside stairs
     B(-1.2, -1.2, -SLAB - 14, NX + 2.4, GY + 1.2, 14, '#7a5a3a');
@@ -789,6 +789,7 @@ function layout() {
   for (const r of rooms) { r.wx = r.ox; r.wy = r.oy; } // world position, before the view is applied
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const r of rooms) { x0 = Math.min(x0, r.ox - (r.NY + 1.5) * 8 * S); x1 = Math.max(x1, r.ox + (r.NX + 1.5) * 8 * S + 60 * S); y0 = Math.min(y0, r.oy - (WH + 12) * S); y1 = Math.max(y1, r.oy + (r.NX + r.NY + 2.4) * 4 * S + (SLAB + 16) * S); }
+  if (yardOn()) { const b = shared('bath'); y1 = Math.max(y1, b.oy + (YD.x1 + b.NY + 2) * 4 * S + (SLAB + 18) * S); x1 = Math.max(x1, b.ox + (YD.x1 - YD.y0 + 1.5) * 8 * S); }
   DPR = devicePixelRatio || 1;
   const fit = Math.min(innerWidth * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), innerHeight * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
   // whole device pixels when small; above that, quarter steps fill the screen and the unevenness is a single device pixel
@@ -800,9 +801,10 @@ function layout() {
   if (LAYOUT !== 'towers') stack.forEach((s, t) => {
     if (t === 0) return;
     const from = LAYOUT === 'steps' ? stack[t - 1] : stack[0], to = s[0];
-    const near = from.filter(r => !r.theme.open).reduce((a, b) => Math.abs(b.wy - to.wy) < Math.abs(a.wy - to.wy) ? b : a);
+    const near = from.filter(r => !r.theme.open && !(r.key === '__bath' && yardOn())).reduce((a, b) => Math.abs(b.wy - to.wy) < Math.abs(a.wy - to.wy) ? b : a);
     bridgePairs.push(to.wx > near.wx ? [near, to] : [to, near]);
   });
+  assignPorches();
   applyView();
   rooms.forEach(r => r.cache = null);
 }
@@ -817,8 +819,7 @@ function applyView() {
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; makeSkyline(); }
   cv.style.width = (cv.width * PXD / DPR) + 'px'; cv.style.height = (cv.height * PXD / DPR) + 'px';
   for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + r.wy - VIEW.at[1]); }
-  const edge = (r, side) => { const saved = R; R = { ox: r.ox, oy: r.oy, drop: 0 }; const p = side === 'right' ? iso(r.NX, r.NY * .55, -SLAB) : iso(r.NX * .78, r.NY, -SLAB); R = saved; return p; };
-  bridges = bridgePairs.map(([l, r]) => [edge(l, 'right'), edge(r, 'left'), l, r]);
+  bridges = bridgePairs.map(p => [porchEnd(p[0], p), porchEnd(p[1], p), p[0], p[1]]);
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
@@ -857,11 +858,9 @@ function drawBridge([a, b]) {
     line(q[3], q[2], lit('#d8a470'));
   }
   posts(1); rope(1);
-  for (const [p, k] of [[a, 1], [b, 1]]) { // end posts with lanterns
+  for (const [p, k] of [[a, 1], [b, 1]]) { // end posts
     for (const kk of [-1, 1]) { const x = Math.round(p[0] + px * hw * kk), y = Math.round(p[1] + py * hw * kk * .5);
-      g.fillStyle = lit(OUT); g.fillRect(x - 1, y - rail - 6 * S - 1, 2 * S + 2, rail + 6 * S + 2); g.fillStyle = lit('#7a5232'); g.fillRect(x, y - rail - 6 * S, 2 * S, rail + 6 * S);
-      if (kk === 1) { g.fillStyle = lit(OUT); g.fillRect(x - S - 1, y - rail - 11 * S - 1, 4 * S + 2, 5 * S + 2); g.fillStyle = DARK > .3 ? emi('#ffd27a') : lit('#f4e0a0'); g.fillRect(x - S, y - rail - 11 * S, 4 * S, 5 * S);
-        if (DARK > .3) { g.save(); g.globalCompositeOperation = 'lighter'; glow(x + S, y - rail - 9 * S, 24 * S, '#ffc870', .1 + .25 * DARK); g.restore(); } } }
+      g.fillStyle = lit(OUT); g.fillRect(x - 1, y - rail - 2 * S - 1, 2 * S + 2, rail + 2 * S + 2); g.fillStyle = lit('#7a5232'); g.fillRect(x, y - rail - 2 * S, 2 * S, rail + 2 * S); } // the porches carry the lanterns
   }
 }
 
@@ -883,12 +882,13 @@ function bake(r, fn) {
 }
 const D = { t: 0, on: () => false, showering: false };
 function buildCache(r) {
-  const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY + '|' + growthKey(r);
+  const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY + '|' + growthKey(r) + '|' + houseKey(r);
   if (r.cache && r.cache.key === key) return r.cache;
   const items = [], add = (depth, draw, dyn) => items.push({ depth, draw, dyn });
   r.theme.corner(add);
   r.theme.items(add, D);
   infoItems(r, add, D);
+  houseItems(r, add, D);
   for (const it of items) if (!it.dyn) it.baked = bake(r, it.draw);
   const above = roomAt(r.tower, r.floor + 1);
   r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items,
@@ -917,6 +917,7 @@ function placeFor(sp) {
   const cat = categoryFor(sp), home = sp.homeRoom;
   if (cat === 'wait' && shared('kitchen')) return [shared('kitchen'), 'wait'];
   if (cat === 'sleep' && shared('roof') && sp.restOnRoof) return [shared('roof'), 'sleep'];
+  if (cat === 'sleep' && sp.restInYard && yardOn()) return [YARD, 'sleep']; // on the bench or the swing
   return [home, cat];
 }
 function pickSpot(sp, room, cat) {
@@ -936,18 +937,17 @@ function roomPath(a, b) {
     const next = [];
     for (const d of [-1, 1]) { const n = roomAt(r.tower, r.floor + d); if (n) next.push([n, 'stairs']); }
     for (const pair of bridgePairs) if (pair[0] === r || pair[1] === r) next.push([pair[0] === r ? pair[1] : pair[0], pair]);
+    if (r === YARD) { if (shared('bath')) next.push([shared('bath'), 'yard']); } else if (r.key === '__bath' && yardOn()) next.push([YARD, 'yard']);
     for (const [n, via] of next) if (!prev.has(n)) { prev.set(n, [r, via]); queue.push(n); }
   }
   if (!prev.has(b)) return null;
   const steps = []; for (let r = b; prev.get(r); r = prev.get(r)[0]) steps.unshift([r, prev.get(r)[1]]);
   return steps;
 }
-// where a bridge meets a room: the left room of a pair is left by its right-hand edge, the right room entered on its left
-const bridgeDoor = (pair, room) => room === pair[0] ? [room.NX - .35, room.NY * .55, 0] : [room.NX * .78, room.NY - .3, 0];
 function routeTo(sp, room, p) {
   const nodes = []; let cur = sp.room, from = [sp.x, sp.y];
   const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
-  if (sp.onBridge) { nodes.push(sp.path[0], sp.path[1]); cur = sp.path[1].r; from = sp.path[1].p; } // finish crossing first
+  if (sp.onBridge) { let i = 1; while (sp.path[i + 1]?.porch) i++; nodes.push(...sp.path.slice(0, i + 1)); cur = sp.path[i].r; from = sp.path[i].p; } // finish crossing first, in through the door
   else if (sp.path.length && sp.path[0].p && sp.path[0].p[2] !== 0 && sp.path[0].r === cur && !sp.path[0].jump) { nodes.push(sp.path[0]); from = sp.path[0].p; }
   else if (sp.z > .5) nodes.push({ r: cur, p: [Math.min(sp.x + .2, cur.NX - .4), Math.min(sp.y + .7, cur.NY - .4), 0] });
   const steps = cur === room ? [] : roomPath(cur, room);
@@ -961,11 +961,7 @@ function routeTo(sp, room, p) {
       if (up) { up_(NY).forEach(q => nodes.push({ r: cur, p: q })); nodes.push({ r: next, p: [1.4, NYn + 1.0, 0], jump: true }, { r: next, p: [.7, NYn + .7, 0] }, { r: next, p: [1.0, NYn - .5, 0] }); }
       else { const Yn = NYn; nodes.push({ r: cur, p: [1.0, NY - .5, 0] }, { r: cur, p: [.7, NY + .7, 0] }, { r: cur, p: [1.4, NY + 1.0, 0] }, { r: next, p: [1.4, Yn + 1.0, FLOOR_STEP], jump: true });
         up_(Yn).reverse().slice(1).forEach(q => nodes.push({ r: next, p: q })); }
-    } else {
-      const out = bridgeDoor(via, cur), inn = bridgeDoor(via, next);
-      if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
-      nodes.push({ r: cur, p: out }, { bridge: via, forward: via[0] === cur }, { r: next, p: inn, jump: true });
-    }
+    } else doorRoute(nodes, cur, next, via, from, far);
     from = nodes[nodes.length - 1].p; cur = next;
   }
   if (far(from, p)) nodes.push({ r: room, p: room.theme.hub });
@@ -1003,11 +999,12 @@ function escape(r, layer) {
   }
 }
 // drawn after every room of the stack, with the Clawds that are out on them, back to front
+const onStairs = (s, r) => s.y > r.NY - .05 && s.x < ESC.x1 + ESC.w + .2; // out front, but not on a porch
 function drawEscapes(t) {
   for (const r of rooms) {
     const c = r.cache; if (!c || !(c.escBack || c.escTop)) continue;
     R = r;
-    const out = [...sprites.values()].filter(s => s.room === r && s.y > r.NY - .05);
+    const out = [...sprites.values()].filter(s => s.room === r && onStairs(s, r));
     const clawd = s => { const [X, Y] = iso(s.x, s.y, s.z); drawClawd(X, Y, s, t); };
     blit(c.escBack || c.escTop);
     out.filter(s => s.y < r.NY + .7).forEach(clawd);
@@ -1028,6 +1025,282 @@ function drawBridgeWalkers(t) {
     drawClawd(q[0], q[1], sp, t);
   }
 }
+
+// ---------- porches: a door and a little deck at both ends of every bridge ----------
+// A bridge leaves a room through a door on its open front edge: x = NX for its right side, y = NY for its left one.
+// The porch reaches PD tiles out at floor level, the bridge hangs from its outer edge.
+const PD = 1.8;
+const DOOR_AT = { right: { server: 4.25, library: 3.8 }, left: { library: 5.6, bath: 5.5 } }; // where a theme's furniture leaves room for a door
+function assignPorches() {
+  for (const p of bridgePairs) p.ends = [null, null];
+  for (const r of rooms) for (const k of [0, 1]) {
+    const mine = bridgePairs.filter(p => p[k] === r); if (!mine.length) continue;
+    const side = k ? 'left' : 'right', N = k ? r.NX : r.NY;
+    const base = DOOR_AT[side][THEME_KEY.get(r.theme)] ?? (k ? r.NX * .6 : r.NY * .45);
+    mine.sort((a, b) => k ? b[0].wy - a[0].wy : a[1].wy - b[1].wy); // the higher island takes the door further back, so bridges don't cross
+    // on the left the lowest island takes the door nearest the front corner, clear of the stairs on the other end
+    mine.forEach((p, i) => { p.ends[k] = { side, c: scClamp(k ? base + (mine.length - 1 - i) * 1.6 : base + i * 1.8, 1, N - 1) }; });
+  }
+}
+const porchOf = (pair, room) => pair.ends && pair.ends[pair[0] === room ? 0 : 1];
+function porchEnd(room, pair) { // the outer edge of the porch in screen pixels: where the bridge is tied
+  const e = porchOf(pair, room) || { side: room === pair[0] ? 'right' : 'left', c: room === pair[0] ? room.NY * .45 : room.NX * .6 };
+  const saved = R; R = { ox: room.ox, oy: room.oy, drop: 0 };
+  const p = e.side === 'right' ? iso(room.NX + PD, e.c, 0) : iso(e.c, room.NY + PD, 0);
+  R = saved; return p;
+}
+// the walk from inside the room, through the door, out to the porch's edge (or down the yard stoop's steps)
+function porchPath(r, e) {
+  const W = e.stoop ? [[-.6, 0], [0, 0], [.85, 0], [1.18, -2], [1.52, -4], [1.9, -SLAB]] : [[-.6, 0], [0, 0], [PD, 0]];
+  return W.map(([u, z]) => e.side === 'right' ? [r.NX + u, e.c, z] : [e.c, r.NY + u, z]);
+}
+// routeTo's step between two rooms that are not on the same stairs: over a bridge, or out into the yard
+function doorRoute(nodes, cur, next, via, from, far) {
+  if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
+  if (via === 'yard') {
+    const w = porchPath(next === YARD ? cur : next, YARD_DOOR), f = w[w.length - 1];
+    if (next === YARD) { w.forEach(p => nodes.push({ r: cur, p })); nodes.push({ r: next, p: [f[0], f[1], 0], jump: true }); }
+    else { nodes.push({ r: cur, p: [f[0], f[1], 0] }, { r: next, p: f, jump: true }); w.slice(0, -1).reverse().forEach(p => nodes.push({ r: next, p, porch: true })); }
+    return;
+  }
+  const out = porchPath(cur, porchOf(via, cur)), inn = porchPath(next, porchOf(via, next)).reverse();
+  out.forEach(p => nodes.push({ r: cur, p }));
+  nodes.push({ bridge: via, forward: via[0] === cur }, { r: next, p: inn[0], jump: true });
+  inn.slice(1).forEach(p => nodes.push({ r: next, p, porch: true }));
+}
+function houseKey(r) {
+  let k = bridgePairs.map(p => (p.ends || []).map((e, i) => p[i] === r && e ? e.side[0] + e.c : '').join('')).join('');
+  if (r.key === '__bath' && yardOn()) k += 'Y' + seasonNow();
+  return k;
+}
+// porches and the yard join the room's items, so Clawds on them sort with the rest
+function houseItems(r, add, D) {
+  for (const pair of bridgePairs) { const k = pair[0] === r ? 0 : pair[1] === r ? 1 : -1; if (k >= 0 && pair.ends?.[k]) porchItems(r, pair.ends[k], add, pair, k); }
+  if (r.key === '__bath' && yardOn()) { porchItems(r, YARD_DOOR, add, null, 0); yardItems(r, add, D); }
+}
+function porchItems(r, e, add, pair, k) {
+  const base = e.side === 'right' ? r.NX + e.c : e.c + r.NY, len = e.stoop ? 1 : PD;
+  add(base + .3, () => porchDraw(r, e, 'back'));
+  add(base + .9, () => porchDraw(r, e, 'post'));
+  add(base + len + .85, () => porchDraw(r, e, 'front'));
+  add(base + len + .9, () => { if (DARK <= .3) return; // the lantern's glow
+    const [x, y] = e.side === 'right' ? iso(R.NX + len - .14, e.c - .68, 24) : iso(e.c - .68, R.NY + len - .14, 24);
+    g.save(); g.globalCompositeOperation = 'lighter'; glow(x, y, 20 * S, '#ffc870', .1 + .25 * DARK); g.restore(); }, true);
+  // bridges are drawn before the rooms, so a room's own island would hide the end of a bridge that runs in front of it:
+  // that end is drawn again over the room, clipped to the room's outline, just before the porch
+  if (pair) add(base + .2, () => {
+    const br = bridges.find(b => b[2] === pair[0] && b[3] === pair[1]); if (!br) return;
+    const m = r.floor === 0 ? 1.2 : 0, mf = r.floor === 0 ? 2 : 0, bot = r.floor === 0 ? -SLAB - 14 : -SLAB, top = r.theme.open ? 26 : WH;
+    const pts = [iso(-m, -m, top), iso(r.NX + m, -m, top), iso(r.NX + m, -m, bot), iso(r.NX + m, r.NY + mf, bot), iso(-m, r.NY + mf, bot), iso(-m, r.NY + mf, top)];
+    g.save(); g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(Math.round(p[0]), Math.round(p[1])) : g.moveTo(Math.round(p[0]), Math.round(p[1]))); g.closePath(); g.clip();
+    drawBridge(br);
+    for (const sp of sprites.values()) { const ob = sp.onBridge; if (!ob || ob.pair !== pair) continue; const q = bridgePoint(pair, ob.forward ? ob.u : 1 - ob.u); if (q) drawClawd(q[0], q[1], sp, D.t); }
+    g.restore(); }, true);
+  // a Clawd just stepping onto the bridge or off it is drawn again over the porch
+  if (pair) add(base + PD + .6, () => { for (const sp of sprites.values()) { const ob = sp.onBridge; if (!ob || ob.pair !== pair) continue;
+    const ue = ob.forward ? ob.u : 1 - ob.u; if (k ? ue < .86 : ue > .14) continue;
+    const q = bridgePoint(pair, ue); if (q) drawClawd(q[0], q[1], sp, D.t); } }, true);
+}
+// u runs out from the room's edge, v along it (negative is the back side)
+function porchDraw(r, e, part) {
+  const NX = R.NX, NY = R.NY, c = e.c, right = e.side === 'right', len = e.stoop ? 1 : PD;
+  const XY = (u, v) => right ? [NX + u, c + v] : [c + v, NY + u];
+  const P = (u, v, z) => { const [x, y] = XY(u, v); return iso(x, y, z); };
+  const box = (u0, v0, u1, v1, z, h, col, em, nl) => { const [ax, ay] = XY(u0, v0), [bx, by] = XY(u1, v1); B(Math.min(ax, bx), Math.min(ay, by), z, Math.abs(bx - ax), Math.abs(by - ay), h, col, em, nl); };
+  const face = (u0, u1, v, z0, z1, col) => right ? FY(NX + u0, NX + u1, c + v, z0, z1, col) : FX(NY + u0, NY + u1, c + v, z0, z1, col);
+  const wood = '#b07a4a', rail = '#8a5a36', trim = r.theme.trim || '#e8dcc0';
+  if (part === 'back') {
+    if (e.stoop) { box(0, -.75, len, .75, -SLAB, SLAB, wood); box(len, -.6, len + .35, .6, -SLAB, 4, wood); box(len + .35, -.6, len + .7, .6, -SLAB, 2, wood); }
+    else {
+      if (r.floor === 0) for (const v of [-.7, .58]) box(len - .2, v, len - .08, v + .12, -SLAB, SLAB - 2, '#6a4228', 0, 1); // posts down to the grass
+      else for (const v of [-.6, .5]) { line(P(len - .25, v, -2), P(0, v, -SLAB), lit('#5a3420')); line(P(len - .25, v + .1, -2), P(0, v + .1, -SLAB), lit(rail)); } // braces under the slab
+      box(0, -.75, len, .75, -2, 2, wood);
+    }
+    for (let u = .3; u < len - .05; u += .3) line(P(u, -.75, 0), P(u, .75, 0), lit('#8a5a36'));
+    poly([P(.1, -.42, .02), P(.6, -.42, .02), P(.6, .42, .02), P(.1, .42, .02)], lit('#c05050')); // doormat
+    box(.1, -.74, .22, -.62, 0, 10, rail, 0, 1); box(0, -.75, len, -.65, 9, 1.2, rail);
+    box(len - .2, -.74, len - .08, -.62, 0, 22, '#6a4228', 0, 1); // the lantern post
+    box(len - .32, -.86, len + .04, -.5, 22, 4, '#ffd27a', DARK > .3); box(len - .38, -.92, len + .1, -.44, 26, .9, '#3a2c24');
+    box(-.16, -.7, 0, -.54, 0, 40, trim); // the door frame's back post, the door swung open onto the porch
+    face(.02, .9, -.56, .5, 36, '#a8744a'); face(.12, .8, -.555, 20, 33, '#bc8a5a'); face(.12, .8, -.555, 4, 17, '#bc8a5a');
+    line(P(.9, -.56, .5), P(.9, -.56, 36), lit(OUT)); line(P(.02, -.56, 36), P(.9, -.56, 36), lit(OUT));
+    const [kx, ky] = P(.78, -.55, 18); g.fillStyle = lit('#f0d070'); rect(Math.round(kx), Math.round(ky), S, S);
+  } else if (part === 'post') {
+    box(-.16, .54, 0, .7, 0, 40, trim); box(-.16, -.7, 0, .7, 40, 2.4, trim);
+  } else {
+    box(.1, .62, .22, .74, 0, 10, rail, 0, 1); box(len - .2, .62, len - .08, .74, 0, 10, rail, 0, 1); box(0, .65, len, .75, 9, 1.2, rail);
+  }
+}
+
+// ---------- the yard: the tower's island grows to the front-right of the bathroom ----------
+// It is a walkable place of its own (YARD), drawn with the bathroom and in the bathroom's tile coordinates,
+// its z = 0 is the grass. Clawds reach it through a door in the bath's right edge and down the stoop.
+const YD = { x1: 14.0, y0: 1.0 }; // the ground beyond the bath's old island: out to x1, from y0 to the front
+const YARD_DOOR = { side: 'right', c: 3.0, stoop: true };
+const POND = { x: 12.0, y: 5.0, rx: 1.0, ry: .8 };
+const YARD_THEME = {
+  name: 'Двор', shared: true, open: true, windows: [], clock: null, hub: [8.9, 6.3, 0], lights: () => [], decor() {}, items() {}, corner() {},
+  spots: { stroll: [[12.2, 3.7, 0], [9.9, 5.6, 0], [12.1, 6.85, 0], [5.4, 6.95, 0], [11.4, 3.8, 0], [8.1, 3.9, 0]],
+    bench: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8]], swing: [[10.7, 7.05, 4.5]], sleep: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [10.7, 7.05, 4.5]],
+    look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[9.9, 5.6, 0], [11.4, 3.8, 0]],
+    mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]] },
+};
+const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, seed: 11, born: 0, swinger: null,
+  get ox() { const b = roomByKey.get('__bath'); return b ? b.ox : 0; },
+  get oy() { const b = roomByKey.get('__bath'); return b ? b.oy + SLAB * S : 0; },
+  get drop() { const b = roomByKey.get('__bath'); return b ? b.drop : 0; } };
+function yardOn() { return LAYOUT === 'islands' && !(PV && !PV.house) && SCENE !== 'extra' && rooms.includes(roomByKey.get('__bath')); }
+// the ground block, L-shaped: the old island plus the yard; baked into the bath's shell (true = drawn here)
+function yardGround(r) {
+  if (r.key !== '__bath' || !yardOn()) return false;
+  const NX = R.NX, NY = R.NY, GY = NY + 2, A1 = NX + 1.2, b0 = -SLAB - 14, G = -SLAB, se = seasonNow(), snow = weather === 'snow', soil = '#7a5a3a';
+  B(-1.2, -1.2, b0, A1 + 1.2, GY + 1.2, 14, soil);
+  B(A1, YD.y0, b0, YD.x1 - A1, GY - YD.y0, 14, soil);
+  poly([iso(-1.2, GY, b0), iso(A1, GY, b0), iso(A1, GY, G), iso(-1.2, GY, G)], lit(soil, .86));
+  FY(-1.2, YD.x1, GY + .001, b0, b0 + 5, '#5a4028'); FX(-1.2, YD.y0, A1 + .001, b0, b0 + 5, '#5a4028'); FX(YD.y0, GY, YD.x1 + .001, b0, b0 + 5, '#5a4028');
+  poly([iso(-1.2, -1.2, G), iso(A1, -1.2, G), iso(A1, YD.y0, G), iso(YD.x1, YD.y0, G), iso(YD.x1, GY, G), iso(-1.2, GY, G)], lit(snow ? '#eef2f8' : '#6aa84a'));
+  const inYard = (x, y) => !(x > A1 && y < YD.y0) && !(x < NX + .1 && y < NY + .1);
+  for (let i = 0; i < 150; i++) { const x = -1.1 + scRnd(i, 1) * (YD.x1 + 1), y = -1.1 + scRnd(i, 2) * (GY + 1); if (!inYard(x, y)) continue;
+    pix(x, y, G, snow ? '#ffffff' : se === 'autumn' && i % 3 === 0 ? ['#e8803a', '#d0502a', '#f0b040'][(i >> 2) % 3] : i % 5 ? '#8ac860' : se === 'spring' ? '#f8a8c8' : '#f0d040'); }
+  if (se === 'winter' && !snow) for (let i = 0; i < 46; i++) { const x = 7.2 + scRnd(i, 21) * (YD.x1 - 7.4), y = YD.y0 + .1 + scRnd(i, 22) * (GY - YD.y0 - .2), [px, py] = iso(x, y, G);
+    g.fillStyle = lit('#f4f8ff'); rect(Math.round(px) - 2, Math.round(py), 3 + (i % 3) * 2, 2); g.fillStyle = lit('#d8e2f0'); rect(Math.round(px) - 2, Math.round(py) + 2, 3 + (i % 3) * 2, 1); }
+  if (se === 'autumn') for (let i = 0; i < 7; i++) pix(12.9 + (scRnd(i, 8) - .5) * 1.8, 2.5 + (scRnd(i, 9) - .3) * 1.2, G, '#c82828', 0, S, S); // fallen apples
+  // a dirt path with stepping stones from the foot of the stairs, through the gate, to the stoop
+  const dirt = snow ? '#ddd6cc' : '#b8946a';
+  FL(1.15, 6.65, 8.55, 7.35, dirt, G); FL(8.55, 3.45, 9.25, 7.35, dirt, G);
+  const stone = (x, y) => { const pts = [iso(x - .2, y, G), iso(x, y - .16, G), iso(x + .2, y, G), iso(x, y + .16, G)]; polyOutline(pts, lit('#8a8272')); poly(pts, lit(snow ? '#e8e8ec' : '#c8c0b0')); };
+  for (let x = 1.45; x < 8.6; x += .55) stone(x + (scRnd(x * 7, 3) - .5) * .12, 7.0 + (scRnd(x * 7, 4) - .5) * .16);
+  for (let y = 3.75; y < 6.6; y += .55) stone(8.9 + (scRnd(y * 7, 5) - .5) * .16, y);
+  B(1.2, 6.75, G, .35, .55, 3, '#b07a4a'); // a step down from the stairs' landing
+  return true;
+}
+function yardItems(r, add, D) {
+  const G = -SLAB, se = seasonNow(), winter = se === 'winter', frozen = winter || weather === 'snow';
+  // the pond: flat, under everything else
+  const ring = (k) => { const out = []; for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; out.push(iso(POND.x + Math.cos(a) * POND.rx * k, POND.y + Math.sin(a) * POND.ry * k, G)); } return out; };
+  add(-2, () => {
+    polyOutline(ring(1.2), lit('#6a6a62')); poly(ring(1.2), lit('#b0aca0'));
+    for (let i = 0; i < 16; i++) { const a = i / 16 * Math.PI * 2; pix(POND.x + Math.cos(a) * POND.rx * 1.1, POND.y + Math.sin(a) * POND.ry * 1.1, G, i % 2 ? '#8a867a' : '#d0ccc0'); }
+    poly(ring(1), lit(frozen ? '#a8c8e0' : '#2e6aa0')); poly(ring(.82), lit(frozen ? '#d4e6f4' : '#3e86c0'));
+    if (frozen) { line(iso(POND.x - .5, POND.y - .2, G), iso(POND.x + .1, POND.y + .1, G), lit('#ffffff')); line(iso(POND.x + .1, POND.y + .1, G), iso(POND.x + .5, POND.y - .1, G), lit('#ffffff'));
+      line(iso(POND.x + .1, POND.y + .1, G), iso(POND.x + .2, POND.y + .5, G), lit('#b8d4ea')); }
+    else if (se !== 'autumn') { for (const [dx, dy] of [[.5, -.35], [-.45, .3]]) { const pad = []; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; pad.push(iso(POND.x + dx + Math.cos(a) * .2, POND.y + dy + Math.sin(a) * .16, G)); } poly(pad, lit('#4a9a4a')); }
+      pix(POND.x + .5, POND.y - .35, G + .5, '#f8b0d0'); }
+  });
+  add(-1.9, () => { // fish, and the moon in the water at night
+    if (!frozen) for (let i = 0; i < 3; i++) {
+      const a = D.t / (2600 + i * 700) * (i % 2 ? -1 : 1) + i * 2.1, k = .38 + i * .14, x = POND.x + Math.cos(a) * POND.rx * k, y = POND.y + Math.sin(a) * POND.ry * k;
+      const vx = -Math.sin(a) * (i % 2 ? -1 : 1), vy = Math.cos(a) * (i % 2 ? -1 : 1), dir = (vx - vy) >= 0 ? 1 : -1, [X, Y] = iso(x, y, G);
+      g.fillStyle = lit(i === 1 ? '#f4f0e8' : '#f08030'); rect(Math.round(X) - 1, Math.round(Y), 3, 1); g.fillStyle = lit('#e05020'); rect(Math.round(X) - 1 - dir * 2, Math.round(Y), 1, 1);
+    }
+    if (DARK > .5 && weather !== 'rain' && weather !== 'snow') {
+      const [X, Y] = iso(POND.x + .25, POND.y - .2, G), sh = Math.floor(D.t / 450) % 3 - 1, a = frozen ? .35 : .7;
+      g.fillStyle = `rgba(240,240,210,${a})`; rect(Math.round(X) - 3, Math.round(Y) - 1, 6, 1); rect(Math.round(X) - 2 + sh, Math.round(Y), 5, 1); rect(Math.round(X) - 1 - sh, Math.round(Y) + 2, 3, 1);
+      g.save(); g.globalCompositeOperation = 'lighter'; glow(X, Y, 8 * S, '#c8d0ff', .12); g.restore();
+    }
+  }, true);
+  add(POND.x + POND.y - .9, () => { for (const [dx, h] of [[-.75, 7], [-.62, 9], [-.48, 6]]) { B(POND.x + dx, POND.y - .7, G, .06, .06, h, winter ? '#b8a878' : '#4a8a3a', 0, 1); if (!winter && h > 6) pix(POND.x + dx, POND.y - .7, G + h, '#7a4a2a', 0, S, S + 1); } });
+  // the back fence, the garden beds and the apple tree
+  const fence = (x0, y0, x1, y1, depth) => add(depth, () => {
+    const n = Math.max(1, Math.round(Math.hypot(x1 - x0, y1 - y0) / .3));
+    for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n; B(x - .05, y - .05, G, .1, .1, i % 4 ? 5 : 6.4, '#f0e6d4', 0, 1); }
+    for (const z of [1.6, 3.8]) B(Math.min(x0, x1) - .04, Math.min(y0, y1) - .04, G + z, Math.abs(x1 - x0) + .08, Math.abs(y1 - y0) + .08, .6, '#d8ccb4', 0, 1);
+  });
+  const run = (x0, y0, x1, y1, front) => { const m = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 1.2));
+    for (let k = 0; k < m; k++) { const a = [x0 + (x1 - x0) * k / m, y0 + (y1 - y0) * k / m], b = [x0 + (x1 - x0) * (k + 1) / m, y0 + (y1 - y0) * (k + 1) / m];
+      fence(a[0], a[1], b[0], b[1], front ? Math.max(a[0], b[0]) + Math.max(a[1], b[1]) + .6 : Math.min(a[0], b[0]) + Math.min(a[1], b[1]) - .3); } };
+  run(7.0, 1.1, 13.9, 1.1, false); run(3.0, 6.1, 3.0, 6.45, false); run(3.0, 7.45, 3.0, 7.85, false);
+  run(3.0, 7.85, 13.9, 7.85, true); run(13.9, 1.1, 13.9, 7.85, true);
+  add(3.0 + 6.45 + .2, () => { // the gate: two posts, the leaf swung in
+    B(2.94, 6.39, G, .12, .12, 8, '#d8c8b0'); B(2.94, 7.39, G, .12, .12, 8, '#d8c8b0'); pix(3.0, 6.45, G + 8, '#f0e6d4', 0, S, S); pix(3.0, 7.45, G + 8, '#f0e6d4', 0, S, S);
+    for (let i = 0; i < 5; i++) B(3.08 + i * .13, 6.4, G + .6, .08, .08, 5.4, '#f0e6d4', 0, 1);
+    for (const z of [1.6, 3.8]) B(3.06, 6.39, G + z, .62, .1, .5, '#d8ccb4', 0, 1);
+  });
+  const bed = (x0, y0, x1, y1, seed) => add((x0 + x1) / 2 + (y0 + y1) / 2 + .3, () => {
+    B(x0, y0, G, x1 - x0, y1 - y0, 2.5, '#9a6a40'); FL(x0 + .1, y0 + .1, x1 - .1, y1 - .1, winter ? '#eef2f8' : '#5a3a24', G + 2.5);
+    if (winter) return;
+    for (let i = 0, n = Math.round((x1 - x0) / .4); i < n; i++) { const x = x0 + .25 + i * .4, y = (y0 + y1) / 2;
+      if (se === 'spring') { pix(x, y, G + 4, '#7ad070'); pix(x + .1, y + .05, G + 3.2, '#58b058'); }
+      else if (se === 'autumn' && i % 2) { B(x - .14, y - .14, G + 2.5, .28, .28, 1.6, '#e8802a'); pix(x, y, G + 4.6, '#5a7a2a'); }
+      else { leaves(x, y, G + 2.5, 2, '#3e9a46', '#7ad070', seed + i); if ((i + seed) % 3 === 0) pix(x + .05, y + .1, G + 4.5, '#e04040'); }
+    }
+  });
+  bed(9.4, 1.5, 11.4, 2.15, 1); bed(9.4, 2.75, 11.4, 3.4, 4);
+  add(12.9 + 2.4 + .3, () => {
+    B(12.78, 2.28, G, .24, .24, 24, '#6a4a2a');
+    const br = lit('#6a4a2a'); line(iso(12.9, 2.4, G + 16), iso(12.35, 2.5, G + 25), br); line(iso(12.9, 2.4, G + 18), iso(13.45, 2.2, G + 27), br); line(iso(12.9, 2.4, G + 22), iso(13.0, 2.4, G + 32), br);
+    if (winter) { line(iso(12.35, 2.5, G + 25), iso(12.1, 2.5, G + 30), br); line(iso(13.45, 2.2, G + 27), iso(13.7, 2.1, G + 31), br);
+      for (const [x, y, z] of [[12.35, 2.5, G + 25.5], [13.45, 2.2, G + 27.5], [13.0, 2.4, G + 32.5], [12.1, 2.5, G + 30.5]]) pix(x, y, z, '#f4f8ff', 0, S + 1, 1); return; }
+    const [a, b] = se === 'autumn' ? ['#b8862a', '#e8b040'] : se === 'spring' ? ['#58b058', '#a8e08a'] : ['#3e9a46', '#7ad070'];
+    leaves(12.45, 2.6, G + 20, 6, a, b, 3); leaves(13.4, 2.2, G + 21, 6, a, b, 5); leaves(12.9, 2.4, G + 25, 9, a, b, 7);
+    const n = se === 'autumn' ? 10 : se === 'summer' ? 6 : 14;
+    for (let i = 0; i < n; i++) { const x = 12.9 + (scRnd(i, 3) - .5) * 1.5, y = 2.4 + (scRnd(i, 4) - .5) * .5, z = G + 25 + scRnd(i, 5) * 13;
+      if (se === 'spring') pix(x, y, z, i % 3 ? '#ffd0e0' : '#ffffff'); else pix(x, y, z, se === 'autumn' || i % 2 ? '#d83030' : '#a8c040', 0, S, S); }
+  });
+  if (se === 'autumn') add(15.65, () => { // now and then an apple drops
+    const cyc = 7000, k = (D.t % cyc) / cyc, i = Math.floor(D.t / cyc), x = 12.9 + (scRnd(i, 11) - .5) * 1.3, y = 2.4 + scRnd(i, 12) * .6, z0 = G + 26 + scRnd(i, 13) * 8;
+    if (k > .9) return;
+    const z = k < .2 ? z0 - (k / .2) ** 2 * (z0 - G) : k < .28 ? G + Math.sin((k - .2) / .08 * Math.PI) * 2 : G;
+    pix(x, y + (k > .2 ? Math.min(.3, (k - .2) * 2) : 0), z, '#d83030', 0, S, S);
+  }, true);
+  // the bench under the lamp, the swing, the cat's house
+  add(14.85, () => {
+    for (const x of [9.73, 10.67]) { B(x, 4.36, G, .1, .1, 3.2, '#4a4a52', 0, 1); B(x, 4.62, G, .1, .1, 3.2, '#4a4a52', 0, 1); B(x, 4.2, G + 3.2, .1, .1, 4.8, '#4a4a52', 0, 1); }
+    B(9.65, 4.3, G + 3.2, 1.2, .45, .6, '#b07a4a'); line(iso(9.65, 4.52, G + 3.8), iso(10.85, 4.52, G + 3.8), lit('#8a5a36'));
+    B(9.65, 4.18, G + 4.8, 1.2, .1, 3, '#b07a4a');
+    if (frozen) FL(9.67, 4.32, 10.83, 4.72, '#f4f8ff', G + 3.81);
+  });
+  add(14.9, () => { B(9.38, 4.98, G, .26, .26, 1.5, '#3a3a44'); B(9.46, 5.06, G, .1, .1, 28, '#3a3a44', 0, 1); B(9.32, 4.92, G + 28, .38, .38, 4, '#ffe2a0', DARK > .3); B(9.27, 4.87, G + 32, .48, .48, 1, '#2a2a34'); });
+  add(17.6, () => {
+    const sw = YARD.swinger, dy = sw ? sw.y - 7.05 : Math.sin(D.t / 1300) * .03, dz = sw ? sw.z - 4.5 : 0;
+    for (const x of [9.9, 11.5]) for (const y0 of [6.7, 7.4]) { line(iso(x, y0, G), iso(x, 7.05, G + 22), lit('#6a4228')); line(iso(x + .06, y0, G), iso(x + .06, 7.05, G + 22), lit('#8a5a36')); }
+    B(9.82, 7.0, G + 22, 1.76, .1, .8, '#8a5a36');
+    for (const x of [10.45, 10.95]) line(iso(x, 7.05, G + 22), iso(x, 7.05 + dy, G + 4.6 + dz), lit('#d8c8a0'));
+    B(10.35, 6.92 + dy, G + 4 + dz, .7, .26, .5, '#c04848');
+  }, true);
+  add(13.05 + 6.45 + .3, () => { // the cat's house behind the pond
+    B(12.7, 6.1, G, .7, .7, 5, '#c06848');
+    const rl = [iso(13.05, 6.03, G + 8.6), iso(13.05, 6.87, G + 8.6), iso(12.63, 6.87, G + 4.6), iso(12.63, 6.03, G + 4.6)];
+    const rr = [iso(13.05, 6.03, G + 8.6), iso(13.47, 6.03, G + 4.6), iso(13.47, 6.87, G + 4.6), iso(13.05, 6.87, G + 8.6)];
+    const gab = [iso(12.7, 6.8, G + 5), iso(13.4, 6.8, G + 5), iso(13.05, 6.8, G + 8.3)];
+    for (const p of [rl, rr, gab]) polyOutline(p, lit(OUT));
+    poly(gab, lit('#d88060')); poly(rl, lit('#8a3a2a')); poly(rr, lit(frozen ? '#f4f8ff' : '#a84a34'));
+    FY(12.89, 13.21, 6.801, G, G + 2.6, '#2a1a1a'); FY(12.95, 13.15, 6.802, G + 2.6, G + 3.2, '#2a1a1a'); FY(12.91, 13.19, 6.802, G + 3.8, G + 4.5, '#f0d080');
+    FL(12.8, 6.82, 13.3, 7.15, '#d8b070', G + .02); B(13.45, 6.95, G, .3, .25, .8, '#4a80d8'); FL(13.5, 7.0, 13.7, 7.15, '#a0603a', G + .81);
+  });
+  // the mailbox inside the gate, its flag up for a while after a commit is posted
+  add(11.4, () => { B(3.9, 7.45, G, .14, .14, 12, '#6a6a74', 0, 1); B(3.6, 7.2, G + 12, .75, .55, 4.5, '#3a6ad0'); B(3.65, 7.25, G + 16.5, .65, .45, .8, '#5a8ae8');
+    FY(3.75, 4.2, 7.751, G + 14, G + 14.6, '#1a2040'); pix(3.7, 7.75, G + 13, '#f4f0e8', 0, S, 1); });
+  add(11.41, () => { const up = D.t - SC.mailFlag < 15000;
+    B(4.36, 7.5, G + 12.5, .06, .06, up ? 6 : 2, '#6a6a74', 0, 1);
+    if (up) FX(7.53, 7.8, 4.4, G + 16.5, G + 18.5, '#e04040'); else FX(7.53, 7.95, 4.4, G + 13.2, G + 14.4, '#e04040'); }, true);
+  // bushes along the bath's front
+  add(4.4 + 6.4 + .3, () => leaves(4.4, 6.4, G, 3, '#3e9a46', '#7ad070', 2));
+  add(6.3 + 6.35 + .3, () => { leaves(6.3, 6.35, G, 2, '#2e8a3e', '#6cc860', 6); if (se === 'spring' || se === 'summer') { pix(6.2, 6.3, G + 3, '#f080b0'); pix(6.45, 6.4, G + 2, '#f0d040'); } });
+  add(99, () => { if (DARK <= .3) return; const [x, y] = iso(9.51, 5.11, G + 30); g.save(); g.globalCompositeOperation = 'lighter'; glow(x, y, 30 * S, '#ffd890', .1 + .3 * DARK);
+    const [fx, fy] = iso(9.51, 5.11, G); glow(fx, fy, 22 * S, '#ffd890', .06 + .12 * DARK); g.restore(); }, true);
+}
+function swingAt(t, sp) { const a = sp.state === 'done' || sp.state === 'idle-sleep' ? .12 : .32, ph = t / 700 + sp.seed * 6; return [Math.sin(ph) * a, Math.abs(Math.sin(ph)) * a * 3]; }
+function updateYard(t) {
+  const on = yardOn(), sw = YARD_THEME.spots.swing[0]; YARD.swinger = null;
+  for (const sp of sprites.values()) {
+    if (sp.room !== YARD) continue;
+    if (!on) { const b = shared('bath') || sp.homeRoom; sp.room = b; [sp.x, sp.y, sp.z] = b.theme.hub; sp.path = []; if (sp.goal?.room === YARD) sp.goal = null; continue; }
+    if (!sp.path.length && sp.goal?.room === YARD && Math.abs(sp.goal.p[0] - sw[0]) < .01 && Math.abs(sp.goal.p[1] - sw[1]) < .01 && !YARD.swinger) {
+      const [dy, dz] = swingAt(t, sp); sp.y = sw[1] + dy; sp.z = sw[2] + dz; YARD.swinger = sp; }
+  }
+}
+// residents' outings into the yard (true = one was planned)
+function yardVisit(h, t, when) {
+  if (!yardOn()) return false;
+  const cat = when === 'morning' ? 'water' : when === 'evening' ? scPick(['bench', 'bench', 'look', 'swing']) : scPick(['stroll', 'bench', 'swing', 'look', 'water']);
+  const ms = cat === 'water' ? 9000 : cat === 'stroll' ? 7000 : 12000 + Math.random() * 6000;
+  h.errand = { room: YARD, cat, until: t + ms };
+  setGoal(h, pickSpot(h, YARD, cat)); h.scene = cat === 'water' ? 'water' : null; h.state = 'idle'; h.arriveState = 'idle'; h.rNext = t + ms;
+  return true;
+}
+// the cat sleeps at home most nights
+function catHome() { return yardOn() && Math.random() < (DARK > .5 ? .8 : .25) ? [YARD, YARD_THEME.spots.cat[0]] : null; }
 function spawn(id, room, init) {
   const sp = Object.assign({ id, room, homeRoom: room, x: room.theme.hub[0], y: room.theme.hub[1], z: 0, path: [], alpha: 0, fade: 1,
     seed: (hashStr(id) % 1000) / 1000, moving: false, goal: null }, init);
@@ -1049,7 +1322,7 @@ function setAgents(list) {
     sp.agent = a; sp.leaving = false; sp.fade = 1;
     if (!sp.errand) sp.state = a.state;
     if (a.state === 'done' && prev && prev !== 'done') {
-      sp.restOnRoof = Math.random() < .5;
+      sp.restOnRoof = Math.random() < .5; sp.restInYard = !sp.restOnRoof && Math.random() < .5;
       if (shared('bath') && Math.random() < .5) {
         const busy = [...sprites.values()].some(o => o.goal && o.goal.room === shared('bath') && o.goal.cat === 'shower');
         sp.errand = { room: shared('bath'), cat: busy ? 'wash' : 'shower', until: performance.now() + (busy ? 6000 : 14000) };
@@ -1364,7 +1637,7 @@ function catThink(c, t) {
     c.deskOf = a.id; c.next = t + 12000 + Math.random() * 9000;
   } else if (roll < .75) {
     const naps = catNaps(); if (!naps.length) { c.next = t + 4000; return; }
-    const [room, p] = scPick(naps); catGo(c, room, p.slice(), 'nap'); c.deskOf = null; c.next = t + 18000 + Math.random() * 22000;
+    const [room, p] = catHome() || scPick(naps); catGo(c, room, p.slice(), 'nap'); c.deskOf = null; c.next = t + 18000 + Math.random() * 22000;
   } else {
     const room = scPick(rooms), p = scPick([...(room.theme.spots.pace || []), room.theme.hub]).slice();
     p[0] = scClamp(p[0] + (Math.random() - .5), .4, room.NX - .4); p[2] = 0;
@@ -1379,6 +1652,7 @@ function plantSpots(r) {
   const out = (PLANTS[THEME_KEY.get(r.theme)] || []).map(p => [r, p]);
   if (!roomAt(r.tower, r.floor + 1)) out.push([r, [1.4, 5.2, 0]]); // the potted plant in the corner, where no stairs stand
   if (shared('roof')) out.push([shared('roof'), scPick(ROOF_PLANTS)]);
+  if (yardOn()) out.push([YARD, scPick(YARD_THEME.spots.water)]);
   return out;
 }
 function residentRoutine(h, t, d) {
@@ -1392,14 +1666,17 @@ function residentRoutine(h, t, d) {
     else go(pickSpot(h, r, 'sleep'), null, 'idle-sleep', 20000);
   } else if (hr < 10) {
     if (K && roll < .6) { errand(K, 'coffee', 9000); go(pickSpot(h, K, 'coffee'), 'coffee', 'idle', 3000); }
+    else if (roll < .85 && yardVisit(h, t, 'morning')) return; // watering the garden
     else go(pickSpot(h, r, roll < .8 ? 'read' : 'pace'), roll < .8 ? 'read' : h.scene, 'idle', 12000);
   } else if (hr < 19) {
     const plants = plantSpots(r);
     if (roll < .45 && plants.length) { const [room, p] = scPick(plants); if (room !== r) errand(room, 'water', 9000); go({ room, cat: 'water', i: -1, p }, 'water', 'idle', 9000); }
     else if (roll < .55 && shared('bath')) { errand(shared('bath'), 'wash', 5000); go(pickSpot(h, shared('bath'), 'wash'), null, 'idle', 3000); }
+    else if (roll < .72 && yardVisit(h, t, 'day')) return; // a stroll, the bench, the swing
     else { const cat = scPick(['web', 'task', 'pace', 'read']); go(pickSpot(h, r, cat), cat === 'read' ? 'read' : null, 'idle', 9000 + Math.random() * 6000); }
   } else {
     if (roll < .7) go(pickSpot(h, r, 'read'), 'read', 'idle', 15000);
+    else if (roll < .8 && yardVisit(h, t, 'evening')) return; // the bench under the lamp
     else if (roof && roll < .85) { errand(roof, 'look', 8000); go(pickSpot(h, roof, 'look'), null, 'idle', 3000); }
     else go(pickSpot(h, r, 'pace'), null, 'idle', 8000);
   }
@@ -1420,13 +1697,14 @@ function releaseHold(sp, quiet) {
 const MAIL_SPOT = [9.4, 4.3, 0];
 function startMail(sp) {
   sp.hold = { kind: 'mail', stage: 'go', t0: performance.now() };
-  setGoal(sp, { room: shared('kitchen'), cat: 'mail', i: -1, p: MAIL_SPOT });
+  const y = yardOn(); // the mailbox stands by the yard's gate; without the yard, in the kitchen
+  setGoal(sp, { room: y ? YARD : shared('kitchen'), cat: 'mail', i: -1, p: y ? YARD_THEME.spots.mail[0].slice() : MAIL_SPOT });
 }
 function startCelebrate(sp) {
   const t = performance.now();
   sp.hold = { kind: 'celebrate', t0: t, start: t, errand: sp.errand, state: 'fall', z0: null }; // 'fall' draws the arms up
   sp.errand = null; sp.state = 'fall';
-  SC.fireworks.push({ room: sp.room || sp.homeRoom, t0: t, seed: Math.floor(Math.random() * 5) });
+  SC.fireworks.push({ room: (sp.room === YARD ? shared('bath') : sp.room) || sp.homeRoom, t0: t, seed: Math.floor(Math.random() * 5) });
 }
 function startHandover(sp, vanish) {
   const p = sprites.get(sp.agent.parentId), r = p.room;
@@ -1512,7 +1790,7 @@ function sceneTrack(sp, a, prev) {
   if (a.state === 'done') sp.workSince = null;
   const git = a.state === 'working' && /\bgit\s+(commit|push)\b/i.test(a.activity || '');
   if (!git) sp.mailAct = null;
-  else if (!sp.hold && a.activity !== sp.mailAct && shared('kitchen') && sp.room && !sp.onBridge && sp.alpha > .5) { sp.mailAct = a.activity; startMail(sp); }
+  else if (!sp.hold && a.activity !== sp.mailAct && (yardOn() || shared('kitchen')) && sp.room && !sp.onBridge && sp.alpha > .5) { sp.mailAct = a.activity; startMail(sp); }
   if (sp.hold) { if (sp.hold.state) sp.state = sp.hold.state; return true; }
   return false;
 }
@@ -1528,7 +1806,7 @@ function sceneLeave(sp) {
 
 // ----- a mailbox in the kitchen, its flag up for a while after a commit is posted -----
 { const items = THEMES.kitchen.items;
-  THEMES.kitchen.items = (add, D) => { items(add, D);
+  THEMES.kitchen.items = (add, D) => { items(add, D); if (yardOn()) return; // moved out to the yard
     add(13.0, () => { B(9.45, 3.3, 0, .14, .14, 12, '#6a6a74', 0, 1); B(9.1, 3.05, 12, .75, .55, 4.5, '#3a6ad0'); B(9.15, 3.1, 16.5, .65, .45, .8, '#5a8ae8');
       FY(9.25, 9.7, 3.601, 14, 14.6, '#1a2040'); pix(9.2, 3.6, 13, '#f4f0e8', 0, S, 1); });
     add(13.01, () => { const up = D.t - SC.mailFlag < 15000;
@@ -1539,6 +1817,7 @@ function sceneLeave(sp) {
 function updateScenes(t, d) {
   if (!SC.init) { SC.init = true; ACTS.push('Bash · git commit -m "scenes"', 'Bash · swift test', 'Write · Scenes.swift', 'WebFetch · docs', 'Bash · git push'); }
   if (rooms.length && ![...sprites.values()].some(s => s.kind === 'cat')) spawn('__cat', shared('kitchen') || rooms[0], { kind: 'cat', vendor: 'home', small: true, state: 'idle', pose: 'sit', next: t + 3000 });
+  updateYard(t);
   for (const sp of [...sprites.values()]) {
     if (sp.kind === 'agent') {
       if (sp.agent?.state === 'error' && !sp.leaving) { sp.errSince ??= t; if (!sp.fire && t - sp.errSince > 3000) sp.fire = { t0: t }; }
@@ -1665,15 +1944,15 @@ function drawSeason(t) {
   }
   for (const r of rooms) {
     if (r.floor !== 0) continue;
-    const NX = r.NX, NY = r.NY;
-    if (winter || se === 'spring') for (let i = 0; i < 44; i++) { // the two grass strips in front of the room
+    const NX = r.NX, NY = r.NY, yd = r.key === '__bath' && yardOn();
+    if ((winter || se === 'spring') && !yd) for (let i = 0; i < 44; i++) { // the two grass strips in front of the room
       const front = i % 2, u = scRnd(i, r.seed), v = scRnd(i, r.seed + 7);
       const p = front ? scAt(r, -1.2 + u * (NX + 2.4), NY + .1 + v * 1.05, -SLAB) : scAt(r, NX + .1 + v * 1.05, -1.2 + u * (NY + 2.4), -SLAB);
       const x = Math.round(p[0]), y = Math.round(p[1]);
       if (winter) { g.fillStyle = lit('#f4f8ff'); g.fillRect(x - 2, y, 3 + (i % 3) * 2, 2); g.fillStyle = lit('#d8e2f0'); g.fillRect(x - 2, y + 2, 3 + (i % 3) * 2, 1); }
       else if (i % 3) { g.fillStyle = lit(i % 4 ? '#f8a8c8' : '#ffffff'); g.fillRect(x, y, 2, 2); g.fillStyle = lit('#f0d040'); g.fillRect(x, y, 1, 1); }
     }
-    if (winter) { const w = lit('#f4f8ff'); line(scAt(r, -1.2, NY + 1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); line(scAt(r, NX + 1.2, -1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); }
+    if (winter && !yd) { const w = lit('#f4f8ff'); line(scAt(r, -1.2, NY + 1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); line(scAt(r, NX + 1.2, -1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); }
     if (se === 'autumn' || se === 'spring') { // leaves or petals drifting down around the island
       const top = scAt(r, NX / 2, NY / 2, WH)[1] - 30 * S, bot = scAt(r, NX + 1.2, NY + 1.2, -SLAB)[1] + 50 * S;
       const L = scAt(r, 0, NY + 1.2, 0)[0] - 14 * S, Rr = scAt(r, NX + 1.2, 0, 0)[0] + 14 * S;
@@ -1696,7 +1975,7 @@ function drawRoom(r, t, d) {
   r.drop = Math.round(-Math.pow(1 - e, 3) * 70 * S);
   const cache = buildCache(r);
   R = r;
-  const here = [...sprites.values()].filter(s => s.room === r && s.y <= r.NY - .05);
+  const here = [...sprites.values()].filter(s => s.room === r ? !onStairs(s, r) : s.room === YARD && r.key === '__bath');
   D.t = t;
   D.on = (cat, i) => here.some(s => s.kind === 'agent' && s.goal && s.goal.room === r && s.goal.cat === cat && s.goal.i === i && !s.path.length && s.state === 'working');
   D.showering = here.some(s => s.state === 'shower' && !s.path.length);
@@ -1712,7 +1991,7 @@ function drawRoom(r, t, d) {
     const { y0, out } = spans(pts); out.forEach((s, i) => s && g.fillRect(s[0], y0 + i, s[1] - s[0], 1));
   }
   const list = cache.items.map(it => ({ depth: it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
-  for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = iso(s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
+  for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = s.room === r ? iso(s.x, s.y, s.z) : scAt(s.room, s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
   list.sort((a, b) => a.depth - b.depth);
   const base = g.globalAlpha;
   for (const it of list) { it.draw(); g.globalAlpha = base; }
