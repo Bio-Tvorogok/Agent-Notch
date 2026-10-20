@@ -56,6 +56,9 @@ let g = main; // drawing target: the screen, or an offscreen cache while baking
 // S art pixels per unit: a tile is 16S x 8S, one unit of height is S pixels.
 const S = 2, WH = 60, SLAB = 6, GAP = 28, FLOOR_STEP = WH + SLAB + GAP, PER_TOWER = 3;
 const LADDER_Z = WH - FLOOR_STEP;
+// the village rises in levels: an island one level up floats LV higher, a wooden flight of STAIR_L tiles climbs to it
+// (a long one of STAIR_L2 tiles climbs two)
+const LV = 64, STAIR_L = 6, STAIR_L2 = 11, MAX_LV = 4, UNDER = 32;
 let PXD = 3, DPR = 1, R = null;
 const iso = (x, y, z) => [R.ox + (x - y) * 8 * S, R.oy + R.drop + (x + y) * 4 * S - z * S];
 
@@ -196,17 +199,17 @@ const THEMES = {
     name: 'Спальня', wallL: '#c9b8ea', wallR: '#d8cbf2', low: '#9f8acb', lowH: 16, lowKind: 'panel', trim: '#f2e8d4', pattern: 'stripes',
     floor: { kind: 'planks', a: '#cf9156', b: '#b67a46' }, rug: [3.4, 3.1, 8.2, 6.6, '#7cc4e4', '#a8dcf2'],
     windows: [{ wall: 'R', a: 2.2, b: 4.4, z0: 24, z1: 50, curtain: '#e676a8' }],
-    clock: { wall: 'L', at: 3.9, z: 54 }, hub: [5.4, 3.3, 0],
-    spots: { work: [[6.7, 2.3, 6.6], [8.4, 2.3, 6.6]], read: [[4.5, 4.8, 5], [6.1, 6.0, 5]], web: [[3.3, 1.6, 0]],
-      sleep: [[1.3, 1.6, 10.6], [1.3, 2.6, 10.6]], wait: [[6.4, 6.6, 0], [5.2, 7.0, 0], [7.6, 6.4, 0]], pace: [[3.4, 3.3, 0], [5.0, 2.8, 0]], task: [[6.6, 4.3, 0], [7.4, 5.2, 0]] },
+    clock: { wall: 'L', at: 7.0, z: 54 }, hub: [5.4, 3.3, 0],
+    spots: { work: [[6.7, 2.3, 6.6], [8.4, 2.3, 6.6]], read: [[4.5, 4.8, 5], [6.8, 6.0, 5]], web: [[3.65, 1.6, 0]],
+      sleep: [[0.85, 1.7, 10.6], [1.9, 1.7, 10.6]], wait: [[7.0, 6.95, 0], [5.2, 7.0, 0], [7.6, 6.4, 0]], pace: [[3.4, 3.3, 0], [5.0, 2.8, 0]], task: [[6.6, 4.3, 0], [7.4, 5.2, 0]] },
     decor() {
       B(5.8, 0, 38, 3.2, .6, 1.5, '#9a6a44');
       ['#e05a4a', '#4a80d8', '#f0c040'].forEach((c, i) => B(6.0 + i * .3, .1, 39.5, .24, .4, 5 - i, c));
       B(7.5, .1, 39.5, .5, .4, 3, '#e07050'); leaves(7.75, .3, 42, 2, '#4aa84a', '#7ad070', 2);
       B(8.6, .15, 39.5, .3, .3, 4, '#f0c040'); B(8.5, .1, 39.5, .5, .4, 1, '#c09030');
-      framed('R', 8.3, 9.7, 18, 34, '#f4f0e8', '#8ccaf0');
+      framed('R', 8.3, 9.7, 26, 36, '#f4f0e8', '#8ccaf0');
       [[0, 0, 1, 1, 1, 1, 1, 1, 0, 0], [0, 0, 1, 2, 1, 1, 2, 1, 0, 0], [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], [0, 0, 1, 1, 1, 1, 1, 1, 0, 0], [0, 0, 1, 0, 1, 1, 0, 1, 0, 0]]
-        .forEach((row, r) => row.forEach((v, c) => v && pix(8.62 + c * .07, .05, 30 - r * .5, v === 2 ? '#20141a' : '#d97757', 0, S, 1)));
+        .forEach((row, r) => row.forEach((v, c) => v && pix(8.62 + c * .07, .05, 32 - r * .5, v === 2 ? '#20141a' : '#d97757', 0, S, 1)));
       framed('L', .7, 1.9, 34, 46, '#f0d080', '#9ad090'); framed('L', 2.1, 3.0, 30, 42, '#f0d080', '#f0a0b0');
       leaves(0, 1.3, 40, 1, '#3e8a46', '#58a050', 1);
       for (let i = 0; i < 18; i++) { const y = .3 + i * .22, z = 56 - Math.sin(i / 17 * Math.PI) * 3; line(iso(.03, y, z), iso(.03, y + .22, 56 - Math.sin((i + 1) / 17 * Math.PI) * 3), lit('#5a4a6a'));
@@ -222,10 +225,10 @@ const THEMES = {
       add(4.2, () => { B(.15, 3.35, 0, .85, .6, 10, '#a0603a'); FX(3.45, 3.85, 1.001, 5, 5.6, '#7a4628'); B(.42, 3.5, 10, .25, .25, 3.5, '#f0d8a0'); B(.3, 3.38, 13.5, .5, .45, 5, '#ffe2a0', DARK > .3);
         mug(.75, 3.75, 10, '#80c0e0'); });
       add(2.6, () => {
-        B(2.3, .1, 0, 2.0, .9, 13, '#a0603a'); FY(2.4, 4.2, 1.001, 1, 12, '#6a3a22');
-        bookRow(2.45, 4.15, 1.002, 1.5, 4.5, 3); FY(2.4, 4.2, 1.003, 6.5, 7, '#a0603a'); bookRow(2.45, 4.15, 1.002, 7.2, 4.5, 9);
-        B(2.5, .25, 13, .45, .45, 3.5, '#e07050'); leaves(2.72, .47, 16, 2, '#4aa84a', '#7ad070', 5);
-        B(3.55, .3, 13, .55, .4, 1.6, '#f4f0e8'); B(3.6, .32, 14.6, .45, .35, 1.2, '#e05a4a');
+        B(2.65, .1, 0, 2.0, .9, 13, '#a0603a'); FY(2.75, 4.55, 1.001, 1, 12, '#6a3a22');
+        bookRow(2.8, 4.5, 1.002, 1.5, 4.5, 3); FY(2.75, 4.55, 1.003, 6.5, 7, '#a0603a'); bookRow(2.8, 4.5, 1.002, 7.2, 4.5, 9);
+        B(2.85, .25, 13, .45, .45, 3.5, '#e07050'); leaves(3.07, .47, 16, 2, '#4aa84a', '#7ad070', 5);
+        B(3.9, .3, 13, .55, .4, 1.6, '#f4f0e8'); B(3.95, .32, 14.6, .45, .35, 1.2, '#e05a4a');
       });
       add(6.6, () => {
         B(5.7, .25, 0, .2, 1.3, 12, '#8a5a36'); B(8.3, .25, 0, 1.0, 1.3, 12, '#b07444');
@@ -234,15 +237,15 @@ const THEMES = {
         B(6.55, .45, 14, .2, .2, 2, '#333340'); B(6.0, .3, 16, 1.4, .2, 9, '#2a2a38');
         B(8.15, .45, 14, .2, .2, 2, '#333340'); B(7.6, .3, 16, 1.4, .2, 9, '#2a2a38');
         B(6.3, .95, 14, 1.1, .35, .6, '#e8e8f0'); B(7.9, .95, 14, .9, .35, .6, '#e8e8f0'); mug(9.05, 1.05, 14, '#f08060');
-        B(5.75, .4, 14, .3, .3, 4, '#f0d040'); B(5.65, .3, 18, .5, .5, .8, '#f0d040');
+        B(5.7, .4, 14, .25, .3, 4, '#f0d040'); B(5.6, .3, 18, .4, .5, .8, '#f0d040');
       });
       add(6.65, () => { screen(6.1, 7.3, .501, 17, 24, D, D.on('work', 0)); screen(7.7, 8.9, .501, 17, 24, D, D.on('work', 1)); }, true);
       add(9.3, () => chair(6.7, 2.3, '#6a6a90')); add(11, () => chair(8.4, 2.3, '#6a6a90'));
       add(9.2, () => { B(4.0, 4.3, 0, 1.0, 1.0, 3.5, '#f0a040'); B(4.15, 4.45, 3.5, .7, .7, 1.4, '#f8b858'); });
-      add(11.6, () => { B(5.6, 5.5, 0, 1.0, 1.0, 3.5, '#5cc0a0'); B(5.75, 5.65, 3.5, .7, .7, 1.4, '#72d4b4'); });
+      add(12.3, () => { B(6.3, 5.5, 0, 1.0, 1.0, 3.5, '#5cc0a0'); B(6.45, 5.65, 3.5, .7, .7, 1.4, '#72d4b4'); });
       add(11.8, () => tallPlant(9.3, 2.0, '#e07050', 1));
       add(13.4, () => { B(8.6, 4.6, 0, .8, .7, 4, '#e8d8b0'); B(8.65, 4.65, 4, .7, .6, 1, '#f4f0e8'); B(8.75, 4.7, 5, .35, .3, .8, '#e47aa8'); });
-      add(8.4, () => { B(7.6, 3.4, 0, .55, .35, 1.2, '#4a80d8'); B(7.65, 3.42, 1.2, .45, .3, 1, '#f0c040'); B(7.6, 3.4, 2.2, .5, .35, 1, '#e05a4a'); });
+      add(14.6, () => { B(8.7, 5.45, 0, .55, .35, 1.2, '#4a80d8'); B(8.75, 5.47, 1.2, .45, .3, 1, '#f0c040'); B(8.7, 5.45, 2.2, .5, .35, 1, '#e05a4a'); });
       add(7.5, () => { B(2.7, 4.4, 0, .5, .25, .5, '#f4f0e8'); B(3.25, 4.45, 0, .5, .25, .5, '#f4f0e8'); });
     },
     corner(add) { add(5.9, () => { B(.55, 4.85, 0, .55, .55, 1, '#555'); B(.77, 5.07, 1, .1, .1, 26, '#777', 0, 1); B(.5, 4.8, 27, .65, .65, 5, '#ffe2a0', DARK > .3); }); },
@@ -255,9 +258,9 @@ const THEMES = {
     windows: [{ wall: 'R', a: 4.9, b: 6.4, z0: 38, z1: 52 }],
     clock: { wall: 'R', at: 7.3, z: 56, dark: true }, hub: [6.0, 3.4, 0],
     spots: { work: [[7.4, 2.4, 6.6], [8.8, 2.4, 6.6]], read: [[2.3, 2.0, 0], [3.7, 2.0, 0], [1.9, 2.6, 0]], web: [[5.6, 1.5, 0]],
-      sleep: [[8.0, 5.4, 5.5], [9.0, 5.4, 5.5]], wait: [[5.6, 6.4, 0], [4.4, 6.9, 0], [6.6, 6.9, 0]], pace: [[3.2, 4.6, 0], [5.6, 3.0, 0]], task: [[2.4, 5.4, 0], [3.4, 5.9, 0]] },
+      sleep: [[8.3, 5.4, 5.5], [9.25, 5.4, 5.5]], wait: [[5.0, 6.4, 0], [4.4, 6.9, 0], [6.6, 6.9, 0]], pace: [[3.2, 4.6, 0], [5.6, 3.0, 0]], task: [[2.4, 5.4, 0], [3.4, 5.9, 0]] },
     decor() {
-      B(1.4, .05, 50, 8.4, .5, 1.5, '#5a6070'); for (let x = 1.6; x < 9.6; x += .9) line(iso(x, .3, 50), iso(x + .3, .3, 46), lit('#2a2e38'));
+      B(1.4, .05, 50, 3.3, .5, 1.5, '#5a6070'); for (let x = 1.6; x < 4.5; x += .9) line(iso(x, .3, 50), iso(x + .3, .3, 46), lit('#2a2e38'));
       FX(4.3, 6.7, .02, 26, 44, '#6a7080'); FX(4.38, 6.62, .03, 27, 43, '#ffffff');
       line(iso(.04, 6.2, 40), iso(.04, 5.0, 33), lit('#e05a4a')); line(iso(.04, 5.8, 31), iso(.04, 4.7, 31), lit('#4a80d8')); line(iso(.04, 6.3, 36), iso(.04, 5.5, 37), lit('#58b070'));
       FX(4.6, 5.0, .04, 38, 41, '#f0d040'); FX(5.2, 5.6, .04, 38, 41, '#f080c0');
@@ -282,7 +285,7 @@ const THEMES = {
       add(7.05, () => { [6.75, 7.65, 8.55].forEach((x, i) => screen(x + .07, x + .78, .501, 16, 22, D, i === 0 ? D.on('work', 0) : i === 2 ? D.on('work', 1) : (D.on('work', 0) || D.on('work', 1)))); }, true);
       add(9.8, () => chair(7.4, 2.4, '#3a5a8a')); add(11.2, () => chair(8.8, 2.4, '#3a5a8a'));
       add(8.0, () => { B(4.0, 3.4, 0, 1.0, .9, 8, '#3a4050'); B(4.1, 3.5, 8, .8, .7, 6, '#4a5060'); pix(4.3, 4.31, 4, '#60ff90', true); pix(4.5, 4.31, 4, '#ffc040', true); });
-      add(12.4, () => { B(7.4, 4.9, 0, 2.4, 1.1, 4, '#5a6a5a'); B(7.45, 4.95, 4, 2.3, 1.0, 1.5, '#9cc09c'); B(7.5, 5.0, 5.5, .7, .9, 1.5, '#ffffff'); });
+      add(12.4, () => { B(7.4, 4.9, 0, 2.4, 1.1, 4, '#5a6a5a'); B(7.45, 4.95, 4, 2.3, 1.0, 1.5, '#9cc09c'); B(7.5, 5.0, 5.5, .4, .9, 1.5, '#ffffff'); });
       add(12.6, () => { B(9.2, 3.0, 0, .6, .6, 10, '#e0e8f0'); B(9.3, 3.1, 10, .4, .4, 6, '#9ad4f4'); pix(9.5, 3.61, 7, '#e05a4a'); });
       add(.1, () => { line(iso(1.4, 3.3, 0), iso(4.0, 3.9, 0), lit('#2a2e38')); line(iso(5.0, 3.9, 0), iso(6.8, 1.6, 0), lit('#2a2e38')); });
     },
@@ -294,9 +297,9 @@ const THEMES = {
     name: 'Библиотека', wallL: '#b9805a', wallR: '#c88f64', low: '#8a5a3a', lowH: 16, lowKind: 'panel', trim: '#e8c890', pattern: 'wood',
     floor: { kind: 'parquet', a: '#d49e62', b: '#bc864c' }, rug: [2.6, 3.4, 7.0, 6.4, '#b04848', '#d06a5a'],
     windows: [{ wall: 'R', a: 3.5, b: 6.0, z0: 22, z1: 54, arch: true }],
-    clock: { wall: 'L', at: 6.6, z: 56 }, hub: [5.6, 3.2, 0],
-    spots: { work: [[8.5, 3.6, 6.6], [5.6, 6.2, 6.6]], read: [[2.2, 1.9, 0], [3.6, 4.6, 6.5]], web: [[4.7, 1.7, 0]],
-      sleep: [[7.6, 6.9, 7], [8.8, 6.9, 7]], wait: [[4.6, 7.0, 0], [3.4, 7.3, 0], [4.0, 6.3, 0]], pace: [[4.4, 3.0, 0], [6.1, 3.7, 0]], task: [[5.6, 3.3, 0]] },
+    clock: { wall: 'L', at: 6.6, z: 56 }, hub: [6.4, 3.4, 0],
+    spots: { work: [[8.5, 3.6, 6.6], [5.1, 6.2, 6.6]], read: [[2.2, 1.9, 0], [3.1, 4.6, 6.0]], web: [[4.7, 1.7, 0]],
+      sleep: [[7.95, 6.9, 6], [8.9, 6.9, 6]], wait: [[4.6, 7.0, 0], [3.4, 7.3, 0], [4.0, 6.3, 0]], pace: [[4.4, 3.0, 0], [6.1, 3.7, 0]], task: [[5.6, 3.3, 0]] },
     decor() { framed('L', 4.4, 6.2, 30, 44, '#e8c890', '#6a8a5a'); },
     items(add, D) {
       const shelfR = (x0, x1, s) => add((x0 + x1) / 2 + .5, () => {
@@ -309,14 +312,14 @@ const THEMES = {
         for (let z = 3; z < 50; z += 9) { bookRowX(.4, 3.7, 1.002, z, 6.5, z); FX(.4, 3.7, 1.003, z - 1, z, '#8a5232'); }
       });
       add(2.9, () => { for (const x of [2.0, 2.5]) line(iso(x, 1.9, 0), iso(x, 1.05, 48), lit('#6a3a20')); for (let z = 6; z < 46; z += 6) line(iso(2.0, 1.9 - z / 56, z), iso(2.5, 1.9 - z / 56, z), lit('#6a3a20')); });
-      add(8.4, () => { B(3.0, 4.0, 0, 1.2, 1.2, 6, '#c04848'); B(3.0, 4.0, 6, .3, 1.2, 9, '#a83a3a'); B(3.0, 4.0, 6, 1.2, .22, 4, '#a83a3a'); B(3.0, 4.98, 6, 1.2, .22, 4, '#a83a3a'); });
+      add(7.9, () => { B(2.5, 4.0, 0, 1.2, 1.2, 6, '#c04848'); B(2.5, 4.0, 6, .3, 1.2, 9, '#a83a3a'); B(2.5, 4.0, 6, 1.2, .22, 4, '#a83a3a'); B(2.5, 4.98, 6, 1.2, .22, 4, '#a83a3a'); });
       add(8.0, () => { B(2.45, 5.35, 0, .4, .4, 1, '#444'); B(2.6, 5.5, 1, .1, .1, 26, '#555', 0, 1); B(2.35, 5.25, 27, .6, .6, 4, '#ffd890', DARK > .3); });
-      add(10.6, () => {
-        B(5.55, 4.95, 0, .2, .2, 9, '#5a3420'); B(5.0, 4.4, 9, 1.3, 1.3, 1.5, '#8a5232');
-        B(5.15, 4.55, 10.5, .5, .4, 1, '#4a80d8'); B(5.2, 4.6, 11.5, .45, .35, 1, '#f0c040'); B(5.8, 5.0, 10.5, .2, .2, 2.5, '#f4f0e8');
+      add(10.1, () => {
+        B(5.05, 4.95, 0, .2, .2, 9, '#5a3420'); B(4.5, 4.4, 9, 1.3, 1.3, 1.5, '#8a5232');
+        B(4.65, 4.55, 10.5, .5, .4, 1, '#4a80d8'); B(4.7, 4.6, 11.5, .45, .35, 1, '#f0c040'); B(5.3, 5.0, 10.5, .2, .2, 2.5, '#f4f0e8');
       });
-      add(10.61, () => pix(5.9, 5.1, 14 + Math.round(Math.sin(D.t / 700)) * .5, '#ffb040', true, S, S + 1), true);
-      add(12.1, () => stool(5.6, 6.2, 5, '#a83a3a'));
+      add(10.11, () => pix(5.4, 5.1, 14 + Math.round(Math.sin(D.t / 700)) * .5, '#ffb040', true, S, S + 1), true);
+      add(11.6, () => stool(5.1, 6.2, 5, '#a83a3a'));
       add(9.0, () => { B(6.6, 2.2, 0, .3, .3, 9, '#5a3420'); leaves(6.75, 2.35, 9.5, 3, '#4a90d8', '#6ac070', 1); });
       add(11.4, () => {
         B(7.5, 2.1, 0, .18, .8, 12, '#6a3a20'); B(9.3, 2.1, 0, .18, .8, 12, '#6a3a20'); B(7.4, 2.0, 12, 2.2, 1.0, 1.5, '#8a5232');
@@ -324,11 +327,11 @@ const THEMES = {
       });
       add(11.41, () => screen(8.15, 8.95, 2.201, 14.5, 18.5, D, D.on('work', 0)), true);
       add(12.3, () => chair(8.5, 3.6, '#a83a3a'));
-      add(15.5, () => { B(6.6, 6.4, 0, 3.0, 1.1, 6, '#4a8a5a'); B(6.6, 7.25, 6, 3.0, .25, 6, '#3a7a4a'); B(6.6, 6.4, 6, .25, 1.1, 4, '#3a7a4a'); B(9.35, 6.4, 6, .25, 1.1, 4, '#3a7a4a'); B(7.0, 6.5, 6, .6, .6, 2, '#e8c890'); });
-      add(12.0, () => { B(8.8, 4.6, 0, .6, .4, 1.2, '#e05a4a'); B(8.85, 4.62, 1.2, .5, .36, 1.2, '#58b070'); B(8.8, 4.6, 2.4, .55, .4, 1, '#f0c040'); });
+      add(15.5, () => { B(7.0, 6.4, 0, 2.6, 1.1, 6, '#4a8a5a'); B(7.0, 7.25, 6, 2.6, .25, 6, '#3a7a4a'); B(7.0, 6.4, 6, .25, 1.1, 4, '#3a7a4a'); B(9.35, 6.4, 6, .25, 1.1, 4, '#3a7a4a'); B(7.3, 6.5, 6, .6, .6, 2, '#e8c890'); });
+      add(14.5, () => { B(8.8, 5.6, 0, .6, .4, 1.2, '#e05a4a'); B(8.85, 5.62, 1.2, .5, .36, 1.2, '#58b070'); B(8.8, 5.6, 2.4, .55, .4, 1, '#f0c040'); });
     },
     corner(add) { add(5.8, () => pot(.4, 4.8, .6, '#a06a3a', '#3e9a46', '#6cc860', 3, 6)); },
-    lights: () => [[2.6, 5.5, 29, '#ffd080', 46], [5.9, 5.1, 14, '#ffb050', 22]],
+    lights: () => [[2.6, 5.5, 29, '#ffd080', 46], [5.4, 5.1, 14, '#ffb050', 22]],
   },
 
   greenhouse: {
@@ -336,7 +339,7 @@ const THEMES = {
     floor: { kind: 'stone', a: '#bcb8a8', b: '#a8a494' },
     windows: [], clock: { wall: 'L', at: 7.0, z: 56 }, hub: [5.0, 3.2, 0],
     spots: { work: [[7.0, 2.2, 6.6], [8.6, 2.2, 6.6]], read: [[1.9, 2.4, 0], [3.7, 1.6, 0]], web: [[5.2, 1.5, 0]],
-      sleep: [[7.9, 6.0, 10.5], [8.8, 6.0, 10.5]], wait: [[5.4, 6.6, 0], [4.4, 7.1, 0], [6.2, 7.2, 0]], pace: [[3.6, 3.4, 0], [5.2, 4.6, 0]], task: [[5.6, 3.2, 0]] },
+      sleep: [[7.9, 6.0, 12.6], [8.7, 6.0, 12.6]], wait: [[5.4, 6.6, 0], [4.4, 7.1, 0], [6.2, 7.2, 0]], pace: [[3.2, 3.0, 0], [5.2, 4.6, 0]], task: [[5.6, 3.2, 0]] },
     decor() {
       for (const [x, s] of [[3.6, 1], [5.9, 2], [8.3, 3]]) { line(iso(x, .4, WH), iso(x, .4, 48), lit('#6a5a4a')); B(x - .25, .15, 44, .5, .5, 4, '#e07050'); leaves(x, .4, 44, 3, '#3e9a46', '#7ad070', s);
         for (let k = 0; k < 5; k++) pix(x - .2 + k * .1, .7, 42 - k * 1.5, '#4aa84a'); }
@@ -344,7 +347,7 @@ const THEMES = {
     items(add, D) {
       add(2.4, () => { B(.1, .3, 0, 1.2, 3.6, 9, '#a0603a'); B(.15, .35, 9, 1.1, 3.5, .5, '#5a3a24');
         for (let i = 0; i < 6; i++) { leaves(.7, .7 + i * .55, 9.3, 2, '#3e9a46', '#7ad070', i); if (i % 2) pix(.75, .7 + i * .55, 11.5, '#e05a4a'); } });
-      add(1.6, () => { B(1.7, .4, 0, .7, .7, 7, '#e07050'); B(1.98, .68, 7, .16, .16, 20, '#8a6a3a');
+      add(2.9, () => { B(1.7, .4, 0, .7, .7, 7, '#e07050'); B(1.98, .68, 7, .16, .16, 20, '#8a6a3a');
         B(1.1, .62, 26, 1.8, .3, 1.2, '#3e9a46'); B(1.92, .2, 26, .3, 1.4, 1.2, '#4aa84a'); leaves(2.05, .75, 26.5, 3, '#4aa84a', '#7ad070', 3); });
       add(3.9, () => { for (let k = 0; k < 3; k++) { B(3.0, .2, k * 10, 1.4, .7, 1.2, '#b08050'); for (let i = 0; i < 4; i++) leaves(3.2 + i * .33, .55, k * 10 + 1.2, 1, '#4aa84a', '#8ad870', i + k); }
         B(3.0, .2, 0, .1, .1, 30, '#8a6040', 0, 1); B(4.3, .2, 0, .1, .1, 30, '#8a6040', 0, 1); });
@@ -358,7 +361,7 @@ const THEMES = {
         B(8.85, .3, 14.5, .3, .3, 3, '#ffd070', DARK > .3);
       });
       add(8.01, () => screen(7.25, 8.05, .451, 15.5, 19.5, D, D.on('work', 0) || D.on('work', 1)), true);
-      add(9.2, () => stool(7.0, 2.2, 6, '#58a070')); add(10.8, () => stool(8.6, 2.2, 6, '#58a070'));
+      add(9.2, () => stool(7.0, 2.2, 5, '#58a070')); add(10.8, () => stool(8.6, 2.2, 5, '#58a070'));
       add(6.8, () => { B(2.4, 4.0, 0, .9, .6, 5, '#d8c090'); B(2.5, 4.1, 5, .7, .4, 1, '#e8d0a0'); });
       add(12.2, () => {
         B(6.95, 5.95, 0, .14, .14, 22, '#7a5a3a'); B(9.55, 5.95, 0, .14, .14, 22, '#7a5a3a');
@@ -375,9 +378,9 @@ const THEMES = {
     name: 'Игровая', wallL: '#3e3470', wallR: '#4a3e82', low: '#2a2452', lowH: 12, lowKind: 'panel', trim: '#7a6ac0', pattern: 'plain',
     floor: { kind: 'carpet', a: '#4a3c8c', b: '#5a4ca0' },
     windows: [{ wall: 'L', a: 4.6, b: 6.4, z0: 32, z1: 52 }],
-    clock: { wall: 'R', at: 7.4, z: 56, dark: true }, hub: [5.4, 3.4, 0],
+    clock: { wall: 'R', at: 7.4, z: 54, dark: true }, hub: [5.4, 3.4, 0],
     spots: { work: [[8.0, 2.3, 6.6], [9.2, 2.3, 6.6]], read: [[3.1, 2.0, 6.5], [3.1, 3.3, 6.5]], web: [[5.1, 1.8, 0], [6.3, 1.8, 0]],
-      sleep: [[6.5, 5.7, 5], [7.7, 6.5, 5]], wait: [[4.6, 6.8, 0], [3.4, 6.4, 0], [5.6, 7.2, 0]], pace: [[4.6, 3.6, 0], [6.0, 3.0, 0]], task: [[5.4, 4.6, 0]] },
+      sleep: [[6.5, 5.7, 5], [7.7, 6.5, 5]], wait: [[4.6, 6.8, 0], [3.4, 6.4, 0], [5.6, 7.2, 0]], pace: [[4.6, 3.6, 0], [6.0, 3.0, 0]], task: [[5.6, 4.7, 0]] },
     decor() {
       for (let x = 0; x < 10; x += .25) pix(x, .02, 58, '#ff5ac8', true, S, 1);
       for (let y = 0; y < 8; y += .25) pix(.02, y, 58, '#5ae0ff', true, S, 1);
@@ -393,10 +396,10 @@ const THEMES = {
         add(x0 + 1.16, () => FY(x0 + .18, x0 + .82, 1.202, 18, 26, sc[Math.floor(D.t / 2500 + x0) % sc.length], true), true); };
       cab(4.6, '#e04a5a', ['#3a60e0', '#20a060']); cab(5.8, '#3a70e0', ['#e0a020', '#a040e0']);
       add(2.3, () => { B(.1, 1.2, 0, .8, 2.6, 8, '#22222c'); B(.3, 1.5, 8, .4, .6, 1.5, '#f4f4f8'); B(.3, 2.6, 8, .4, .5, 1, '#333'); });
-      add(5.6, () => { B(2.6, 1.2, 0, 1.2, 3.0, 6, '#e04a7a'); B(3.55, 1.2, 6, .3, 3.0, 8, '#c83a6a'); B(2.6, 1.2, 6, 1.2, .25, 3, '#c83a6a'); B(2.6, 3.95, 6, 1.2, .25, 3, '#c83a6a'); B(2.8, 2.6, 6, .6, .5, 1.6, '#f0d040'); });
+      add(5.6, () => { B(2.6, 1.2, 0, 1.2, 3.0, 6, '#e04a7a'); B(3.55, 1.2, 6, .3, 3.0, 4, '#c83a6a'); B(2.6, 1.2, 6, 1.2, .25, 3, '#c83a6a'); B(2.6, 3.95, 6, 1.2, .25, 3, '#c83a6a'); B(2.8, 2.6, 6, .6, .5, 1.6, '#f0d040'); });
       add(8.8, () => {
         B(7.3, .25, 0, .2, 1.3, 12, '#222'); B(9.5, .25, 0, .2, 1.3, 12, '#222'); B(7.2, .15, 12, 2.6, 1.5, 2, '#2a2a36');
-        B(7.6, .3, 15, 1.9, .2, 9, '#111118'); B(7.9, .95, 14, 1.1, .35, .6, '#3a3a4a'); B(9.3, .9, 14, .3, .3, 1, '#5ae0ff');
+        B(7.6, .3, 14, 1.9, .2, 10, '#111118'); B(7.9, .95, 14, 1.1, .35, .6, '#3a3a4a'); B(9.3, .9, 14, .3, .3, 1, '#5ae0ff');
       });
       add(8.81, () => { FY(7.2, 9.8, 1.651, 12.2, 12.8, ['#ff5ac8', '#5ae0ff', '#7aff7a'][Math.floor(D.t / 2400) % 3], true); screen(7.7, 9.4, .501, 16, 23, D, D.on('work', 0) || D.on('work', 1), 'game'); }, true);
       add(10.6, () => chair(8.0, 2.3, '#e04a5a')); add(11.8, () => chair(9.2, 2.3, '#e04a5a'));
@@ -411,11 +414,11 @@ const THEMES = {
   kitchen: {
     name: 'Кухня', shared: true, wallL: '#a6dcc6', wallR: '#b8e8d4', low: '#f4f8f8', lowH: 26, lowKind: 'tiles', trim: '#f0e8d0', pattern: 'plain',
     floor: { kind: 'checker', a: '#f0ece0', b: '#5a6a80' },
-    windows: [{ wall: 'R', a: 2.4, b: 4.6, z0: 32, z1: 52, curtain: '#e86a5a', cafe: true }],
+    windows: [{ wall: 'R', a: 2.6, b: 4.6, z0: 32, z1: 52, curtain: '#e86a5a', cafe: true }],
     clock: { wall: 'R', at: 7.6, z: 56 }, hub: [4.2, 3.0, 0],
-    spots: { wait: [[0.8, 1.4, 6.6], [0.8, 2.9, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [3.6, 1.7, 0], [7.4, 4.0, 0]],
-      cowork: [[0.8, 2.1, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [8.8, 6.0, 7]],
-      sleep: [[8.8, 6.0, 7], [8.8, 6.7, 7]], pace: [[3.4, 3.4, 0], [7.4, 2.6, 0]], coffee: [[1.6, 1.7, 0]] },
+    spots: { wait: [[0.8, 2.6, 6.6], [0.8, 4.1, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [3.6, 1.7, 0], [8.0, 2.9, 0]],
+      cowork: [[0.8, 3.35, 6.6], [4.8, 5.6, 11.6], [6.8, 5.6, 11.6], [9.2, 6.0, 6.6]],
+      sleep: [[9.2, 6.0, 6.6], [8.8, 6.7, 6.6]], pace: [[3.4, 3.4, 0], [7.4, 2.6, 0]], coffee: [[1.0, 1.7, 0]] },
     decor() {
       B(.4, .05, 32, 2.0, .6, 12, '#f4f0e6'); FY(1.38, 1.42, .651, 33, 43, '#c8c0b0'); B(1.1, .65, 36, .1, .05, 3, '#888'); B(1.65, .65, 36, .1, .05, 3, '#888');
       B(4.8, .05, 38, 1.3, .5, 1.2, '#a0603a'); ['#f0c040', '#e05a4a', '#58b070'].forEach((c, i) => B(4.9 + i * .38, .12, 39.2, .3, .3, 3.5, c));
@@ -425,7 +428,7 @@ const THEMES = {
       framed('L', 1.0, 2.4, 34, 44, '#e86a5a', '#f8f0d8'); leaves(.02, 3.4, 44, 2, '#3e8a46', '#7ad070', 4); B(.02, 3.2, 40, .4, .4, 4, '#e07050');
     },
     items(add, D) {
-      add(4.0, () => {
+      add(1.5, () => { // flat against the back wall: nothing is behind it
         B(.4, .1, 0, 5.6, 1.2, 13, '#f4f0e6'); for (const x of [1.5, 2.9, 4.3]) FY(x, x + .04, 1.301, 1, 12, '#c8c0b0');
         for (const x of [1.1, 2.5, 3.9, 5.3]) B(x, 1.3, 9, .25, .05, .5, '#9aa4b0');
         B(.35, .05, 13, 5.7, 1.3, 1.5, '#8a6a4a');
@@ -436,9 +439,10 @@ const THEMES = {
         B(2.25, .65, 15, .5, .4, 1, '#f0a040'); pix(2.35, .75, 16.5, '#e05a4a'); pix(2.55, .8, 16.5, '#58b070');
       });
       add(7.6, () => { B(6.3, .1, 0, 1.3, 1.3, 46, '#e8f0f4'); FY(6.35, 7.55, 1.401, 30, 30.6, '#b8c4cc'); B(7.35, 1.4, 34, .08, .06, 8, '#9aa4b0'); B(7.35, 1.4, 14, .08, .06, 10, '#9aa4b0');
-        pix(6.6, 1.41, 26, '#e05a4a'); pix(6.9, 1.41, 22, '#4a80d8'); pix(6.7, 1.41, 18, '#f0c040'); framed('R', 6.5, 7.2, 36, 42, '#ffffff', '#f0a0b0'); });
-      add(2.3, () => { B(.1, .4, 0, 1.0, 3.4, 6, '#d06048'); B(.1, .4, 6, .3, 3.4, 10, '#c05038'); for (let y = .9; y < 3.8; y += .9) FX(y, y + .03, .401, 7, 15, '#a84030'); });
-      add(3.6, () => { B(2.1, 2.0, 0, .2, .2, 10, '#666670'); B(1.5, .9, 10, 1.4, 2.4, 1.5, '#f4f0e6'); mug(2.4, 2.6, 11.5, '#f08060'); mug(1.8, 1.4, 11.5, '#4a80d8'); B(1.9, 1.9, 11.5, .6, .6, .4, '#f0d040'); });
+        pix(6.6, 1.41, 26, '#e05a4a'); pix(6.9, 1.41, 22, '#4a80d8'); pix(6.7, 1.41, 18, '#f0c040');
+        FY(6.55, 7.15, 1.402, 34, 41, OUT); FY(6.6, 7.1, 1.403, 35, 40, '#ffffff'); FY(6.7, 7.0, 1.404, 36.5, 38.5, '#f0a0b0'); }); // a photo on the fridge door
+      add(3.4, () => { B(.1, 2.1, 0, 1.0, 2.6, 6, '#d06048'); B(.1, 2.1, 6, .3, 2.6, 10, '#c05038'); for (let y = 2.95; y < 4.6; y += .9) FX(y, y + .03, .401, 7, 15, '#a84030'); });
+      add(3.6, () => { B(2.1, 2.27, 0, .2, .2, 10, '#666670'); B(1.5, 1.45, 10, 1.4, 1.85, 1.5, '#f4f0e6'); mug(2.4, 2.6, 11.5, '#f08060'); mug(1.8, 1.6, 11.5, '#4a80d8'); B(1.9, 1.9, 11.5, .6, .6, .4, '#f0d040'); });
       add(3.9, () => { line(iso(2.2, 2.15, WH), iso(2.2, 2.15, 44), lit('#333')); B(1.95, 1.85, 40, .6, .6, 4, '#ffd080', DARK > .25); });
       add(10.3, () => { B(5.8, 4.4, 0, .2, .2, 16, '#555560'); B(5.2, 3.8, 16, 1.4, 1.4, 1.5, '#8a6a4a'); B(5.6, 4.1, 17.5, .25, .25, 2.2, '#ffffff'); });
       add(10.9, () => stool(4.8, 5.6, 10, '#e86048')); add(12.9, () => stool(6.8, 5.6, 10, '#e86048'));
@@ -466,7 +470,6 @@ const THEMES = {
       B(2.6, .05, 47, 1.5, .25, 1.2, '#e8e8f0', DARK > .25);
       B(4.2, .05, 36, 1.0, .55, 1.2, '#a0603a'); B(4.25, .1, 37.2, .4, .45, 1.6, '#4a80d8'); B(4.7, .1, 37.2, .4, .45, 1.6, '#e86a5a'); B(4.3, .12, 38.8, .35, .4, 1.4, '#58b070');
       framed('L', 3.0, 4.2, 38, 50, '#f0d080', '#8ad0c0'); leaves(.02, 2.6, 46, 1, '#58b070', '#8ad870', 2);
-      B(6.55, .05, 18, .3, .3, 2.5, '#f8f8f8');
     },
     items(add, D) {
       add(1.2, () => { // shower: tray, head and pipe against the walls
@@ -487,6 +490,7 @@ const THEMES = {
         B(3.9, .2, 16, .2, .2, 3.5, '#f0c040'); B(2.65, .2, 16, .2, .2, 2.5, '#e05050');
       });
       add(5.2, () => { B(4.3, .1, 0, 1.0, 1.0, 12, '#f0f4f8'); FY(4.45, 5.15, 1.101, 3, 9, '#9aa4b0'); FY(4.55, 5.05, 1.102, 4, 8, '#4a80c0'); pix(5.1, 1.11, 11, '#40e080', true); B(4.4, .2, 12, .5, .4, 1.2, '#f8c8d0'); });
+      add(6.95, () => B(6.55, .1, 19, .3, .3, 2.5, '#f8f8f8')); // a roll on the tank
       add(6.9, () => { B(5.85, .1, 10, .9, .45, 9, '#f4f6f8'); B(5.8, .55, 0, .9, 1.0, 10, '#f4f6f8'); B(5.75, .5, 10, 1.0, 1.1, 1.2, '#a0603a'); B(6.25, .2, 19, .2, .1, .6, '#d0d0d8'); });
       add(8.4, () => { B(5.6, 4.4, 0, .45, .45, 5, '#8a94a0'); B(5.55, 4.35, 5, .55, .55, .6, '#6a7480'); });
       add(7.6, () => pot(4.6, 3.0, .7, '#a0603a', '#3e9a46', '#6cc860', 14, 6));
@@ -500,14 +504,15 @@ const THEMES = {
   roof: {
     name: 'Крыша', shared: true, open: true, floor: { kind: 'deck', a: '#c89060', b: '#a87448' },
     windows: [], clock: null, hub: [5.0, 4.0, 0],
-    spots: { sleep: [[3.0, 2.2, 5], [5.0, 2.2, 5], [7.0, 2.2, 5]], cowork: [[3.0, 2.2, 5], [5.0, 2.2, 5], [7.0, 2.2, 5], [4.2, 5.6, 0]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
+    spots: { sleep: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4]], cowork: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4], [4.2, 5.6, 0]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
     decor() {},
     items(add, D) {
       const rail = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / .9); for (let i = 0; i <= n; i++) B(x0 + (x1 - x0) * i / n - .06, y0 + (y1 - y0) * i / n - .06, 0, .12, .12, 10, '#f4f0e8', 0, 1);
         B(Math.min(x0, x1) - .06, Math.min(y0, y1) - .06, 10, Math.abs(x1 - x0) + .12, Math.abs(y1 - y0) + .12, 1.2, '#f4f0e8'); };
       add(-1, () => { rail(0, 0, 10, 0); rail(0, 0, 0, 8); });
-      add(30, () => { rail(0, 8, 10, 8); rail(10, 0, 10, 8); });
-      for (const [x, c] of [[2.4, '#58a0d8'], [4.4, '#f0a040'], [6.4, '#e86a5a']]) add(x + 2.7, () => { B(x, 1.5, 0, 1.2, 1.6, 3, '#a87448'); B(x + .05, 1.55, 3, 1.1, 1.5, 1.4, c); B(x + .05, 1.4, 3, 1.1, .45, 5, c); });
+      add(30, () => { if (LIFT) { rail(0, 8, 10, 8); rail(10, 4.1, 10, 8); } else { rail(1.6, 8, 10, 8); rail(10, 0, 10, 8); } }); // a gap to the lift's ledge, or to the fire escape
+      if (LIFT) add(13.4, () => rail(10, 0, 10, 3.1)); // behind the Clawds on the ledge
+      for (const [x, c] of [[2.4, '#58a0d8'], [4.4, '#f0a040'], [6.4, '#e86a5a']]) add(x + 2.7, () => { B(x, 1.5, 0, 1.2, 1.6, 3, '#a87448'); B(x + .05, 1.55, 3, 1.1, 1.5, 1.4, c); B(x + .05, 1.5, 3, 1.1, .45, 5, c); });
       add(5.2, () => { B(.4, .4, 0, 1.2, .8, 7, '#a0603a'); leaves(.8, .8, 7, 4, '#3e9a46', '#7ad070', 1); leaves(1.3, .7, 7, 3, '#4aa84a', '#8ad870', 2); });
       add(10.4, () => { B(8.2, .4, 0, 1.2, 1.2, 7, '#a0603a'); leaves(8.8, 1.0, 7, 5, '#2e8a3e', '#6cc860', 3); });
       add(15.2, () => { B(8.75, 6.1, 0, .14, .14, 24, '#6a6a6a', 0, 1); B(8.3, 5.7, 9, 1.0, 1.0, 1, '#f4f0e8'); B(8.7, 6.1, 0, .2, .2, 9, '#6a6a6a', 0, 1); mug(8.5, 5.9, 10, '#f08060');
@@ -662,6 +667,7 @@ function shellA(r) {
   if (r.floor === 0 && !yardGround(r)) {
     const snow = weather === 'snow';
     const GY = NY + 2.0, GX = NX + (isl ? 2 : 1.2); // the ground reaches out in front (under the outside stairs) and on the right
+    if (isl) rockUnder(-1.2, -1.2, GX, GY, -SLAB - 14);
     B(-1.2, -1.2, -SLAB - 14, GX + 1.2, GY + 1.2, 14, '#7a5a3a');
     FY(-1.2, GX, GY + .001, -SLAB - 14, -SLAB - 9, '#5a4028'); FX(-1.2, GY, GX + .001, -SLAB - 14, -SLAB - 9, '#5a4028');
     FL(-1.2, -1.2, GX, GY, snow ? '#eef2f8' : '#6aa84a', -SLAB);
@@ -674,6 +680,37 @@ function shellA(r) {
   drawFloor(th);
   if (!th.open && th.pattern !== 'glass') drawWalls(th);
   if (th.pattern === 'glass') { poly([iso(0, 0, 0), iso(0, NY, 0), iso(0, NY, WH), iso(0, 0, WH)], lit('#dfe8e2')); poly([iso(0, 0, 0), iso(NX, 0, 0), iso(NX, 0, WH), iso(0, 0, WH)], lit('#dfe8e2')); }
+  const top = ceilOf(r);
+  if (!th.open && top > WH) upperWalls(th, top, infillTo(r));
+}
+// A floor with another on top: its walls go on up to the slab above, so the stack stands as one house, not a pile of boxes.
+// Under the kitchen the bathroom's back wall runs on to the kitchen's width, its overhang held up by a post.
+const ceilOf = r => r.floor >= 0 && roomAt(r.tower, r.floor + 1) ? FLOOR_STEP - SLAB : WH;
+const infillTo = r => { const k = LIFT && r.key === '__bath' && LIFT.fl[1]?.r; return k && k.NX > r.NX ? k.NX : 0; };
+function upperWalls(th, top, xTo) {
+  const NX = R.NX, NY = R.NY, glass = th.pattern === 'glass', L = glass ? '#dfe8e2' : th.wallL, Rw = glass ? '#dfe8e2' : th.wallR;
+  poly([iso(0, 0, WH), iso(0, NY, WH), iso(0, NY, top), iso(0, 0, top)], lit(L, .92));
+  poly([iso(0, 0, WH), iso(NX, 0, WH), iso(NX, 0, top), iso(0, 0, top)], lit(Rw, .92));
+  if (xTo) { // the wall behind the covered corner under the kitchen
+    poly([iso(NX, 0, -SLAB), iso(xTo, 0, -SLAB), iso(xTo, 0, top), iso(NX, 0, top)], lit(Rw, .88));
+    poly([iso(NX, .01, -SLAB), iso(xTo, .01, -SLAB), iso(xTo, .01, th.lowH), iso(NX, .01, th.lowH)], lit(th.low, .9));
+    B(NX, 0, th.lowH, xTo - NX, .12, 1.5, th.trim, 0, 1);
+  }
+  const x1 = xTo || NX;
+  poly([iso(.01, 0, top - 4), iso(.01, NY, top - 4), iso(.01, NY, top), iso(.01, 0, top)], lit(L, .7)); // shade under the ceiling
+  poly([iso(0, .01, top - 4), iso(x1, .01, top - 4), iso(x1, .01, top), iso(0, .01, top)], lit(Rw, .7));
+  B(0, 0, WH, .14, NY, 1.4, th.trim, 0, 1); B(0, 0, WH, NX, .14, 1.4, th.trim, 0, 1); // a picture rail where the old top was
+}
+// under a floating island the earth tapers off in rough tiers, roots and a tuft or two hanging out of it
+function rockUnder(x0, y0, x1, y1, z) {
+  const m = Math.min(x1 - x0, y1 - y0), tiers = [[.06, 9, '#74543a'], [.17, 9, '#684a32'], [.3, 8, '#5c412c'], [.42, 6, '#503826']];
+  let zz = z; const at = tiers.map(([k, h, c]) => { zz -= h; return [k * m, zz, h, c]; });
+  for (let i = at.length - 1; i >= 0; i--) { const [k, z0, h, c] = at[i];
+    B(x0 + k, y0 + k, z0, x1 - x0 - 2 * k, y1 - y0 - 2 * k, h, c);
+    for (let j = 0; j < 6; j++) pix(x0 + k + scRnd(i * 9 + j, 33) * (x1 - x0 - 2 * k), y1 - k, z0 + 2 + scRnd(i * 9 + j, 34) * (h - 3), '#8a6a4a'); }
+  for (let i = 0; i < 12; i++) { const front = i % 2, u = scRnd(i, 31), k = at[i % 3][0], zr = at[i % 3][1], len = 4 + scRnd(i, 32) * 9;
+    const p = front ? [x0 + k + 1 + u * (x1 - x0 - 2 * k - 2), y1 - k] : [x1 - k, y0 + k + 1 + u * (y1 - y0 - 2 * k - 2)];
+    line(iso(p[0], p[1], zr + 2), iso(p[0], p[1], zr - len), lit('#4a3020')); if (i % 3 === 0) pix(p[0], p[1], zr - len, '#5aa04a'); }
 }
 function shellB(r) {
   const th = r.theme, NX = R.NX, NY = R.NY;
@@ -686,11 +723,11 @@ function shellB(r) {
     B(0, 0, h, .12, NY, 1.5, th.trim, 0, 1); B(0, 0, h, NX, .12, 1.5, th.trim, 0, 1);
   }
   if (!th.open) {
-    const rim = lit('#3a2c34'), rimD = lit('#2a1f26');
-    poly([iso(0, 0, WH), iso(0, NY, WH), iso(-.45, NY, WH), iso(-.45, -.45, WH)], rim);
-    poly([iso(0, 0, WH), iso(NX, 0, WH), iso(NX, -.45, WH), iso(-.45, -.45, WH)], rim);
-    poly([iso(-.45, NY, WH), iso(0, NY, WH), iso(0, NY, -SLAB), iso(-.45, NY, -SLAB)], rimD);
-    poly([iso(NX, -.45, WH), iso(NX, 0, WH), iso(NX, 0, -SLAB), iso(NX, -.45, -SLAB)], rimD);
+    const rim = lit('#3a2c34'), rimD = lit('#2a1f26'), top = ceilOf(r), xr = infillTo(r) || NX;
+    poly([iso(0, 0, top), iso(0, NY, top), iso(-.45, NY, top), iso(-.45, -.45, top)], rim);
+    poly([iso(0, 0, top), iso(xr, 0, top), iso(xr, -.45, top), iso(-.45, -.45, top)], rim);
+    poly([iso(-.45, NY, top), iso(0, NY, top), iso(0, NY, -SLAB), iso(-.45, NY, -SLAB)], rimD);
+    poly([iso(xr, -.45, top), iso(xr, 0, top), iso(xr, 0, -SLAB), iso(xr, -.45, -SLAB)], rimD);
   }
   if (th.door) { const { a, b } = th.door;
     FX(a - .15, b + .15, .02, 0, 42, '#e8dcc0'); FX(a, b, .03, 0, 40, '#c8a878'); FX(a + .15, b - .15, .04, 22, 36, '#d8bc8c'); FX(a + .15, b - .15, .04, 4, 18, '#d8bc8c');
@@ -717,6 +754,7 @@ function drawClawd(X, Y, sp, t) {
   if (st === 'waiting') armRow = Math.sin(t / 260) > 0 ? 0 : 1;
   else if (st === 'fall') armRow = 0;
   else if (st === 'working' && !moving && sp.seated) armRow = 2 + (Math.floor(t / 160) % 2);
+  if (sp.waving) armRow = Math.sin(t / 160) > 0 ? 0 : 1; // calling a stair over
   if (egg && egg.arms != null) armRow = egg.arms;
   g.globalAlpha *= sp.alpha;
   g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(left + C, Math.round(Y) - 1, (w - 2) * C, 2);
@@ -787,19 +825,25 @@ function layout() {
   });
   const roof = shared('roof');
   if (roof && stack[0]) { const top = stack[0][stack[0].length - 1]; roof.tower = 0; roof.floor = stack[0].length; roof.NX = top.NX; roof.NY = top.NY; stack[0].push(roof); }
-  for (const r of rooms) { r.tx = 0; r.ty = 0; }
-  // islands: every project island stands on the ground beside the tower, at the bathroom's height, tied by bridges
-  links = LAYOUT === 'islands' && yardOn() ? islandPlan(stack.slice(1).map(s => s[0])) : [];
-  for (const sp of sprites.values()) if (sp.onBridge) { // a walker halfway across keeps going on the same bridge, rebuilt
-    const o = sp.onBridge.pair, L = links.find(l => l.a === o.a && l.b === o.b);
-    if (L) { sp.onBridge.pair = L; if (sp.path[0]?.bridge) sp.path[0].bridge = L; }
-    else { const to = sp.path[1]?.r || sp.homeRoom; sp.onBridge = null; sp.room = to; [sp.x, sp.y] = to.theme.hub; sp.z = 0; sp.path = []; if (sp.goal) setGoal(sp, sp.goal); }
+  for (const r of rooms) { r.tx = 0; r.ty = 0; r.tz = 0; }
+  // islands: project islands float around the tower at several heights, tied by bridges and turning stone stairs;
+  // the tower's floors are joined by the lift at its back right corner
+  const village = LAYOUT === 'islands' && yardOn(), oldLift = LIFT;
+  LIFT = village && stack[0].length > 1 ? liftPlan(stack[0]) : null;
+  if (LIFT && oldLift) LIFT.cabins.forEach((c, i) => { const o = oldLift.cabins[i]; if (o && LIFT.fl[o.level]) Object.assign(c, { z: liftZ(o.level), level: o.level, state: 'open', t: performance.now() }); });
+  const oldLinks = new Map(links.map(L => [L.id, L]));
+  links = village ? islandPlan(stack.slice(1).map(s => s[0]), stack[0]) : [];
+  for (const L of links) { const o = oldLinks.get(L.id); if (L.kind === 'stair' && o?.kind === 'stair' && o.targets.length === L.targets.length) Object.assign(L, { lift: o.lift, aim: o.aim, turn: o.turn, next: o.next }); }
+  for (const sp of sprites.values()) if (sp.onBridge) { // a walker halfway across keeps going on the same bridge or stair, rebuilt
+    const o = sp.onBridge.pair, L = o.kind === 'lift' ? LIFT?.cabins.find(h => h.id === o.id) : links.find(l => l.id === o.id);
+    if (L) { sp.onBridge.pair = L; for (const n of sp.path) { if (n.bridge === o) n.bridge = L; if (n.call === o) n.call = L; } }
+    else { const to = sp.path.find(n => n.r)?.r || sp.homeRoom; sp.onBridge = null; sp.room = to; [sp.x, sp.y] = to.theme.hub; sp.z = 0; sp.path = []; if (sp.goal) setGoal(sp, sp.goal); }
   }
   const W = 18 * 8 * S, F = FLOOR_STEP * S;
   // where each stack's ground room stands, before centering
   const base = stack.map((s, t) => {
     if (LAYOUT === 'steps') return [t * (W + 70 * S), -t * .62 * F];
-    if (LAYOUT === 'islands') { const r = s[0]; return [(r.tx - r.ty) * 8 * S, (r.tx + r.ty) * 4 * S]; }
+    if (LAYOUT === 'islands') { const r = s[0]; return [(r.tx - r.ty) * 8 * S, (r.tx + r.ty) * 4 * S - r.tz * S]; }
     return [t * (W + 40 * S), 0];
   });
   const place = () => stack.forEach((s, t) => { let wy = 0;
@@ -813,8 +857,9 @@ function layout() {
     y0 = Math.min(y0, r.oy - (WH + 12) * S); y1 = Math.max(y1, r.oy + (r.NX + r.NY + (isl ? 4 : 2.4)) * 4 * S + (SLAB + 16) * S);
   }
   if (yardOn()) { const b = shared('bath'); y1 = Math.max(y1, b.oy + (YD.x1 + b.NY + 2) * 4 * S + (SLAB + 18) * S); x1 = Math.max(x1, b.ox + (YD.x1 - YD.y0 + 1.5) * 8 * S); }
+  if (village) for (const h of PLAN.hulls) for (const [x, y] of h) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
   DPR = devicePixelRatio || 1;
-  const fit = Math.min(innerWidth * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), (innerHeight - INSETS.top - INSETS.bottom) * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
+  const fit = Math.min((innerWidth - INSETS.right) * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), (innerHeight - INSETS.top - INSETS.bottom) * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
   // whole device pixels when small; above that, quarter steps fill the screen and the unevenness is a single device pixel
   VIEW.base = fit >= 3 ? Math.floor(fit * 4) / 4 : Math.max(1, Math.floor(fit * 2) / 2);
   VIEW.home = [(x0 + x1) / 2, (y0 + y1) / 2];
@@ -825,42 +870,137 @@ function layout() {
 // a project's own island (not the tower's ground floor): it has grass to walk on and steps down from its open edges
 const isIsland = r => !!r && r !== YARD && r.floor === 0 && r.tower > 0 && LAYOUT === 'islands' && yardOn();
 
-// ---------- the village: islands around the yard, tied by short flat bridges ----------
-// All in the bathroom's tile coordinates (the yard's too), at grass height. The first island stands to the right of
-// the yard, across the gate in its side fence; the second to the left, past the foot of the stairs. After that the islands take turns: each side
-// grows a row, every island tied to the one before it, stepping back or forward so the row stays level on screen.
-// An island's ports are where a bridge lands on its grass: on the front strip (L at its left end, F on its front edge)
-// or on the right strip (Rt on its right edge, Bk at its back end). Clawds walk out of the room through the open front
-// (or the open right side) onto the grass, along the strip and over the bridge.
-const BR_GAP = 3, ROW_V = 0;
-let links = [];
-function islandPlan(list) {
-  const out = [], ends = {};
-  const mk = (a, pa, qa, b, pb, qb, axis) => {
-    const A = [qa[0] + a.tx, qa[1] + a.ty], Bp = [qb[0] + b.tx, qb[1] + b.ty], k = axis === 'x' ? 0 : 1;
-    const L = { a, b, pa: { kind: pa, q: qa }, pb: { kind: pb, q: qb }, axis, A, B: Bp, len: Math.abs(Bp[k] - A[k]) };
-    L.hi = Bp[k] > A[k] ? b : a; // the end further along the axis is in front: the bridge is drawn just before it
-    return L;
+// ---------- the village: islands at several heights around the tower ----------
+// All in the bathroom's tile coordinates (the yard's too); an island's tz is how high its floor floats, in levels of LV.
+// Every island hangs off one already placed (the yard first) by a port: where a bridge or a stair lands on its grass,
+// on the front strip (L at its left end, F on its front edge) or on the right strip (Rt on its right edge, Bk at its
+// back end). Islands on one level are tied by flat bridges; a level apart, by a stone stair that turns on its foot
+// like the ones at Hogwarts, now and then off to a landing in the air and back when someone calls it.
+// Each next island goes where it keeps the whole village clear of overlaps and closest to the screen's own shape,
+// so a new project never moves the ones before it.
+const BR_GAP = 3, STAIR_STEPS = 13;
+let links = [], PLAN = { hulls: [] }, LIFT = null;
+const PORTS = {
+  Rt: (NX, NY) => ({ q: [NX + 2, .6], d: [1, 0], opp: 'L' }),
+  L: (NX, NY) => ({ q: [-1.2, NY + 1], d: [-1, 0], opp: 'Rt' }),
+  F: (NX, NY) => ({ q: [.5, NY + 2], d: [0, 1], opp: 'Bk' }),
+  Bk: (NX, NY) => ({ q: [NX + 1.4, -1.2], d: [0, -1], opp: 'F' }),
+};
+const YARD_PORTS = { Yr: () => ({ q: [YD.x1, 3.6], d: [1, 0], opp: 'L' }), Yl: () => ({ q: [-1.2, 7.5], d: [-1, 0], opp: 'Rt' }) };
+// silhouettes on screen, in art pixels from the bathroom's origin
+const scrP = (x, y, z) => [(x - y) * 8 * S, (x + y) * 4 * S - z * S];
+function hull2(pts) { // the convex hull of screen points, in order
+  pts = pts.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o, a, c) => (a[0] - o[0]) * (c[1] - o[1]) - (a[1] - o[1]) * (c[0] - o[0]), lo = [], up = [];
+  for (const p of pts) { while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cross(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function hullOf(b) { // b = [x0, y0, z0, x1, y1, z1]
+  const pts = [];
+  for (const x of [b[0], b[3]]) for (const y of [b[1], b[4]]) for (const z of [b[2], b[5]]) pts.push(scrP(x, y, z));
+  return hull2(pts);
+}
+function hullsMeet(A, Bh, m = 2) { // separating axes; m pixels of air between them
+  for (const P of [A, Bh]) for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], nx = b[1] - a[1], ny = a[0] - b[0], l = Math.hypot(nx, ny) || 1;
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const p of A) { const d = (p[0] * nx + p[1] * ny) / l; if (d < a0) a0 = d; if (d > a1) a1 = d; }
+    for (const p of Bh) { const d = (p[0] * nx + p[1] * ny) / l; if (d < b0) b0 = d; if (d > b1) b1 = d; }
+    if (a1 + m <= b0 || b1 + m <= a0) return false;
+  }
+  return true;
+}
+const islandCore = (r, tx, ty, tz) => hullOf([tx, ty, tz - SLAB, tx + r.NX, ty + r.NY, tz + WH]);
+const islandBody = (r, tx, ty, tz) => hullOf([tx - 1.2, ty - 1.2, tz - SLAB - 14, tx + r.NX + 2, ty + r.NY + 2, tz + WH + 4]); // without the earth tapering under it
+const islandFull = (r, tx, ty, tz) => hullOf([tx - 1.2, ty - 1.2, tz - SLAB - 14 - UNDER, tx + r.NX + 2, ty + r.NY + 2, tz + WH + 4]);
+// the strip a bridge or a stair takes from a to b (tile points), z0 at its foot, rising by h
+function spanHull(a, b, z0, h, wide = .7) {
+  return hullOf([Math.min(a[0], b[0]) - wide, Math.min(a[1], b[1]) - wide, z0 - 12, Math.max(a[0], b[0]) + wide, Math.max(a[1], b[1]) + wide, z0 + h + 16]);
+}
+// the tower, its lift and the yard: what the islands keep clear of
+function towerHulls(s) {
+  const core = [], full = []; let wy = 0;
+  s.forEach((r, f) => { if (f > 0) wy += s[f - 1].NY - r.NY;
+    const top = r.theme.open ? 70 : FLOOR_STEP - SLAB, h = hullOf([0, wy, f * FLOOR_STEP - SLAB, r.NX, wy + r.NY, f * FLOOR_STEP + top]); core.push(h); full.push(h); });
+  if (LIFT) { const h = hullOf([LIFT.x0 - .2, LIFT.y0 - .2, -SLAB - 14, LIFT.x1 + .2, LIFT.y1 + .9, LIFT.top + 16]); core.push(h); full.push(h); }
+  const b = s[0];
+  full.push(hullOf([-1.2, -1.2, -SLAB - 14 - UNDER, YD.x1, b.NY + 2, 12]), hullOf([12.2, 1.8, -SLAB, 13.7, 3.0, 36]));
+  return { core, full };
+}
+// The layout: on each side of the yard a row of ground islands, tied by bridges; over each of them a column climbs
+// a level at a time in a zigzag, every next island higher and set off along one of its sides, joined by a turning
+// stair, so the village grows up the screen instead of off to the sides. When a column reaches the top, the next
+// ground island starts another.
+// The islands take turns between the sides, so a new project never moves the ones before it.
+function islandPlan(list, tower) {
+  const out = [], T = towerHulls(tower), placed = [], spans = [];
+  const yardNode = { r: YARD, tx: 0, ty: 0, lv: 0, used: new Set() };
+  const portOf = (n, kind) => n.r === YARD ? YARD_PORTS[kind]() : PORTS[kind](n.r.NX, n.r.NY);
+  // clear of the tower and of every island; the one it hangs off (next to it, a level apart) only must not cover a room
+  const clear = (core, full, span, near, body) => !T.core.some(h => hullsMeet(h, full)) && !T.full.some(h => hullsMeet(h, core))
+    && !placed.some(n => n === near ? hullsMeet(n.core, body) || hullsMeet(n.body, core) : hullsMeet(n.full, full)) && !spans.some(h => hullsMeet(h, full))
+    && !(span && (placed.some(n => n !== near && hullsMeet(n.core, span)) || T.core.some(h => hullsMeet(h, span))));
+  const put = (r, tx, ty, lv) => { const n = { r, tx, ty, lv, used: new Set(), core: islandCore(r, tx, ty, lv * LV), full: islandFull(r, tx, ty, lv * LV), body: islandBody(r, tx, ty, lv * LV) }; r.tx = tx; r.ty = ty; r.tz = lv * LV; placed.push(n); return n; };
+  // a stair straight along an edge from the lower island up to the next. It hangs from hinges at its top: now and then
+  // its foot lifts up off the ground on ropes like a drawbridge, and comes down when called
+  const addStair = (lo, hi, pa, pb, A, Bp) => {
+    const len = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]), zl = lo.lv * LV - SLAB, ang = Math.atan2(Bp[1] - A[1], Bp[0] - A[0]);
+    spans.push(spanHull(A, Bp, zl, LV));
+    out.push({ kind: 'stair', id: lo.r.key + ':' + pa.kind + '>' + hi.r.key, a: lo.r, b: hi.r, lo: lo.r, hi: hi.r, pa, pb,
+      A, B: Bp, len, rise: LV, steps: STAIR_STEPS, z0: zl, targets: [{ room: hi.r }, { up: true }], ang, lift: 0, aim: 0, turn: null, next: 0 });
   };
+  const sides = { R: { last: null, col: null, sgn: 1 }, L: { last: null, col: null, sgn: -1 } };
   list.forEach((r, i) => {
-    const NX = r.NX, NY = r.NY, side = i % 2 ? 'L' : 'R', p = ends[side];
-    let L;
-    if (!p && side === 'R') { r.tx = YD.x1 + BR_GAP + 1.2; r.ty = 3.6 - (NY + 1); L = mk(YARD, 'Yr', [YD.x1, 3.6], r, 'L', [-1.2, NY + 1], 'x'); }
-    else if (!p) { r.tx = -1.2 - BR_GAP - (NX + 2); r.ty = 7.5 - .6; L = mk(YARD, 'Yl', [-1.2, 7.5], r, 'Rt', [NX + 2, .6], 'x'); }
-    else {
-      const v = p.tx + p.ty, closer = (a, b) => Math.abs(v + a - ROW_V) <= Math.abs(v + b - ROW_V);
-      if (side === 'R' && closer(-3.3, 7.8)) { // back: from its right strip's back end to the next one's front
-        r.tx = p.tx + p.NX + 1.4 - .5; r.ty = p.ty - 1.2 - BR_GAP - (NY + 2); L = mk(p, 'Bk', [p.NX + 1.4, -1.2], r, 'F', [.5, NY + 2], 'y'); }
-      else if (side === 'R') { // right: from its right edge to the next one's front strip
-        r.tx = p.tx + p.NX + 2 + BR_GAP + 1.2; r.ty = p.ty + .6 - (NY + 1); L = mk(p, 'Rt', [p.NX + 2, .6], r, 'L', [-1.2, NY + 1], 'x'); }
-      else if (closer(3.3, -7.8)) { // forward: from its front edge to the next one's right strip
-        r.tx = p.tx + .5 - (NX + 1.4); r.ty = p.ty + p.NY + 2 + BR_GAP + 1.2; L = mk(p, 'F', [.5, p.NY + 2], r, 'Bk', [NX + 1.4, -1.2], 'y'); }
-      else { // left: from its front strip's left end to the next one's right edge
-        r.tx = p.tx - 1.2 - BR_GAP - (NX + 2); r.ty = p.ty + p.NY + 1 - .6; L = mk(p, 'L', [-1.2, p.NY + 1], r, 'Rt', [NX + 2, .6], 'x'); }
+    const st = sides[i % 2 ? 'L' : 'R'], side = i % 2 ? 'L' : 'R';
+    // up the column, if it has room. Each next island floats a level higher, moved straight along one side of the
+    // one below and away from it, by turns to the left and to the right on screen; the stair runs in the gap between,
+    // parallel to both islands' edges. It comes up to an island's front right corner, and the next one leaves from the
+    // far end of a strip (its front left, or its back right), so the way on never starts under the way in.
+    while (st.col && st.col.lv < MAX_LV) {
+      const lo = st.col.node, lv = st.col.lv + 1, alongX = (st.col.lv % 2 === 0) === (side === 'L');
+      let n = null;
+      for (let gap = STAIR_L + (alongX ? 0 : 2); gap <= STAIR_L + 10 && !n; gap += 2) { // the backward flights a little longer, so the zigzag keeps above its ground island
+        let tx, ty, pa, pb;
+        if (alongX) { pa = { kind: 'L', q: [-1.2, lo.r.NY + 1] }; const A = [lo.tx + pa.q[0], lo.ty + pa.q[1]]; tx = A[0] - gap - (r.NX + 2); ty = A[1] - (r.NY + 1); pb = { kind: 'Rt', q: [r.NX + 2, r.NY + 1] }; }
+        else { pa = { kind: 'Bk', q: [lo.r.NX + 1, -1.2] }; const A = [lo.tx + pa.q[0], lo.ty + pa.q[1]]; tx = A[0] - (r.NX + 1); ty = A[1] - gap - (r.NY + 2); pb = { kind: 'F', q: [r.NX + 1, r.NY + 2] }; }
+        const A = [lo.tx + pa.q[0], lo.ty + pa.q[1]], Bp = [tx + pb.q[0], ty + pb.q[1]], span = spanHull(A, Bp, lo.lv * LV - SLAB, LV);
+        if (!clear(islandCore(r, tx, ty, lv * LV), islandFull(r, tx, ty, lv * LV), span, lo, islandBody(r, tx, ty, lv * LV))) continue;
+        n = put(r, tx, ty, lv); addStair(lo, n, pa, pb, A, Bp);
+      }
+      if (!n) { st.col = null; break; }
+      st.col = { base: st.col.base, node: n, lv }; return;
     }
-    ends[side] = r; out.push(L);
+    // a new ground island at the end of the row, bridged on from the one before (or the yard)
+    const p = st.last || yardNode, NX = r.NX, NY = r.NY;
+    let kind, ck;
+    if (p === yardNode) { kind = side === 'R' ? 'Yr' : 'Yl'; ck = side === 'R' ? 'L' : 'Rt'; }
+    else [kind, ck] = side === 'R' ? ['Rt', 'L'] : ['F', 'Bk']; // the other ends start the columns
+    const pp = portOf(p, kind), cp = PORTS[ck](NX, NY), A = [p.tx + pp.q[0], p.ty + pp.q[1]];
+    let gap = BR_GAP, n = null;
+    for (; gap < BR_GAP + 30; gap += 2) { // pushed further out while something is in the way
+      const Bp = [A[0] + pp.d[0] * gap, A[1] + pp.d[1] * gap], tx = Bp[0] - cp.q[0], ty = Bp[1] - cp.q[1];
+      if (clear(islandCore(r, tx, ty, 0), islandFull(r, tx, ty, 0))) { n = put(r, tx, ty, 0); break; }
+    }
+    if (!n) { const Bp = [A[0] + pp.d[0] * gap, A[1] + pp.d[1] * gap]; n = put(r, Bp[0] - cp.q[0], Bp[1] - cp.q[1], 0); }
+    const Bp = [n.tx + cp.q[0], n.ty + cp.q[1]], axis = pp.d[0] ? 'x' : 'y', k = axis === 'x' ? 0 : 1;
+    p.used.add(kind); n.used.add(ck);
+    out.push({ kind: 'bridge', id: p.r.key + ':' + kind + '>' + r.key, a: p.r, b: r, pa: { kind, q: pp.q }, pb: { kind: ck, q: cp.q }, axis, A, B: Bp, len: Math.abs(Bp[k] - A[k]), z: 0 });
+    spans.push(spanHull(A, Bp, -SLAB, 0));
+    if (!st.first) st.first = n;
+    st.last = n; st.col = { base: n, node: n, lv: 0 };
   });
+  PLAN = { hulls: [...T.full, ...placed.map(n => n.full), ...spans] };
   return out;
+}
+// the lift: two wooden shafts side by side behind the stack's right corner, their ledges facing the yard
+function liftPlan(s) {
+  const ups = s.slice(1), NXm = Math.max(...ups.map(r => r.NX)), fl = [];
+  let wy = 0;
+  s.forEach((r, f) => { if (f > 0) wy += s[f - 1].NY - r.NY; fl.push({ r, f, yoff: wy, z: f * FLOOR_STEP }); });
+  const y0 = -1.0, y1 = .4, w = 1.4, shafts = [0, 1].map(i => { const x0 = NXm + .25 + i * (w + .2); return { x0, y0, x1: x0 + w, y1, cx: x0 + w / 2, cy: (y0 + y1) / 2 }; });
+  const cabins = shafts.map((sh, i) => ({ kind: 'lift', id: 'lift' + i, sh, z: -SLAB, level: 0, state: 'idle', t: 0, stop: null, len: 1 }));
+  return { fl, shafts, cabins, x0: shafts[0].x0, x1: shafts[1].x1, y0, y1, top: fl[fl.length - 1].z + 34 };
 }
 
 // ---------- the view: pinch to zoom in on a room, scroll to move, double tap to go back ----------
@@ -872,12 +1012,13 @@ function applyView() {
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; makeSkyline(); }
   cv.style.width = (cv.width * PXD / DPR) + 'px'; cv.style.height = (cv.height * PXD / DPR) + 'px';
   const lift = Math.round((INSETS.top - INSETS.bottom) / 2 * DPR / PXD); // centred between the menu bar and the Dock
-  for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + lift + r.wy - VIEW.at[1]); }
+  const aside = Math.round(INSETS.right / 2 * DPR / PXD); // and left of the desktop icons
+  for (const r of rooms) { r.ox = Math.round(cv.width / 2 - aside + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + lift + r.wy - VIEW.at[1]); }
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
   CAM.touched = performance.now();
-  y -= (INSETS.top - INSETS.bottom) / 2;
+  y -= (INSETS.top - INSETS.bottom) / 2; x += INSETS.right / 2;
   const T = viewTarget(), z = Math.min(6, Math.max(1, T.zoom * factor));
   if (z <= 1.001) { followTo(1, VIEW.home); return; }
   const P = VIEW.base * T.zoom, P2 = VIEW.base * z;
@@ -903,18 +1044,25 @@ const DECK = .45;
 const linkAt = (L, u) => [L.A[0] + (L.B[0] - L.A[0]) * u, L.A[1] + (L.B[1] - L.A[1]) * u];
 const linkW = sp => (sp.seed - .5) * .36; // a little to one side or the other, so two Clawds don't overlap
 function worldFrame() { const b = roomByKey.get('__bath'); return b ? { ox: b.ox, oy: b.oy, drop: 0 } : null; }
-// a point on the deck in screen pixels, u running from the bridge's end a to its end b
-function bridgePoint(L, u, w = 0) {
+// a point on a bridge, a stair or in a lift cage in screen pixels, u running from its end a (the foot) to its end b
+function transitPoint(L, u, w = 0) {
   const f = worldFrame(); if (!f) return null;
-  const saved = R; R = f; const [x, y] = linkAt(L, u), p = L.axis === 'x' ? iso(x, y + w, -SLAB) : iso(x + w, y, -SLAB); R = saved;
+  const saved = R; R = f; let p;
+  if (L.kind === 'stair') { // up the steps: a step at a time
+    const c = Math.cos(L.ang), s = Math.sin(L.ang), d = u * L.len, k = Math.min(L.steps, Math.max(0, Math.ceil(u * L.steps - .2)));
+    p = iso(L.A[0] + c * d - s * w, L.A[1] + s * d + c * w, L.z0 + k * L.rise / L.steps);
+  } else if (L.kind === 'lift') p = iso(L.sh.cx + w * 1.4, L.sh.cy - w * .8, L.z);
+  else { const [x, y] = linkAt(L, u); p = L.axis === 'x' ? iso(x, y + w, L.z - SLAB) : iso(x + w, y, L.z - SLAB); }
+  R = saved;
   return [p[0], p[1], L.len];
 }
 function drawLink(L, t) {
+  if (L.kind === 'stair') return drawStair(L, t);
   const f = worldFrame(); if (!f) return;
   const born = Math.max(L.a.born || 0, L.b.born || 0), e = Math.min(1, Math.max(0, (t - born - 700) / 500)); // after a new island has landed
   if (e <= 0) return;
   const saved = R; R = f; g.globalAlpha = e;
-  const k = L.axis === 'x' ? 0 : 1, s0 = Math.min(L.A[k], L.B[k]), s1 = Math.max(L.A[k], L.B[k]), c = L.A[1 - k], z = -SLAB;
+  const k = L.axis === 'x' ? 0 : 1, s0 = Math.min(L.A[k], L.B[k]), s1 = Math.max(L.A[k], L.B[k]), c = L.A[1 - k], z = L.z - SLAB;
   const P = (s, w) => k ? [c + w, s] : [s, c + w]; // along the bridge and across it; w > 0 is the side nearer the viewer
   const at = (s, w, zz) => { const [x, y] = P(s, w); return iso(x, y, zz); };
   const box = (sa, wa, sb, wb, z0, h, col, em, nl) => { const [ax, ay] = P(sa, wa), [bx, by] = P(sb, wb); B(Math.min(ax, bx), Math.min(ay, by), z0, Math.abs(bx - ax), Math.abs(by - ay), h, col, em, nl); };
@@ -946,7 +1094,7 @@ function drawLink(L, t) {
   rail(-1); lantern(s0 + .15); lantern(s1 - .15);
   // the Clawds on it, back to front
   const on = [...sprites.values()].filter(sp => sp.onBridge && sp.onBridge.pair === L);
-  on.map(sp => [sp, bridgePoint(L, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u, linkW(sp))]).filter(q => q[1])
+  on.map(sp => [sp, transitPoint(L, sp.onBridge.u, linkW(sp))]).filter(q => q[1])
     .sort((a, b) => a[1][1] - b[1][1]).forEach(([sp, q]) => { g.globalAlpha = e; drawClawd(q[0], q[1], sp, t); });
   g.globalAlpha = e;
   rail(1);
@@ -954,6 +1102,201 @@ function drawLink(L, t) {
     for (const ps of [s0 + .15, s1 - .15]) { const [x, y] = at(ps, -(DECK - .07), z + 18.6); glow(x, y, 20 * S, '#ffc870', (.1 + .25 * DARK) * e); }
     g.restore(); }
   g.globalAlpha = 1; R = saved;
+}
+
+// ---------- the stairs between levels ----------
+// A wooden flight straight along the islands' edges from the lower one up to the next: plank steps on two stringers,
+// a rope rail, a lantern at the foot. It hangs from two posts at its top; now and then its foot rises on their ropes
+// like a drawbridge, off the ground into the gap, and comes down when someone at either end waves for it.
+function prismAt(P, d0, d1, w0, w1, zb, zt, col, c, s) { // a block turned to (c, s); P(d, w, z) -> screen
+  const pts = [[d0, w0], [d1, w0], [d1, w1], [d0, w1]], all = [];
+  for (const [d, w] of pts) all.push(P(d, w, zb), P(d, w, zt));
+  polyOutline(hull2(all), lit(OUT));
+  // the sides facing the viewer: along (c, s), back, across (-s, c) and its opposite
+  for (const [a, b, nx, ny] of [[pts[1], pts[2], c, s], [pts[3], pts[0], -c, -s], [pts[2], pts[3], -s, c], [pts[0], pts[1], s, -c]])
+    if (nx + ny > 0) poly([P(a[0], a[1], zb), P(b[0], b[1], zb), P(b[0], b[1], zt), P(a[0], a[1], zt)], lit(col, .72 + .14 * (ny - nx + 1) / 2));
+  poly(pts.map(([d, w]) => P(d, w, zt)), lit(col));
+}
+function lanternPost(x, y, z, glows) { // like the bridges' lanterns
+  B(x - .06, y - .06, z, .12, .12, 15, '#5a3a24', 0, 1);
+  B(x - .15, y - .15, z + 15, .3, .3, 3.2, '#ffd27a', DARK > .3);
+  B(x - .19, y - .19, z + 18.2, .38, .38, .9, '#3a2c24');
+  glows.push([x, y, z + 16.6]);
+}
+const STAIR_LIFT = 30; // how high a raised stair's foot hangs off the ground: it stays in the gap and covers no room
+function drawStair(L, t) {
+  const f = worldFrame(); if (!f) return;
+  const born = Math.max(L.lo.born || 0, L.hi.born || 0), e = Math.min(1, Math.max(0, (t - born - 700) / 500));
+  if (e <= 0) return;
+  const saved = R; R = f; g.globalAlpha = e;
+  const n = L.steps, W = .5, z0 = L.z0, rise = L.rise / n, run = L.len / n, top = z0 + L.rise;
+  const c = Math.cos(L.ang), s = Math.sin(L.ang), Q = (d, w, z) => iso(L.A[0] + c * d - s * w, L.A[1] + s * d + c * w, z);
+  // raised by phi about the hinge at its top: a point h tiles back from the hinge (8 height units to a tile) swings up
+  const rr = Math.hypot(L.len * 8, L.rise), a0 = Math.atan2(-L.rise, L.len * 8), a1 = -Math.asin((L.rise - STAIR_LIFT) / rr);
+  const phi = (L.lift || 0) * (a1 - a0), cp = Math.cos(phi), sp_ = Math.sin(phi);
+  const P = !phi ? Q : (d, w, z) => { const h = (L.len - d) * 8, zr = z - top; return Q(L.len - (h * cp - zr * sp_) / 8, w, top + h * sp_ + zr * cp); };
+  const glows = [];
+  // where it docks on the island above: a plank sill on the grass edge, and the two posts it hangs from
+  B(L.B[0] - .45, L.B[1] - .45, top - 1.5, .9, .9, 1.5, WOOD);
+  const near = c - s > 0 ? 1 : -1; // the +w side is nearer the viewer when (-s, c) points toward it
+  const hinge = side => Q(L.len - .05, side * (W + .12), top + 34);
+  const postAt = side => { const [x, y] = [L.B[0] - s * side * (W + .12), L.B[1] + c * side * (W + .12)]; B(x - .07, y - .07, top, .14, .14, 36, WOOD, 0, 1); B(x - .1, y - .1, top + 34, .2, .2, 2, WOOD_L, 0, 1); };
+  const rope = side => { const a = hinge(side), b = P(0, side * W, z0 + 2); line(a, b, lit('#4a3a2a')); };
+  postAt(-near); rope(-near);
+  // the foot's mark on the lower island, where it rests when down
+  B(L.A[0] - .45, L.A[1] - .45, z0, .9, .9, 1, WOOD);
+  const stringer = side => { const w = side * W; poly([P(0, w, z0 - 5), P(L.len, w, top - 5), P(L.len, w, top + 1), P(0, w, z0 + 1)], lit(WOOD, side === near ? .86 : .7));
+    line(P(0, w, z0 + 1), P(L.len, w, top + 1), lit(WOOD_L)); line(P(0, w, z0 - 5), P(L.len, w, top - 5), lit(OUT)); };
+  // rope rail: a post every few steps, the rope sagging a little between them
+  const rail = side => { const w = side * (W - .06), ps = [];
+    for (let i = 1; i <= n; i += 3) ps.push([(i - .5) * run, z0 + i * rise]);
+    ps.push([L.len - .5 * run, top]);
+    for (const [d, z] of ps) { const a = P(d, w, z), b = P(d, w, z + 9); line(a, b, lit('#6a4228')); line([a[0] + 1, a[1]], [b[0] + 1, b[1]], lit('#8a5a36')); }
+    for (let i = 0; i + 1 < ps.length; i++) for (let j = 0; j < 5; j++) { const [d0, za] = ps[i], [d1, zb] = ps[i + 1], u0 = j / 5, u1 = (j + 1) / 5, sg = u => Math.sin(u * Math.PI) * 1.4;
+      const p0 = P(d0 + (d1 - d0) * u0, w, za + (zb - za) * u0 + 8.6 - sg(u0)), p1 = P(d0 + (d1 - d0) * u1, w, za + (zb - za) * u1 + 8.6 - sg(u1));
+      line(p0, p1, lit('#5a3a22')); line([p0[0], p0[1] + 1], [p1[0], p1[1] + 1], lit('#a07a4a')); } };
+  rail(-near); stringer(-near);
+  const riders = [...sprites.values()].filter(sp => sp.onBridge?.pair === L).map(sp => [sp, transitPoint(L, sp.onBridge.u, linkW(sp) * .8)]).filter(q => q[1]);
+  const stepOf = sp => Math.min(n - 1, Math.max(0, Math.ceil(sp.onBridge.u * n - .2) - 1));
+  const order = [...Array(n).keys()]; if (c + s < 0) order.reverse();
+  for (const i of order) {
+    prismAt(P, i * run, (i + 1) * run + .03, -W + .06, W - .06, z0 + (i + 1) * rise - 2, z0 + (i + 1) * rise, ['#c48c58', '#b88250', '#cc965e'][i % 3], c, s);
+    riders.filter(([sp]) => stepOf(sp) === i).sort((a, b) => a[1][1] - b[1][1]).forEach(([sp, q]) => { drawClawd(q[0], q[1], sp, t); g.globalAlpha = e; });
+  }
+  stringer(near); rail(near); postAt(near); rope(near);
+  const side = Math.PI / 2 * near;
+  lanternPost(L.A[0] + Math.cos(L.ang + side) * .75, L.A[1] + Math.sin(L.ang + side) * .75, z0, glows);
+  if (DARK > .3) { g.save(); g.globalCompositeOperation = 'lighter';
+    for (const [x, y, z] of glows) { const [gx, gy] = iso(x, y, z); glow(gx, gy, 20 * S, '#ffc870', (.1 + .25 * DARK) * e); }
+    g.restore(); }
+  g.globalAlpha = 1; R = saved;
+}
+// A stair moves only when nobody is on it: down for whoever waves at either end, else up now and then on its own,
+// and down again after a while.
+function stairTurn(L, to, t) { L.turn = { a0: L.lift || 0, a1: to === 1 ? 1 : 0, to, t0: t, ms: 1800 }; L.aim = -1; }
+function updateStairs(t) {
+  for (const L of links) {
+    if (L.kind !== 'stair') continue;
+    if (L.turn) { const k = Math.min(1, (t - L.turn.t0) / L.turn.ms), e = k < .5 ? 2 * k * k : 1 - (2 - 2 * k) ** 2 / 2;
+      L.lift = L.turn.a0 + (L.turn.a1 - L.turn.a0) * e; if (k >= 1) { L.lift = L.turn.a1; L.aim = L.turn.to; L.turn = null; L.since = t; } continue; }
+    let aboard = false, call = null;
+    for (const sp of sprites.values()) { const n = sp.path[0];
+      if (sp.onBridge?.pair === L) aboard = true;
+      if (n?.call === L && n.aim !== L.aim && (!call || (n.since || 0) < (call.since || 0))) call = n; }
+    if (aboard) continue;
+    if (call) { stairTurn(L, call.aim, t); continue; }
+    if (!L.next) L.next = t + 20000 + Math.random() * 40000;
+    if (L.aim === 1 && t - (L.since || t) > 15000 + (L.id.length % 7) * 2000) stairTurn(L, 0, t); // comes down by itself
+    else if (L.aim === 0 && t > L.next && ![...sprites.values()].some(sp => sp.path.some(n => n.call === L || n.bridge === L))) {
+      stairTurn(L, 1, t); L.next = t + 40000 + Math.random() * 40000; }
+  }
+}
+
+// ---------- the lift: two wooden shafts at the back right corner of the tower ----------
+// An open frame of posts and braces from the yard up past the roof, a pulley over each shaft and a cage on a rope.
+// A cage goes for whoever has waited longest, takes up to three, and lets each out on the floor they want.
+// Those left waiting on the ledge pass the time chatting.
+const WOOD = '#8a5a36', WOOD_L = '#b07a4a', WOOD_P = '#c48c58';
+const liftZ = k => k === 0 ? -SLAB : LIFT.fl[k].z;
+function updateLifts(t, dt) {
+  if (!LIFT) return;
+  const all = [...sprites.values()], inCab = c => all.filter(sp => sp.onBridge?.pair === c);
+  const waiting = all.filter(sp => sp.path[0]?.lift && !sp.onBridge);
+  for (const c of LIFT.cabins) {
+    if (c.state === 'move') {
+      const dz = liftZ(c.stop) - c.z, v = dt / 1000 * 70;
+      if (Math.abs(dz) <= v) { c.z = liftZ(c.stop); c.level = c.stop; c.state = 'open'; c.t = t; } else c.z += Math.sign(dz) * v;
+      continue;
+    }
+    if (c.state === 'open') {
+      for (const sp of inCab(c)) if (sp.path[0]?.lift?.to === c.level) { sp.onBridge = null; sp.path.shift(); } // out first
+      if (t - c.t > 500) for (const sp of waiting) { // then in
+        const n = sp.path[0]; if (sp.onBridge || n.lift.from !== c.level || (n.cab && n.cab !== c)) continue;
+        if (inCab(c).length >= 3) break;
+        sp.onBridge = { pair: c, u: 0 }; sp.room = null; n.cab = c;
+      }
+      if (t - c.t > 1700) {
+        const on = inCab(c);
+        if (on.length) { c.stop = on.map(o => o.path[0].lift.to).sort((a, b) => Math.abs(liftZ(a) - c.z) - Math.abs(liftZ(b) - c.z))[0]; c.state = 'move'; }
+        else c.state = 'idle';
+        for (const sp of waiting) if (sp.path[0].cab === c && !sp.onBridge) delete sp.path[0].cab; // no room this time
+      }
+      continue;
+    }
+    const free = waiting.filter(sp => !sp.onBridge && !sp.path[0].cab).sort((a, b) => (a.path[0].since || 0) - (b.path[0].since || 0));
+    if (!free.length) continue;
+    const want = free[0].path[0].lift.from, d = o => Math.abs(o.z - liftZ(want));
+    if (LIFT.cabins.some(o => o !== c && o.state === 'idle' && d(o) < d(c))) continue; // the nearer cage goes
+    for (const sp of free) if (sp.path[0].lift.from === want) sp.path[0].cab = c;
+    if (d(c) < .5) { c.state = 'open'; c.t = t; } else { c.stop = want; c.state = 'move'; }
+  }
+}
+// The lift is drawn a floor at a time, each piece sorted in with that floor's own furniture and Clawds, so what
+// stands in front of it (the yard's tree and beds, Clawds waiting on a ledge, the ledge's rail) is drawn over it.
+// Piece f runs from floor f up to the next one (the bathroom's piece from the ground; the last one carries the head).
+function liftSlice(f) {
+  const n = LIFT.fl.length, zlo = f === 0 ? -SLAB - 14 : LIFT.fl[f].z - SLAB, zhi = f + 1 < n ? LIFT.fl[f + 1].z - SLAB : Infinity;
+  return [zlo, zhi];
+}
+function drawLifts(t, f) {
+  const wf = worldFrame(); if (!LIFT || !wf) return;
+  const saved = R; R = wf;
+  const [zlo, zhi] = liftSlice(f), zb = -SLAB, zt = LIFT.top, levels = LIFT.fl.map((q, k) => liftZ(k)), dark = lit('#5a3a22');
+  const inSlice = z => z >= zlo && z < zhi;
+  const post = (x, y) => { const a = Math.max(zb, zlo), b = Math.min(zt, zhi); if (b > a) B(x - .07, y - .07, a, .14, .14, b - a, WOOD, 0, 1); };
+  LIFT.shafts.forEach((sh, i) => {
+    const c = LIFT.cabins[i], { x0, y0, x1, y1, cx, cy } = sh;
+    // the back of the frame: three posts, a cross brace on each back face between floors, a beam at every floor
+    post(x0, y0); post(x1, y0); post(x0, y1);
+    for (let k = 0; k + 1 < levels.length; k++) { const a = levels[k], b = levels[k + 1]; if (!inSlice(a)) continue;
+      line(iso(x0, y0 + .02, a), iso(x1, y0 + .02, b), dark); line(iso(x0, y0 + .02, b), iso(x1, y0 + .02, a), dark);
+      line(iso(x0 + .02, y0, a), iso(x0 + .02, y1, b), dark); line(iso(x0 + .02, y0, b), iso(x0 + .02, y1, a), dark); }
+    for (const z of levels) if (inSlice(z)) { B(x0, y0, z - 2, x1 - x0, .12, 2, WOOD, 0, 1); B(x0, y0, z - 2, .12, y1 - y0, 2, WOOD, 0, 1); }
+    // the cage on its rope
+    const X0 = x0 + .14, Y0 = y0 + .14, X1 = x1 - .14, Y1 = y1 - .14, z = c.z, ch = 28;
+    const r0 = Math.max(zlo, z + ch + 2), r1 = Math.min(zhi, zt + 3); if (r1 > r0) line(iso(cx, cy, r1), iso(cx, cy, r0), lit('#3a2c20'));
+    if (inSlice(z)) {
+      B(X0, Y0, z - 2.5, X1 - X0, Y1 - Y0, 2.5, WOOD);
+      FX(Y0, Y1, X0 + .01, z, z + 13, WOOD_P); FY(X0, X1, Y0 + .01, z, z + 13, '#b88250');
+      for (let k = .3; k < Y1 - Y0; k += .3) line(iso(X0 + .02, Y0 + k, z), iso(X0 + .02, Y0 + k, z + 13), lit(WOOD_L));
+      for (let k = .3; k < X1 - X0; k += .3) line(iso(X0 + k, Y0 + .02, z), iso(X0 + k, Y0 + .02, z + 13), lit(WOOD_L));
+      [...sprites.values()].filter(sp => sp.onBridge?.pair === c).map(sp => [sp, transitPoint(c, 0, linkW(sp))]).filter(q => q[1])
+        .sort((a, b) => a[1][1] - b[1][1]).forEach(([sp, q]) => drawClawd(q[0], q[1], sp, t));
+      for (const [px, py] of [[X1, Y0], [X0, Y1], [X1, Y1], [X0, Y0]]) B(px - .05, py - .05, z, .1, .1, ch, WOOD, 0, 1);
+      B(X1 - .08, Y0, z + 10, .1, Y1 - Y0, 1.5, WOOD_L, 0, 1); // the side rail; the front opens when the cage stops
+      if (c.state !== 'open') B(X0, Y1 - .08, z + 10, X1 - X0, .1, 1.5, WOOD_L, 0, 1);
+      B(X0 - .06, Y0 - .06, z + ch, X1 - X0 + .12, Y1 - Y0 + .12, 2, WOOD_L);
+    }
+    // the front of the frame
+    post(x1, y1);
+    for (const z2 of levels) if (inSlice(z2)) { B(x0, y1 - .12, z2 - 2, x1 - x0, .12, 2, WOOD, 0, 1); B(x1 - .12, y0, z2 - 2, .12, y1 - y0, 2, WOOD, 0, 1); }
+  });
+  if (inSlice(zt)) { // the head: a beam over both shafts and a pulley over each, turning while its cage moves
+    B(LIFT.x0 - .12, LIFT.y0 - .12, zt, LIFT.x1 - LIFT.x0 + .24, LIFT.y1 - LIFT.y0 + .24, 3, WOOD_L);
+    LIFT.shafts.forEach((sh, i) => { const c = LIFT.cabins[i], [wx, wy] = iso(sh.cx, sh.cy, zt + 8), r = 3 * S, a = c.state === 'move' ? t / 120 : 0;
+      B(sh.cx - .05, sh.cy - .3, zt + 3, .1, .6, 5, WOOD, 0, 1);
+      g.fillStyle = lit(OUT); g.beginPath(); g.arc(Math.round(wx), Math.round(wy), r + 1, 0, 7); g.fill();
+      g.fillStyle = lit(WOOD_L); g.beginPath(); g.arc(Math.round(wx), Math.round(wy), r, 0, 7); g.fill();
+      for (let k = 0; k < 3; k++) line([wx, wy], [wx + Math.cos(a + k * 2.1) * r, wy + Math.sin(a + k * 2.1) * r], lit(WOOD)); });
+  }
+  R = saved;
+}
+// small talk: two or more waiting at the same lift ledge, or sitting on the same stair, take turns with a speech bubble
+function drawChats(t) {
+  const groups = new Map();
+  for (const sp of sprites.values()) {
+    const n = sp.path[0]; let k = null;
+    if (n?.lift && !sp.onBridge && !sp.moving) k = 'L' + n.lift.from;
+    else if (n?.wait && sp.onBridge) k = 'S' + sp.onBridge.pair.id;
+    if (k && sp.hit && sp.alpha > .5) { if (!groups.has(k)) groups.set(k, []); groups.get(k).push(sp); }
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.seed - b.seed);
+    const sp = list[Math.floor(t / 2600) % list.length], h = sp.hit, bx = Math.round(h[0] + h[2] - S), by = Math.round(h[1] - 4 * S);
+    g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, 9 * S + 2, 5 * S + 2); g.fillStyle = '#ffffff'; g.fillRect(bx, by, 9 * S, 5 * S); g.fillRect(bx + S, by + 5 * S, S, S);
+    g.fillStyle = '#5a5a6a'; for (let k = 0; k < 3; k++) if (Math.floor(t / 300) % 4 > k) g.fillRect(bx + (2 + k * 2) * S, by + 2 * S, S, S);
+  }
 }
 
 // ---------- baking: static parts are drawn once into small images ----------
@@ -985,7 +1328,8 @@ function buildCache(r) {
   for (const it of items) if (!it.dyn) it.baked = bake(r, it.draw);
   const above = roomAt(r.tower, r.floor + 1);
   r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items,
-    escBack: above ? bake(r, () => escape(r, 'back')) : null, escFront: above ? bake(r, () => escape(r, 'front')) : null, escTop: !above && r.floor > 0 ? bake(r, () => escape(r, 'top')) : null };
+    escBack: above && !LIFT ? bake(r, () => escape(r, 'back')) : null, escFront: above && !LIFT ? bake(r, () => escape(r, 'front')) : null,
+    escTop: LIFT ? (r.key === '__bath' ? bake(r, () => escape(r, 'top')) : null) : !above && r.floor > 0 ? bake(r, () => escape(r, 'top')) : null };
   return r.cache;
 }
 function blit(b) { if (b) g.drawImage(b.img, R.ox + b.dx, R.oy + R.drop + b.dy); }
@@ -1039,7 +1383,10 @@ function roomPath(a, b) {
   while (queue.length) {
     const r = queue.shift(); if (r === b) break;
     const next = [];
-    for (const d of [-1, 1]) { const n = roomAt(r.tower, r.floor + d); if (n) next.push([n, 'stairs']); }
+    if (LIFT && (r === YARD || r.tower === 0)) { // the yard and every floor above the bathroom, straight there by lift
+      const f = r === YARD ? 0 : r.floor;
+      if (r === YARD || f > 0) LIFT.fl.forEach((q, k) => { if (k !== f) next.push([k === 0 ? YARD : q.r, { lift: true, from: f, to: k }]); });
+    } else for (const d of [-1, 1]) { const n = roomAt(r.tower, r.floor + d); if (n) next.push([n, 'stairs']); }
     for (const L of links) if (L.a === r || L.b === r) next.push([L.a === r ? L.b : L.a, L]);
     if (r === YARD) { if (shared('bath')) next.push([shared('bath'), 'yard']); } else if (r.key === '__bath' && yardOn()) next.push([YARD, 'yard']);
     for (const [n, via] of next) if (!prev.has(n)) { prev.set(n, [r, via]); queue.push(n); }
@@ -1051,7 +1398,11 @@ function roomPath(a, b) {
 const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
 function routeTo(sp, room, p) {
   const nodes = []; let cur = sp.room, from = [sp.x, sp.y, sp.z];
-  if (sp.onBridge) { nodes.push(sp.path[0], sp.path[1]); cur = sp.path[1].r; from = sp.path[1].p; } // finish crossing first
+  if (sp.onBridge) { // finish crossing first; one sitting on the steps gets up
+    const rest = sp.path.filter(n => !n.wait), k = rest.findIndex(n => n.r);
+    if (k < 0) { sp.onBridge = null; cur = sp.homeRoom; nodes.push({ r: cur, p: cur.theme.hub, jump: true, poof: true }); from = cur.theme.hub; }
+    else { nodes.push(...rest.slice(0, k + 1)); cur = rest[k].r; from = rest[k].p; }
+  }
   else if (sp.path.length && sp.path[0].p && sp.path[0].p[2] !== 0 && sp.path[0].r === cur && !sp.path[0].jump) { nodes.push(sp.path[0]); from = sp.path[0].p; }
   else if (sp.z > .5) nodes.push({ r: cur, p: [Math.min(sp.x + .2, cur.NX - .4), Math.min(sp.y + .7, cur.NY - .4), 0] });
   const steps = cur === room ? [] : roomPath(cur, room);
@@ -1066,6 +1417,7 @@ function routeTo(sp, room, p) {
       else { const Yn = NYn; nodes.push({ r: cur, p: [1.0, NY - .5, 0] }, { r: cur, p: [.7, NY + .7, 0] }, { r: cur, p: [1.4, NY + 1.0, 0] }, { r: next, p: [1.4, Yn + 1.0, FLOOR_STEP], jump: true });
         up_(Yn).reverse().slice(1).forEach(q => nodes.push({ r: next, p: q })); }
     } else if (via === 'yard') yardLink(nodes, cur, next, from);
+    else if (via.lift) liftLink(nodes, cur, next, via, from, sp);
     else crossLink(nodes, cur, next, via, from);
     from = nodes[nodes.length - 1].p; cur = next;
   }
@@ -1081,7 +1433,7 @@ function routeTo(sp, room, p) {
 // ---------- walking on the ground: island grass, the yard's paths, the bridges ----------
 // A Clawd leaves its room through the open front (y = NY) or the open right side (x = NX), where the furniture
 // leaves room, steps down onto the island's grass and walks along the strip in front or the strip on the right.
-const ENTRY_AT = { front: { library: 5.6 }, right: { server: 4.25, library: 3.8 } };
+const ENTRY_AT = { front: { library: 6.4 }, right: { server: 4.25, library: 5.0, kitchen: 4.5 } };
 function entries(r) {
   const th = THEME_KEY.get(r.theme), fx = ENTRY_AT.front[th] ?? r.NX * .6, ry = ENTRY_AT.right[th] ?? r.NY * .45;
   return { F: { I: [fx, r.NY - .45, 0], S: [fx, r.NY + .3, -SLAB / 2] }, R: { I: [r.NX - .45, ry, 0], S: [r.NX + .3, ry, -SLAB / 2] } };
@@ -1113,11 +1465,22 @@ function walkIn(nodes, r, from) {
 }
 // the yard's paths: a little tree of waypoints from the hub by the lamp, along the stepping stones and the dirt path,
 // to the foot of the stairs and to every bridge
-const YW = [[8.9, 6.3], [8.6, 7.0], [2.6, 7.0], [1.8, 7.05], [1.0, 7.5], [8.9, 3.7], [13.4, 3.6]], YUP = [-1, 0, 1, 2, 3, 0, 5];
-const YGATE = { foot: 3, Yl: 4, Yr: 6 };
+// round the kitchen's post, in front of the bench, behind the swing, beside the beds and clear of the stairs' step
+const YW = [[8.9, 6.3], [8.6, 7.0], [2.6, 7.0], [1.8, 7.05], [1.0, 7.65], [8.9, 3.7], [13.4, 3.6], [8.9, 1.5], [9.9, .85],
+  [10.4, 6.35], [10.3, 5.1], [11.9, 6.3], [12.3, 7.0], [9.05, 2.45], [11.7, 3.62], [1.75, 7.6]], YUP = [-1, 0, 1, 2, 15, 0, 5, 5, 7, 0, 9, 9, 11, 5, 5, 3];
+const YGATE = { foot: 3, Yl: 4, Yr: 6, tower: 8 }; // tower: by the lift, through the gap in the back fence
 function yardNear(p) {
   const i = YW.findIndex(w => Math.hypot(w[0] - p[0], w[1] - p[1]) < .35); if (i >= 0) return i;
-  return p[0] < 3.2 ? (p[1] > 7.25 ? 4 : 3) : p[1] < 4.6 && p[0] > 8.2 ? 5 : 0;
+  const [x, y] = p;
+  if (x < 3.2) return y > 7.25 ? 4 : 3;
+  if (x > 9.5 && y < 1.3) return 8;                 // by the lift
+  if (x > 12.5 && y > 6.6) return 12;               // the cat's corner
+  if (x > 11.6 && y > 5.8) return 11;
+  if (x > 9.8 && x < 11.6 && y > 6.6) return 9;     // the swing
+  if (x > 9.5 && x < 11.2 && y > 4.3 && y < 5.8) return 10; // the bench, by the lamp
+  if (x > 9.3 && x < 11.5 && y > 2.1 && y < 2.8) return 13; // between the beds
+  if (x > 11.4 && y > 1.5 && y < 3.5) return 14;
+  return y < 4.6 && x > 8.2 ? 5 : 0;
 }
 function yardWalk(nodes, from, to) {
   const chain = i => { const l = []; for (; i >= 0; i = YUP[i]) l.push(i); return l; };
@@ -1141,7 +1504,25 @@ function crossLink(nodes, cur, next, L, from) {
   const fw = L.a === cur, pc = fw ? L.pa : L.pb, pn = fw ? L.pb : L.pa;
   if (cur === YARD) { yardWalk(nodes, from, YW[YGATE[pc.kind]]); nodes.push({ r: YARD, p: [pc.q[0], pc.q[1], 0] }); }
   else walkOut(nodes, cur, pc.q, from);
-  nodes.push({ bridge: L, forward: fw }, { r: next, p: [pn.q[0], pn.q[1], next === YARD ? 0 : -SLAB], jump: true });
+  if (L.kind === 'stair') nodes.push({ call: L, aim: 0, side: fw ? 'lo' : 'hi' }); // the stair has to be pointing this way
+  nodes.push({ bridge: L, to: fw ? 1 : 0 }, { r: next, p: [pn.q[0], pn.q[1], next === YARD ? 0 : -SLAB], jump: true });
+}
+// by lift: out of the room's open right side onto its ledge, wait by the shafts, ride, and in on the other floor;
+// from the yard, through the gap in the back fence. Each Clawd waits at its own spot along the ledge.
+function liftWay(r, sp) {
+  const wx = LIFT.x0 + .35 + (sp ? sp.seed : .5) * (LIFT.x1 - LIFT.x0 - .7), wy = LIFT.y1 + .4;
+  if (r === YARD) return [[wx, wy, 0]];
+  const e = entries(r).R, yo = LIFT.fl[r.floor].yoff;
+  return [e.I, [r.NX + .3, e.I[1], 0], [r.NX + .3, wy - yo, 0], [wx, wy - yo, 0]];
+}
+function liftLink(nodes, cur, next, via, from, sp) {
+  const out = liftWay(cur, sp), inn = liftWay(next, sp);
+  if (cur === YARD) yardWalk(nodes, from, YW[YGATE.tower]);
+  else if (far(from, cur.theme.hub) && far(from, out[0])) nodes.push({ r: cur, p: cur.theme.hub });
+  for (const q of out) nodes.push({ r: cur, p: q });
+  nodes.push({ lift: { from: via.from, to: via.to } }, { r: next, p: inn[inn.length - 1], jump: true });
+  if (next === YARD) nodes.push({ r: YARD, p: [...YW[YGATE.tower], 0] });
+  else for (const q of inn.slice(0, -1).reverse()) nodes.push({ r: next, p: q });
 }
 // ---------- outside stairs: a switchback fire escape on the front-left corner of a stack ----------
 // Landings at every floor (flush with the floor, just outside the open front), a flight along the back lane
@@ -1174,7 +1555,8 @@ function escape(r, layer) {
   }
 }
 // drawn after every room of the stack, with the Clawds that are out on them, back to front
-const onStairs = (s, r) => (r.floor > 0 || !!roomAt(r.tower, 1)) && s.y > r.NY - .05 && s.x < ESC.x1 + ESC.w + .2; // out front, by the stairs
+const onStairs = (s, r) => LIFT ? r.key === '__bath' && s.y > r.NY - .05 && s.x < 1.6 // on the bathroom's porch
+  : (r.floor > 0 || !!roomAt(r.tower, 1)) && s.y > r.NY - .05 && s.x < ESC.x1 + ESC.w + .2; // out front, by the stairs
 const atFoot = s => s.room === YARD && s.x < 2.6; // on the path by the foot of the stairs: drawn after them
 function drawEscapes(t) {
   for (const r of rooms) {
@@ -1190,11 +1572,22 @@ function drawEscapes(t) {
   }
 }
 function houseKey(r) {
-  if (r.key === '__bath' && yardOn()) return 'Y' + seasonNow() + links.filter(L => L.a === YARD).map(L => L.pa.kind).join('');
-  return isIsland(r) ? 'I' : '';
+  if (r.key === '__bath' && yardOn()) return 'Y' + seasonNow() + (LIFT ? 'T' + infillTo(r) : '') + links.filter(L => L.a === YARD).map(L => L.pa.kind).join('');
+  return isIsland(r) ? 'I' : LIFT && r.tower === 0 ? 'T' + LIFT.x1 + LIFT.fl[r.floor]?.yoff : '';
 }
 // the yard joins the bathroom's items, so Clawds in it sort with the rest
-function houseItems(r, add, D) { if (r.key === '__bath' && yardOn()) yardItems(r, add, D); }
+function houseItems(r, add, D) { if (r.key === '__bath' && yardOn()) yardItems(r, add, D); if (LIFT && r.tower === 0 && r.floor > 0) balcony(r, add); }
+// a wooden ledge from the room's open right side along the front of the lift shafts, a rail on its outer edges
+function balcony(r, add) {
+  const yo = LIFT.fl[r.floor].yoff, e = entries(r).R, x0 = r.NX, x1 = LIFT.x1 + .1, y0 = LIFT.y1 - yo, y1 = Math.max(LIFT.y1 + .85 - yo, e.I[1] + .5);
+  add(x0 + y0 - .3, () => { B(x0, y0, -SLAB, x1 - x0, y1 - y0, SLAB, WOOD);
+    for (let y = y0 + .3; y < y1; y += .3) line(iso(x0, y, 0), iso(x1, y, 0), lit(WOOD_P, .9));
+    FL(x0, y0, x1, y1, WOOD_P); for (let y = y0 + .3; y < y1; y += .3) line(iso(x0, y, 0), iso(x1, y, 0), lit(WOOD_L));
+    for (const x of [x0 + .4, x1 - .3]) { line(iso(x, y1, -SLAB), iso(x - .0, y1 - .9, -SLAB - 12), lit(WOOD)); } }); // braces under it
+  add(x1 + y1 + .2, () => { const post = (x, y) => B(x - .06, y - .06, 0, .12, .12, 9, WOOD, 0, 1);
+    for (let y = y0 + .1; y <= y1 - .05; y += .5) post(x1 - .1, y); for (let x = x0 + .1; x <= x1 - .05; x += .5) post(x, y1 - .1);
+    B(x1 - .16, y0, 9, .14, y1 - y0, 1.4, WOOD_L); B(x0, y1 - .16, 9, x1 - x0, .14, 1.4, WOOD_L); });
+}
 const gateUsed = kind => links.some(L => L.a === YARD && L.pa.kind === kind);
 
 // ---------- the yard: the tower's island grows to the front-right of the bathroom ----------
@@ -1205,9 +1598,9 @@ const YD = { x1: 14.0, y0: 1.0 }; // the ground beyond the bath's old island: ou
 const POND = { x: 12.0, y: 5.0, rx: 1.0, ry: .8 };
 const YARD_THEME = {
   name: 'Двор', shared: true, open: true, windows: [], clock: null, hub: [8.9, 6.3, 0], lights: () => [], decor() {}, items() {}, corner() {},
-  spots: { stroll: [[12.2, 3.7, 0], [9.9, 5.6, 0], [12.1, 6.85, 0], [5.4, 6.95, 0], [11.4, 3.8, 0], [8.1, 3.9, 0]],
+  spots: { stroll: [[12.2, 3.7, 0], [10.6, 5.3, 0], [12.1, 6.85, 0], [5.4, 6.95, 0], [11.4, 3.8, 0], [8.1, 3.9, 0]],
     bench: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8]], swing: [[10.7, 7.05, 4.5]], sleep: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [10.7, 7.05, 4.5]],
-    look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[9.9, 5.6, 0], [11.4, 3.8, 0]],
+    look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[10.6, 5.3, 0], [11.4, 3.8, 0]],
     mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]], cowork: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [8.1, 3.9, 0], [11.4, 3.8, 0]] },
 };
 const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, tx: 0, ty: 0, seed: 11, born: 0, swinger: null,
@@ -1219,12 +1612,11 @@ function yardOn() { return LAYOUT === 'islands' && !(PV && !PV.house) && SCENE !
 function yardGround(r) {
   if (r.key !== '__bath' || !yardOn()) return false;
   const NX = R.NX, NY = R.NY, GY = NY + 2, A1 = NX + 1.2, b0 = -SLAB - 14, G = -SLAB, se = seasonNow(), snow = weather === 'snow', soil = '#7a5a3a';
-  B(-1.2, -1.2, b0, A1 + 1.2, GY + 1.2, 14, soil);
-  B(A1, YD.y0, b0, YD.x1 - A1, GY - YD.y0, 14, soil);
-  poly([iso(-1.2, GY, b0), iso(A1, GY, b0), iso(A1, GY, G), iso(-1.2, GY, G)], lit(soil, .86));
-  FY(-1.2, YD.x1, GY + .001, b0, b0 + 5, '#5a4028'); FX(-1.2, YD.y0, A1 + .001, b0, b0 + 5, '#5a4028'); FX(YD.y0, GY, YD.x1 + .001, b0, b0 + 5, '#5a4028');
-  poly([iso(-1.2, -1.2, G), iso(A1, -1.2, G), iso(A1, YD.y0, G), iso(YD.x1, YD.y0, G), iso(YD.x1, GY, G), iso(-1.2, GY, G)], lit(snow ? '#eef2f8' : '#6aa84a'));
-  const inYard = (x, y) => !(x > A1 && y < YD.y0) && !(x < NX + .1 && y < NY + .1);
+  rockUnder(-1.2, -1.2, YD.x1, GY, b0);
+  B(-1.2, -1.2, b0, YD.x1 + 1.2, GY + 1.2, 14, soil); // the whole block: the lift stands on its back right part
+  FY(-1.2, YD.x1, GY + .001, b0, b0 + 5, '#5a4028'); FX(-1.2, GY, YD.x1 + .001, b0, b0 + 5, '#5a4028');
+  FL(-1.2, -1.2, YD.x1, GY, snow ? '#eef2f8' : '#6aa84a', G);
+  const inYard = (x, y) => !(x < NX + .1 && y < NY + .1) && !(LIFT && x > LIFT.x0 - .1 && x < LIFT.x1 + .1 && y < LIFT.y1 + .1);
   for (let i = 0; i < 150; i++) { const x = -1.1 + scRnd(i, 1) * (YD.x1 + 1), y = -1.1 + scRnd(i, 2) * (GY + 1); if (!inYard(x, y)) continue;
     pix(x, y, G, snow ? '#ffffff' : se === 'autumn' && i % 3 === 0 ? ['#e8803a', '#d0502a', '#f0b040'][(i >> 2) % 3] : i % 5 ? '#8ac860' : se === 'spring' ? '#f8a8c8' : '#f0d040'); }
   if (se === 'winter' && !snow) for (let i = 0; i < 46; i++) { const x = 7.2 + scRnd(i, 21) * (YD.x1 - 7.4), y = YD.y0 + .1 + scRnd(i, 22) * (GY - YD.y0 - .2), [px, py] = iso(x, y, G);
@@ -1276,7 +1668,8 @@ function yardItems(r, add, D) {
   const run = (x0, y0, x1, y1, front) => { const m = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 1.2));
     for (let k = 0; k < m; k++) { const a = [x0 + (x1 - x0) * k / m, y0 + (y1 - y0) * k / m], b = [x0 + (x1 - x0) * (k + 1) / m, y0 + (y1 - y0) * (k + 1) / m];
       fence(a[0], a[1], b[0], b[1], front ? Math.max(a[0], b[0]) + Math.max(a[1], b[1]) + .6 : Math.min(a[0], b[0]) + Math.min(a[1], b[1]) - .3); } };
-  run(7.0, 1.1, 13.9, 1.1, false); run(3.0, 6.1, 3.0, 6.45, false); run(3.0, 7.45, 3.0, 7.85, false);
+  if (LIFT) { run(7.0, 1.1, 8.6, 1.1, false); run(LIFT.x1 + .3, 1.1, 13.9, 1.1, false); } else run(7.0, 1.1, 13.9, 1.1, false);
+  run(3.0, 6.1, 3.0, 6.45, false); run(3.0, 7.45, 3.0, 7.85, false);
   run(3.0, 7.85, 13.9, 7.85, true);
   if (gateUsed('Yr')) { run(13.9, 1.1, 13.9, 3.05, true); run(13.9, 4.15, 13.9, 7.85, true); } else run(13.9, 1.1, 13.9, 7.85, true);
   add(3.0 + 6.45 + .2, () => { // the gate: two posts, the leaf swung in
@@ -1337,11 +1730,17 @@ function yardItems(r, add, D) {
     FL(12.8, 6.82, 13.3, 7.15, '#d8b070', G + .02); B(13.45, 6.95, G, .3, .25, .8, '#4a80d8'); FL(13.5, 7.0, 13.7, 7.15, '#a0603a', G + .81);
   });
   // the mailbox inside the gate, its flag up for a while after a commit is posted
-  add(11.4, () => { B(3.9, 7.45, G, .14, .14, 12, '#6a6a74', 0, 1); B(3.6, 7.2, G + 12, .75, .55, 4.5, '#3a6ad0'); B(3.65, 7.25, G + 16.5, .65, .45, .8, '#5a8ae8');
+  add(12.2, () => { B(3.9, 7.45, G, .14, .14, 12, '#6a6a74', 0, 1); B(3.6, 7.2, G + 12, .75, .55, 4.5, '#3a6ad0'); B(3.65, 7.25, G + 16.5, .65, .45, .8, '#5a8ae8');
     FY(3.75, 4.2, 7.751, G + 14, G + 14.6, '#1a2040'); pix(3.7, 7.75, G + 13, '#f4f0e8', 0, S, 1); });
-  add(11.41, () => { const up = D.t - SC.mailFlag < 15000;
+  add(12.21, () => { const up = D.t - SC.mailFlag < 15000;
     B(4.36, 7.5, G + 12.5, .06, .06, up ? 6 : 2, '#6a6a74', 0, 1);
     if (up) FX(7.53, 7.8, 4.4, G + 16.5, G + 18.5, '#e04040'); else FX(7.53, 7.95, 4.4, G + 13.2, G + 14.4, '#e04040'); }, true);
+  // the post under the kitchen's front right corner, where it reaches past the bathroom
+  const kx = infillTo(r);
+  if (kx) add(kx + r.NY + .1, () => { const x = kx - .34, y = r.NY - .34, top = FLOOR_STEP - SLAB;
+    B(x - .06, y - .06, G, .46, .46, 2, '#6a4228'); B(x, y, G + 2, .34, .34, top - G - 2, WOOD); // a wooden post with braces up into the beam
+    line(iso(x + .17, y + .34, top - 16), iso(x + .17 - 1.4, y + .34, top), lit('#6a4228')); line(iso(x + .34, y + .17, top - 16), iso(x + .34, y + .17 - 1.4, top), lit('#6a4228'));
+    for (let z = G + 8; z < top - 4; z += 8) line(iso(x + .1, y + .34, z), iso(x + .1, y + .34, z + 5), lit(WOOD, .78)); });
   // bushes along the bath's front
   add(4.4 + 6.4 + .3, () => leaves(4.4, 6.4, G, 3, '#3e9a46', '#7ad070', 2));
   add(6.3 + 6.35 + .3, () => { leaves(6.3, 6.35, G, 2, '#2e8a3e', '#6cc860', 6); if (se === 'spring' || se === 'summer') { pix(6.2, 6.3, G + 3, '#f080b0'); pix(6.45, 6.4, G + 2, '#f0d040'); } });
@@ -1441,12 +1840,24 @@ function updateResidents(t) {
       if (roll < .12 && shared('bath')) visit(shared('bath'), 'wash', 5000, 'idle');
       else if (roll < .24 && shared('kitchen')) visit(shared('kitchen'), 'wait', 7000, 'idle');
       else if (roll < .34 && shared('roof')) visit(shared('roof'), 'look', 8000, 'idle');
+      else if (roll < .46 && sitOnStair(h, r)) {}
       else { const cat = ['read', 'web', 'sleep', 'task', 'pace'][Math.floor(Math.random() * 5)]; setGoal(h, pickSpot(h, r, cat)); h.state = cat === 'sleep' ? 'idle-sleep' : 'idle'; }
       h.next = t + 8000 + Math.random() * 9000;
     }
   }
 }
 
+// an idle resident goes out to a stair at the edge of its island and sits on the steps a while
+function sitOnStair(h, r) {
+  const list = links.filter(L => L.kind === 'stair' && L.lo === r); if (!list.length || h.room !== r) return false;
+  const L = list[Math.floor(Math.random() * list.length)], q = L.pa.q, nodes = [];
+  walkOut(nodes, r, q, [h.x, h.y, h.z]);
+  nodes.push({ call: L, aim: 0, side: 'lo' }, { bridge: L, to: .25 + Math.random() * .4 }, { wait: 9000 + Math.random() * 9000 }, { bridge: L, to: 0 }, { r, p: [q[0], q[1], -SLAB], jump: true });
+  const at = walkIn(nodes, r, [q[0], q[1], -SLAB]);
+  if (far(at, r.theme.hub)) nodes.push({ r, p: r.theme.hub });
+  h.path = nodes; h.goal = { room: r, cat: 'idle', i: -1, p: r.theme.hub }; h.state = 'idle';
+  return true;
+}
 function stepSprites(dt) {
   for (const sp of [...sprites.values()]) {
     sp.alpha += Math.sign(sp.fade - sp.alpha) * Math.min(Math.abs(sp.fade - sp.alpha), dt / 450);
@@ -1458,12 +1869,32 @@ function stepSprites(dt) {
       sp.fall = { x: X, y: Y, t0: performance.now(), seed: sp.seed }; sp.room = null; sp.state = 'fall'; sp.moving = false; continue;
     }
     const n = sp.path[0];
+    sp.waving = false;
     if (!n) { sp.moving = false; sp.seated = sp.z > 3; continue; }
     sp.seated = false;
-    if (n.bridge) {
-      if (!sp.onBridge) { sp.onBridge = { pair: n.bridge, forward: n.forward, u: 0 }; sp.room = null; }
-      sp.onBridge.u += dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) / Math.max(.5, n.bridge.len); sp.moving = true;
-      if (sp.onBridge.u >= 1) { sp.onBridge = null; sp.path.shift(); }
+    if (n.lift) { n.since ??= performance.now(); sp.moving = false; continue; } // waiting for a cage, or riding one (updateLifts)
+    if (n.bridge) { // across a bridge or up a stair, u from its foot (0) to its far end (1)
+      const T = n.bridge;
+      if (sp.onBridge?.pair !== T) { sp.onBridge = { pair: T, u: n.from ?? (n.to > .5 ? 0 : 1) }; sp.room = null; }
+      const ob = sp.onBridge, dir = n.to >= ob.u ? 1 : -1, step = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) / Math.max(.5, T.len);
+      ob.forward = dir > 0;
+      if (Math.abs(n.to - ob.u) <= step) {
+        ob.u = n.to; sp.path.shift();
+        const nx = sp.path[0]; if (!nx || !(nx.bridge === T || nx.call === T || nx.wait)) sp.onBridge = null;
+      } else { ob.u += dir * step; sp.moving = true; }
+      continue;
+    }
+    if (n.wait) { // sitting on the steps for a while
+      if (!n.until) n.until = performance.now() + n.wait;
+      sp.moving = false; sp.seated = true;
+      if (performance.now() >= n.until) sp.path.shift();
+      continue;
+    }
+    if (n.call) { // at a stair that is up: wave it down
+      const L = n.call;
+      if (L.aim === n.aim && !L.turn) { sp.path.shift(); continue; }
+      n.since ??= performance.now();
+      sp.waving = true; sp.moving = false; // waving it down
       continue;
     }
     if (n.jump) { sp.room = n.r; [sp.x, sp.y, sp.z] = n.p; sp.path.shift(); if (n.poof) sp.alpha = 0; continue; }
@@ -1498,7 +1929,8 @@ function setBackdrop(id) { if (!BACKDROPS[id]) return false; BACKDROP = id; try 
 const BD_PX = 6 * S, BD_PY = 2 * S, BD_M = 8 * S;
 const bdGround = H => (Math.floor(H / S) - 14) * S;
 // The menu bar and the Dock cover the top and bottom of the wallpaper; the app tells how much (CSS px).
-let INSETS = { top: 0, bottom: 0 };
+// the menu bar, the Dock, and on the right the column of desktop icons (?right=120 to try it in a browser)
+let INSETS = { top: 0, bottom: 0, right: +Q.get('right') || 0 };
 const insetBottom = () => Math.round(INSETS.bottom * DPR / PXD);
 const BDC = new Map();
 function bdLayer(name, key, w, h, paint) { // an offscreen canvas painted once per key; `g` points at it while painting
@@ -1980,7 +2412,7 @@ const scPick = list => list[Math.floor(Math.random() * list.length)];
 const THEME_KEY = new Map(Object.entries(THEMES).map(([k, v]) => [v, k]));
 function scAt(room, x, y, z) { const s = R; R = room; const p = iso(x, y, z); R = s; return p; }
 function scPos(sp) {
-  if (sp.onBridge) { const q = bridgePoint(sp.onBridge.pair, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u, linkW(sp)); return q && [q[0], q[1]]; }
+  if (sp.onBridge) { const q = transitPoint(sp.onBridge.pair, sp.onBridge.u, linkW(sp)); return q && [q[0], q[1]]; }
   return sp.room ? scAt(sp.room, sp.x, sp.y, sp.z) : null;
 }
 const scArrived = sp => !sp.path.length && !sp.onBridge && !!sp.goal && sp.room === sp.goal.room;
@@ -2295,11 +2727,11 @@ function sceneLeave(sp) {
 // ----- a mailbox in the kitchen, its flag up for a while after a commit is posted -----
 { const items = THEMES.kitchen.items;
   THEMES.kitchen.items = (add, D) => { items(add, D); if (yardOn()) return; // moved out to the yard
-    add(13.0, () => { B(9.45, 3.3, 0, .14, .14, 12, '#6a6a74', 0, 1); B(9.1, 3.05, 12, .75, .55, 4.5, '#3a6ad0'); B(9.15, 3.1, 16.5, .65, .45, .8, '#5a8ae8');
-      FY(9.25, 9.7, 3.601, 14, 14.6, '#1a2040'); pix(9.2, 3.6, 13, '#f4f0e8', 0, S, 1); });
-    add(13.01, () => { const up = D.t - SC.mailFlag < 15000;
-      B(9.86, 3.35, 12.5, .06, .06, up ? 6 : 2, '#6a6a74', 0, 1);
-      if (up) FX(3.38, 3.65, 9.9, 16.5, 18.5, '#e04040'); else FX(3.38, 3.8, 9.9, 13.2, 14.4, '#e04040'); }, true); }; }
+    add(12.4, () => { B(9.45, 2.7, 0, .14, .14, 12, '#6a6a74', 0, 1); B(9.1, 2.45, 12, .75, .55, 4.5, '#3a6ad0'); B(9.15, 2.5, 16.5, .65, .45, .8, '#5a8ae8');
+      FY(9.25, 9.7, 3.001, 14, 14.6, '#1a2040'); pix(9.2, 3.0, 13, '#f4f0e8', 0, S, 1); });
+    add(12.41, () => { const up = D.t - SC.mailFlag < 15000;
+      B(9.86, 2.75, 12.5, .06, .06, up ? 6 : 2, '#6a6a74', 0, 1);
+      if (up) FX(2.78, 3.05, 9.9, 16.5, 18.5, '#e04040'); else FX(2.78, 3.2, 9.9, 13.2, 14.4, '#e04040'); }, true); }; }
 
 // ----- per frame: state, then the sky behind the house -----
 function updateScenes(t, d) {
@@ -2481,6 +2913,7 @@ function drawRoom(r, t, d) {
   const list = cache.items.map(it => ({ depth: it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
   for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = s.room === r ? iso(s.x, s.y, s.z) : scAt(s.room, s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
   if (r.floor === 0) list.push({ depth: r.NX + r.NY + 1.6, draw: () => drawSign(r, t) }); // the post on the grass at the front corner
+  if (LIFT && r.tower === 0) list.push({ depth: LIFT.x0 + LIFT.y1 - LIFT.fl[r.floor].yoff, draw: () => drawLifts(t, r.floor) }); // its piece of the lift
   list.sort((a, b) => a.depth - b.depth);
   const base = g.globalAlpha;
   for (const it of list) { it.draw(); g.globalAlpha = base; }
@@ -2827,6 +3260,30 @@ function now() {
   return new Date(vtime);
 }
 
+// What is drawn, back to front. In the village each island, bridge and stair goes by the depth (x + y) of its middle,
+// the tower as one piece by the bathroom's; elsewhere stack by stack, the bridges just before the room in front.
+function drawOrder() {
+  if (LAYOUT === 'islands' && yardOn()) {
+    const b = shared('bath'), list = [];
+    const towerD = b.NX / 2 + b.NY / 2;
+    for (const r of rooms) if (r.tower === 0) list.push({ room: r, depth: towerD + r.floor * 1e-3 });
+    else list.push({ room: r, depth: r.tx + r.NX / 2 + r.ty + r.NY / 2 });
+    for (const L of links) {
+      if (L.kind === 'stair') { const c = Math.cos(L.ang), s = Math.sin(L.ang); list.push({ link: L, depth: L.A[0] + L.A[1] + (c + s) * L.len / 2 }); }
+      else list.push({ link: L, depth: (L.A[0] + L.B[0] + L.A[1] + L.B[1]) / 2 });
+    }
+    return list.sort((a, c) => a.depth - c.depth);
+  }
+  const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9), out = [];
+  const before = new Map();
+  for (const L of links) { const r = L.hi === YARD ? shared('bath') : L.hi; if (!before.has(r)) before.set(r, []); before.get(r).push(L); }
+  for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) {
+    for (const L of before.get(r) || []) out.push({ link: L });
+    out.push({ room: r });
+  }
+  return out;
+}
+
 // ---------- main loop ----------
 let last = performance.now();
 // Battery: the app pauses the page while the desktop is hidden and caps the frame rate on battery.
@@ -2849,18 +3306,14 @@ function frame(t) {
   eggSky(t, d);
   if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
-  updateResidents(t); updateErrands(t); stepSprites(dt);
+  updateResidents(t); updateErrands(t); stepSprites(dt); updateLifts(t, dt);
   updateScenes(t, d);
   eggStep(t);
-  // back to front by stack; a bridge lies on the ground between two islands, so it goes just before the one in front
-  const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
-  const before = new Map();
-  for (const L of links) { const r = L.hi === YARD ? shared('bath') : L.hi; if (!before.has(r)) before.set(r, []); before.get(r).push(L); }
-  for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) {
-    for (const L of before.get(r) || []) drawLink(L, t);
-    drawRoom(r, t, d);
-  }
+  updateStairs(t);
+  // back to front: the tower (with its lift), every island, every bridge and stair by how deep it lies
+  for (const it of drawOrder()) it.room ? drawRoom(it.room, t, d) : drawLink(it.link, t);
   drawEscapes(t);
+  drawChats(t);
   drawFallers(t);
   drawSceneOverlays(t);
   drawMist(t, d);
@@ -2869,10 +3322,10 @@ function frame(t) {
 }
 
 // ---------- demo: fake agents so the page lives on its own ----------
-const DEMO_PROJECTS = ['Agent-Notch', 'hexhaven', 'world', 't2', 'decide', 'trailby', 'arena'];
+const DEMO_PROJECTS = ['Agent-Notch', 'hexhaven', 'world', 't2', 'decide', 'trailby', 'arena', 'confetti', 'hall', 'lessons', 'life-os', 'screens', 'tank-hero', 'av-wt'];
 const ACTS = ['Bash · swift build', 'Edit · WingView.swift', 'Read · Model.swift', 'Grep · AgentState', 'WebSearch · NSWindow levels', 'Bash · pnpm test', 'Task · review'];
 const ASKS = ['Allow rm -rf dist?', 'Allow git push --force?', 'Какой вариант выбрать?'];
-let demoAgents = [], demoNext = 0, demoProjects = PV?.house ? (PV.projects || 4) : PV ? 1 : 2, demoId = 0;
+let demoAgents = [], demoNext = 0, demoProjects = PV?.house ? (PV.projects || 4) : PV ? 1 : Math.min(14, +Q.get('projects') || 2), demoId = 0; // ?projects=9 to try a busy village
 function demoAgent(project, parentId) {
   demoId++;
   return { id: 'd' + demoId, title: parentId ? 'subagent ' + demoId : ['Fix the wing', 'Room prototype', 'Arena refactor', 'Redis ACL'][demoId % 4],
@@ -3012,8 +3465,7 @@ function inside(pts, x, y) {
   return hit;
 }
 function roomUnder(x, y) {
-  const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
-  const order = [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor);
+  const order = drawOrder().filter(it => it.room).map(it => it.room);
   for (let i = order.length - 1; i >= 0; i--) if (inside(roomOutline(order[i], false, true), x, y)) return order[i];
   return null;
 }
@@ -4123,7 +4575,7 @@ window.room = {
   setActive: on => { active = on; wake(); },
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setFps: n => { fpsCap = n; },
-  setInsets: o => { INSETS = { top: +o.top || 0, bottom: +o.bottom || 0 }; layout(); },
+  setInsets: o => { INSETS = { top: +o.top || 0, bottom: +o.bottom || 0, right: +o.right || 0 }; layout(); },
   setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),
   egg: name => eggTrigger(name),
 };

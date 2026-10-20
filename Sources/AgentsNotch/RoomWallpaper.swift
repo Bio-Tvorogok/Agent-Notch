@@ -133,14 +133,17 @@ final class RoomWallpaper: NSObject {
         syncInsets()
     }
 
-    /// The menu bar and the Dock cover part of the wallpaper; the page keeps the house and the city's street clear of them.
-    private var sentInsets: (CGFloat, CGFloat)?
+    /// The menu bar and the Dock cover part of the wallpaper; the page keeps the house and the city's street clear of them,
+    /// and the islands clear of the column of desktop icons on the right (unless Finder hides the desktop).
+    private var sentInsets: (CGFloat, CGFloat, CGFloat)?
     private func syncInsets() {
         guard let screen = NSScreen.screens.first, let web else { return }
         let top = screen.frame.maxY - screen.visibleFrame.maxY, bottom = screen.visibleFrame.minY - screen.frame.minY
-        if let s = sentInsets, s == (top, bottom) { return }
-        sentInsets = (top, bottom)
-        web.evaluateJavaScript("room.setInsets({top: \(top), bottom: \(bottom)})")
+        let icons = UserDefaults(suiteName: "com.apple.finder")?.object(forKey: "CreateDesktop") as? Bool ?? true
+        let right: CGFloat = icons ? 120 : 0
+        if let s = sentInsets, s == (top, bottom, right) { return }
+        sentInsets = (top, bottom, right)
+        web.evaluateJavaScript("room.setInsets({top: \(top), bottom: \(bottom), right: \(right)})")
     }
 
     static var fps: Int { AppSettings.shared.room.fps(lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, onBattery: onBattery) }
@@ -220,6 +223,10 @@ final class RoomWallpaper: NSObject {
             return
         case .magnify:
             if bare { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") }
+            else if CACurrentMediaTime() - lastPinchNote > 2 { // why a pinch did not reach the room
+                lastPinchNote = CACurrentMediaTime()
+                NSLog("agents-notch: pinch not passed on: \(w.frame.contains(p) ? "covered by \(coveringWindow(at: p) ?? "?")" : "outside the wallpaper")")
+            }
             return
         case .smartMagnify:
             if bare { web.evaluateJavaScript("room.resetView()") }
@@ -236,9 +243,13 @@ final class RoomWallpaper: NSObject {
         else if hovering { hovering = false; tip.hide(); web.evaluateJavaScript("room.leave()") }
     }
 
+    private var lastPinchNote: CFTimeInterval = 0
     /// True when no app window is over this point, so the cursor is over the wallpaper itself.
-    private func desktopIsBare(at p: NSPoint) -> Bool {
-        guard let primary = NSScreen.screens.first else { return false }
+    private func desktopIsBare(at p: NSPoint) -> Bool { coveringWindow(at: p) == nil }
+
+    /// The app and title of the window over this point, if any (for the log when a gesture is not passed on).
+    private func coveringWindow(at p: NSPoint) -> String? {
+        guard let primary = NSScreen.screens.first else { return "no screen" }
         let point = CGPoint(x: p.x, y: primary.frame.maxY - p.y)
         let own = window.map { CGWindowID($0.windowNumber) }
         let dock = Int(CGWindowLevelForKey(.dockWindow))
@@ -249,9 +260,9 @@ final class RoomWallpaper: NSObject {
                   (info[kCGWindowNumber as String] as? CGWindowID) != own,
                   let b = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: b) else { continue }
-            if rect.contains(point) { return false }
+            if rect.contains(point) { return "\(info[kCGWindowOwnerName as String] as? String ?? "?") layer \(layer) \(rect)" }
         }
-        return true
+        return nil
     }
 
     // MARK: the page
