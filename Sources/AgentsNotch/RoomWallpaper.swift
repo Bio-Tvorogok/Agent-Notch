@@ -301,6 +301,8 @@ final class RoomWallpaper: NSObject {
             guard let layer = info[kCGWindowLayer as String] as? Int, layer >= 0, layer < dock,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.01,
                   (info[kCGWindowNumber as String] as? CGWindowID) != own,
+                  // the Dock lays a clear sheet over the screen while windows are pushed aside to show the desktop
+                  (info[kCGWindowOwnerName as String] as? String) != "Dock",
                   let b = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: b) else { continue }
             if rect.contains(point) { return "\(info[kCGWindowOwnerName as String] as? String ?? "?") layer \(layer) \(rect)" }
