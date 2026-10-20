@@ -7,6 +7,7 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - Agents' house on the desktop: an optional animated pixel wallpaper where every project is a room and every agent walks around in it. Click or pinch to fly to a room, Esc goes back to the overview. Off by default; turn it on in Settings → Desktop house. Nothing is drawn while the desktop is covered, and fewer frames are drawn on battery and in Low Power Mode.
+- Agents' house as a screen saver, Agent Notch House: the same live house while the Mac is idle, and on the lock screen with "Require password immediately". Install it from Settings → Desktop house or by double-clicking the `.saver`; releases ship it as `AgentNotchHouse-<version>.saver.zip` and inside the DMG.
 
 ## [0.6.0] - 2026-10-16
 

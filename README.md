@@ -85,6 +85,8 @@ An optional animated pixel wallpaper: every project is a room, every agent walks
 
 It is off by default. Turn it on in **Settings → Desktop house**, where you also pick the layout, frame rate, screens and a room per project. Nothing is drawn while windows cover the desktop. On Auto it draws 60 fps on power, 30 on battery and 20 in Low Power Mode.
 
+The same house also comes as a screen saver, **Agent Notch House**. macOS lets no app draw on the lock screen, but with **Lock Screen → Require password after screen saver begins: Immediately** the screen saver is what you see while the Mac is locked. Install it with **Settings → Desktop house → Screen saver → Install**, or double-click `Agent Notch House.saver` from the DMG or the release's `AgentNotchHouse-<version>.saver.zip`. Then pick it in **System Settings → Screen Saver**. The running app hands the house to it through `~/Library/Application Support/AgentsNotch/house.json`; while the app is not running, the house is empty.
+
 ## Themes and sounds
 
 Thirteen themes for the list, from plain Terminal to Phosphor, Blueprint, Pixel and Rubber Ducks. Every theme except Terminal can also restyle the marks in the wing.

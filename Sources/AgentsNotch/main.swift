@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var keys: HotKeys?
     var picker: PromptPicker?
     var room: RoomWallpaper?
+    var saverFeed: RoomSaverFeed?
     private var roomSub: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -93,9 +94,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let room = RoomWallpaper(store: store)
         self.room = room
         roomSub = AppSettings.shared.$roomWallpaper.sink { on in on || args.contains("--room") ? room.start() : room.stop() }
+        let saverFeed = RoomSaverFeed(store: store)
+        self.saverFeed = saverFeed
+        saverFeed.start()
     }
 
-    func applicationWillTerminate(_ notification: Notification) { PromptStore.shared.flush() }
+    func applicationWillTerminate(_ notification: Notification) {
+        PromptStore.shared.flush()
+        saverFeed?.stop()
+    }
 
     private static func editHooks(install: Bool) -> Int32 {
         let inst = HookInstaller()

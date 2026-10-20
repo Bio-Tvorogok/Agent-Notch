@@ -208,21 +208,28 @@ final class RoomWallpaper: NSObject {
     /// The agents as the page wants them; only changes are sent.
     private func push() {
         info.track(store.shown)
-        let rows: [[String: Any]] = store.shown.map { a in
+        let json = Self.rows(store.shown, contexts: info.contexts)
+        guard json != lastJSON else { return }
+        lastJSON = json
+        web?.evaluateJavaScript("window.room && room.setAgents(\(json)); true") { _, error in
+            if let error { NSLog("agents-notch: room update failed: \(error)") }
+        }
+    }
+
+    /// The agents as `room.setAgents(...)` takes them, as JSON; the screen saver gets the same rows (RoomSaverFeed.swift).
+    static func rows(_ agents: [Agent], contexts: [String: Double]) -> String {
+        let rows: [[String: Any]] = agents.map { a in
             var r: [String: Any] = ["id": a.id, "title": a.title, "project": a.project, "vendor": a.vendor.rawValue, "state": Self.state(a.state)]
             if let v = a.activity { r["activity"] = v }
             if let v = a.parentId { r["parentId"] = v }
             if let v = a.shortModel { r["model"] = v }
             if let v = a.ask { r["ask"] = v }
-            if let v = info.contexts[a.id] { r["context"] = v }
+            if let v = contexts[a.id] { r["context"] = v }
             return r
         }
         guard let data = try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys]),
-              let json = String(data: data, encoding: .utf8), json != lastJSON else { return }
-        lastJSON = json
-        web?.evaluateJavaScript("window.room && room.setAgents(\(json)); true") { _, error in
-            if let error { NSLog("agents-notch: room update failed: \(error)") }
-        }
+              let json = String(data: data, encoding: .utf8) else { return "[]" }
+        return json
     }
 
     private static func state(_ s: AgentState) -> String {

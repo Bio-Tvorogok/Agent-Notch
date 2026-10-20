@@ -15,7 +15,8 @@ final class RoomInfoFeed {
     private var reading = false
     private var timer: Timer?
     private var subs: Set<AnyCancellable> = []
-    private var lastUsage = ""
+    /// The last usage sent, as `room.setUsage(...)` takes it; empty until the limits are read.
+    private(set) var lastUsage = ""
     private var send: (String) -> Void = { _ in }
     private var changed: () -> Void = {}
 

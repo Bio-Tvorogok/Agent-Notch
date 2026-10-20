@@ -5,6 +5,8 @@ import NotchCore
 struct SettingsHouse: View {
     @ObservedObject var settings: AppSettings
     @State private var projects: [String] = []
+    @State private var saver = RoomSaverInstall.state
+    @State private var saverError: String?
 
     var body: some View {
         Form {
@@ -32,12 +34,38 @@ struct SettingsHouse: View {
             } header: {
                 SettingsLabel(HouseText.rooms, hint: HouseText.roomsHelp)
             }
+            if saver != .unavailable {
+                Section {
+                    LabeledContent {
+                        HStack {
+                            if saver != .installed { Button(saver == .outdated ? HouseText.saverUpdate : HouseText.saverInstall) { installSaver() } }
+                            Button(HouseText.saverOpen) { RoomSaverInstall.openSettings() }
+                        }
+                    } label: { SettingsLabel(HouseText.saver, hint: saverError ?? HouseText.saverHelp) }
+                } footer: {
+                    Text(HouseText.saverLock).font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
         .onAppear {
             // Projects on screen now, and the ones that already have a room chosen.
+            saver = RoomSaverInstall.state
             projects = Array(Set(RoomProjects.shared.current + settings.room.themes.keys))
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         }
+    }
+
+    private func installSaver() {
+        do {
+            try RoomSaverInstall.install()
+            saverError = nil
+            RoomSaverInstall.openSettings()
+        } catch {
+            saverError = error.localizedDescription
+        }
+        saver = RoomSaverInstall.state
     }
 
     private func theme(for project: String) -> Binding<String> {
@@ -79,5 +107,14 @@ enum HouseText {
     static var rooms: String { Loc.t("Project rooms", "Комнаты проектов") }
     static var roomsHelp: String { Loc.t("Auto keeps a project's room when others come and go", "«Авто» не меняет комнату, когда появляются другие проекты") }
     static var noProjects: String { Loc.t("Projects appear here once their agents show up in the notch.", "Проекты появятся здесь, когда их агенты будут в чёлке.") }
+    static var saver: String { Loc.t("Screen saver", "Заставка") }
+    static var saverHelp: String { Loc.t("The same house while the Mac is idle, with the live agents", "Тот же дом, пока Mac простаивает, с живыми агентами") }
+    static var saverInstall: String { Loc.t("Install", "Установить") }
+    static var saverUpdate: String { Loc.t("Update", "Обновить") }
+    static var saverOpen: String { Loc.t("Screen Saver settings…", "Настройки заставки…") }
+    static var saverLock: String {
+        Loc.t("Pick “Agent Notch House” in Screen Saver. To keep it on the lock screen, set Lock Screen → “Require password after screen saver begins” to Immediately.",
+              "Выберите «Agent Notch House» в «Заставке». Чтобы дом был на экране блокировки, в «Экране блокировки» поставьте «Запрашивать пароль после начала заставки» — «Сразу».")
+    }
     static func auto(_ theme: RoomTheme) -> String { Loc.t("Auto (\(theme.title))", "Авто (\(theme.title))") }
 }

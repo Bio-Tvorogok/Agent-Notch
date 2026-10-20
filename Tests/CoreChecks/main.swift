@@ -386,6 +386,8 @@ run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptT
 run("vendorIconPreferences") { try VendorIconChecks().preferences() }
 run("vendorIconResolution") { VendorIconChecks().resolution() }
 run("vendorIconThemeChoice") { try VendorIconChecks().themeChoice() }
+run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
+run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
