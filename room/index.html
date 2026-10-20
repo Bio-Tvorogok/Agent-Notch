@@ -458,7 +458,7 @@ const THEMES = {
     floor: { kind: 'tiles', a: '#f4f6f8', b: '#c4ccd4', step: .5 },
     windows: [{ wall: 'R', a: 5.4, b: 6.4, z0: 38, z1: 47, vent: true }],
     clock: null, hub: [3.4, 3.2, 0],
-    spots: { wash: [[3.3, 1.75, 0]], shower: [[1.1, 1.0, 1.6]], wait: [[3.0, 3.4, 0], [3.8, 2.8, 0]], pace: [[3.0, 3.0, 0], [4.2, 2.8, 0]] },
+    spots: { wash: [[3.3, 1.75, 0]], shower: [[1.1, 1.0, 1.6]], dry: [[2.45, 2.45, 0]], wait: [[3.0, 3.4, 0], [3.8, 2.8, 0]], pace: [[3.0, 3.0, 0], [4.2, 2.8, 0]] },
     decor() {
       // tiles up to the ceiling inside the shower corner
       FX(.1, 2.1, .015, 22, 50, '#dceaee'); FY(.1, 2.1, .015, 22, 50, '#e6f2f4');
@@ -476,7 +476,12 @@ const THEMES = {
         B(.1, .1, 0, 2.0, 1.8, 1.6, '#f4f6f8'); FL(.3, .3, 1.9, 1.7, '#d0dee6', 1.6); FL(1.0, .9, 1.2, 1.1, '#9aa4b0', 1.61);
         B(.12, .55, 1.6, .12, .12, 40, '#c0c8d0', 0, 1); B(.12, .55, 40, .7, .12, .6, '#c0c8d0', 0, 1); B(.65, .4, 38.6, .4, .4, 1.4, '#d8dee6');
       });
-      add(3.3, () => { glassY(.1, 2.1, 1.9, 1.6, 46); glassX(.1, 1.9, 2.1, 1.6, 46); B(2.05, 1.0, 18, .08, .4, .6, '#c0c8d0', 0, 1); });
+      add(3.3, () => { glassY(.1, 2.1, 1.9, 1.6, 46); glassX(.1, 1.9, 2.1, 1.6, 46); B(2.05, 1.0, 18, .08, .4, .6, '#c0c8d0', 0, 1);
+        if (D.fog > .02) { const f = `rgba(236,244,248,${(.62 * D.fog).toFixed(3)})`, top = 1.6 + 44 * Math.min(1, D.fog * 1.3); // steam fogs the glass from the floor up
+          poly([iso(.1, 1.9, 1.6), iso(2.1, 1.9, 1.6), iso(2.1, 1.9, top), iso(.1, 1.9, top)], f); poly([iso(2.1, .1, 1.6), iso(2.1, 1.9, 1.6), iso(2.1, 1.9, top), iso(2.1, .1, top)], f);
+          for (let i = 0; i < 5; i++) { const u = (i * .29 + .1) % 1, k = ((D.t / 3400) + i * .21) % 1; // drops run down the fog
+            const [px, py] = i % 2 ? iso(.3 + u * 1.6, 1.9, top - k * (top - 4)) : iso(2.1, .3 + u * 1.4, top - k * (top - 4));
+            g.fillStyle = `rgba(150,190,210,${(.7 * D.fog).toFixed(3)})`; rect(Math.round(px), Math.round(py), 1, S + 1); } } }, true);
       add(3.2, () => { if (!D.showering) return;
         for (let i = 0; i < 18; i++) { const u = (i * .37) % 1, k = ((D.t / 520) + i * .23) % 1;
           const [px, py] = iso(.85 + (u - .5) * .8, .6 + ((i * .61) % 1) * .8, 38 - k * 36); g.fillStyle = emi('#9ad4f0', .7 + .3 * AMB[0]); rect(Math.round(px), Math.round(py), 1, S + 1); }
@@ -791,6 +796,7 @@ function drawClawd(X, Y, sp, t) {
     const zx = Math.round(X + 5 * S + k * 3 * S), zy = Math.round(top - 2 * S - k * 8 * S);
     g.fillRect(zx, zy, 3 * S, S); g.fillRect(zx + S, zy + S, S, S); g.fillRect(zx, zy + 2 * S, 3 * S, S);
   }
+  drawBathing(X, sp, t, left, top, w * C);
   drawProps(X, Y, sp, t, left, top, w * C, armRow);
   sp.hit = [left - 2 * S, top - 2 * S, (w + 4) * C, (rows.length + legH + 4) * C];
 }
@@ -1792,7 +1798,8 @@ function setAgents(list) {
       sp.restOnRoof = Math.random() < .5; sp.restInYard = !sp.restOnRoof && Math.random() < .5;
       if (shared('bath') && Math.random() < .5) {
         const busy = [...sprites.values()].some(o => o.goal && o.goal.room === shared('bath') && o.goal.cat === 'shower');
-        sp.errand = { room: shared('bath'), cat: busy ? 'wash' : 'shower', until: performance.now() + (busy ? 6000 : 14000) };
+        // the clock starts under the shower, not here: the walk over can take longer than the wash itself
+        sp.errand = { room: shared('bath'), cat: busy ? 'wash' : 'shower', dur: busy ? 6000 : SHOWER_MS, until: Infinity, since: performance.now() };
       }
     }
     if (a.state !== 'done') sp.errand = null;
@@ -1810,13 +1817,24 @@ function setAgents(list) {
   }
 }
 
+const SHOWER_MS = 20000, DRY_MS = 2800, TOWEL_MS = 3500;
 function updateErrands(t) {
   for (const sp of sprites.values()) {
-    if (!sp.errand) continue;
+    const e = sp.errand;
+    if (!e) continue;
     const arrived = !sp.path.length && sp.room === sp.goal?.room;
-    if (arrived) sp.state = sp.errand.cat === 'shower' ? 'shower' : sp.errand.cat === 'sleep' ? 'idle-sleep' : 'idle';
-    if (t > sp.errand.until && arrived) {
+    if (e.dur && !e.t0) {
+      if (arrived) { e.t0 = t; e.until = t + e.dur; }
+      else if (t - e.since > 120000) { e.until = t; e.lost = true; } // never got there: give up
+    }
+    if (arrived) sp.state = e.cat === 'shower' ? 'shower' : e.cat === 'dry' ? 'dry' : e.cat === 'sleep' ? 'idle-sleep' : 'idle';
+    if (t > e.until && (arrived || e.lost)) {
       sp.errand = null;
+      if (e.cat === 'shower' && e.t0 && e.room) { // out of the cabin onto the mat, a rub with the towel, then off with it on the head
+        sp.errand = { room: e.room, cat: 'dry', dur: DRY_MS, until: Infinity, since: t }; sp.state = 'idle';
+        setGoal(sp, pickSpot(sp, e.room, 'dry')); continue;
+      }
+      if (e.cat === 'dry') sp.towel = t + TOWEL_MS;
       if (sp.agent) { sp.state = sp.agent.state; const [room, cat] = placeFor(sp); setGoal(sp, pickSpot(sp, room, cat)); }
       else { sp.state = 'idle'; setGoal(sp, { room: sp.homeRoom, cat: 'idle', i: -1, p: sp.homeRoom.theme.hub }); }
     }
@@ -2456,6 +2474,34 @@ function propFor(act) {
   return null;
 }
 
+// ----- after a task: foam on the head under the shower, a towel on the mat, then the towel worn as a turban -----
+const TOWEL = '#7ac0e8', TOWEL_D = '#4a8ab8';
+function drawBathing(X, sp, t, left, top, bw) {
+  const C = S, a0 = g.globalAlpha; g.globalAlpha = a0 * sp.alpha;
+  if (sp.state === 'shower') {
+    const e = sp.errand, k = e && e.t0 ? (t - e.t0) / e.dur : ((t / 9000 + sp.seed) % 1);
+    const grow = scClamp((k - .08) / .2, 0, 1) * scClamp((.82 - k) / .1, 0, 1); // lathers up, then rinses off
+    if (grow > 0) {
+      const n = Math.round(3 + grow * 6), cx = Math.round(X);
+      for (let i = 0; i < n; i++) { const u = (i * .618 + sp.seed) % 1, bx = cx + Math.round((u - .5) * (bw - 2 * C)), by = top - C - Math.round(((i * .37) % 1) * 2 * C * grow);
+        const z = i % 2 ? 2 * C : C; g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, z + 2, z + 2); g.fillStyle = lit(i % 3 ? '#ffffff' : '#e4eef6'); g.fillRect(bx, by, z, z); }
+      for (let i = 0; i < 3; i++) { const q = (t / 1300 + i / 3 + sp.seed) % 1; // a bubble leaves now and then
+        g.fillStyle = `rgba(255,255,255,${(1 - q) * .85 * grow})`; const bx = cx + Math.round(Math.sin(t / 400 + i * 2) * 4) + (i - 1) * 3 * C, by = Math.round(top - 3 * C - q * 12 * C);
+        g.fillRect(bx, by, C, C); }
+    }
+  } else if (sp.state === 'dry') { // the towel rubs across the head from side to side
+    const sw = Math.round(Math.sin(t / 110) * 2 * C), y = top + Math.round((1 + Math.sin(t / 220)) * C * .5);
+    g.fillStyle = lit(OUT); g.fillRect(left - C + sw - 1, y - 1, bw + 2 * C + 2, 2 * C + 2);
+    g.fillStyle = lit(TOWEL); g.fillRect(left - C + sw, y, bw + 2 * C, 2 * C); g.fillStyle = lit(TOWEL_D); g.fillRect(left - C + sw, y + Math.round(C * 1.5), bw + 2 * C, Math.max(1, C >> 1));
+  } else if (sp.towel > t) { // a turban: a wrapped band and a little knot on top
+    const x0 = left + C, w = bw - 2 * C, y = top - 2 * C;
+    g.fillStyle = lit(OUT); g.fillRect(x0 - 1, y - 1, w + 2, 2 * C + 2); g.fillRect(Math.round(X) - C - 1, y - 2 * C - 1, 2 * C + 2, 2 * C + 2);
+    g.fillStyle = lit(TOWEL); g.fillRect(x0, y, w, 2 * C); g.fillRect(Math.round(X) - C, y - 2 * C, 2 * C, 2 * C);
+    g.fillStyle = lit(TOWEL_D); g.fillRect(x0, y + C, w, Math.max(1, C >> 1));
+  }
+  g.globalAlpha = a0;
+}
+
 // ----- held props, drawn over the Clawd that holds them -----
 function drawProps(X, Y, sp, t, left, top, bw, armRow) {
   const C = S, cy = top + armRow * C, rx = left + bw, h = sp.hold, a0 = g.globalAlpha;
@@ -2904,6 +2950,9 @@ function drawRoom(r, t, d) {
   D.t = t;
   D.on = (cat, i) => here.some(s => s.kind === 'agent' && s.goal && s.goal.room === r && s.goal.cat === cat && s.goal.i === i && !s.path.length && s.state === 'working');
   D.showering = here.some(s => s.state === 'shower' && !s.path.length);
+  if (r.key === '__bath') { const dt = Math.min(100, t - (r.fogT || t)); r.fogT = t; // steam builds in a few seconds and clears slowly
+    r.fog = scClamp((r.fog || 0) + (D.showering ? dt / 5000 : -dt / 9000), 0, 1); }
+  D.fog = r.fog || 0;
   g.globalAlpha = Math.min(1, e * 1.6);
   blit(cache.A);
   if (r.theme.pattern === 'glass') drawGlassWalls(r.theme, t);
