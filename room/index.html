@@ -3447,6 +3447,613 @@ function eggTrigger(name) {
   return false;
 }
 
+// ---------- backdrops: above the clouds, mountains and forest, the seaside ----------
+// A backdrop paints what lies between the sky (gradient, sun or moon, stars) and the islands, in canvas pixels:
+// They follow the backdrop contract above (see BACKDROPS.city); each sets its own horizon with ground(W, H).
+// Still layers are baked per light, weather, season and size; only what moves is drawn every frame.
+const BDM = Math.max(BD_M, 12 * S); // how far a layer bleeds past the edges for the parallax
+const bdBake = (name, key, w, h, paint) => bdLayer(name, key, w, h, () => paint(Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h))));
+const bdSnap = y => Math.round(y / S) * S;
+function bdF(x, y, w, h, c) { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+function bdArgs(P, def) { P = P || {}; const W = P.W || cv.width, H = P.H || cv.height; return { px: P.px || 0, py: P.py || 0, W, H, ground: bdSnap(P.ground ?? (def ? def(W, H) : H * .82)) }; }
+const bdOff = (P, depth) => [Math.round(P.px * depth), Math.round(P.py * depth)]; // depth 0: the islands' plane, 1: the far horizon
+const bdEnv = () => lightKey + '|' + weather + '|' + seasonNow();
+const bdWinter = () => weather === 'snow' || seasonNow() === 'winter';
+const bdHour = d => d.getHours() + d.getMinutes() / 60;
+const bdLitHex = h => '#' + rgb(h).map((v, i) => Math.min(255, v * AMB[i] | 0).toString(16).padStart(2, '0')).join('');
+const bdDim = c => weather === 'rain' ? mixHex(c, '#6c7484', .4) : weather === 'clouds' ? mixHex(c, '#9aa2b2', .15) : c;
+const bdWarm = () => Math.max(0, 1 - Math.abs(DARK - .3) / .22); // dawn and dusk: 1 at their middle
+function bdSun(d, W) { // where drawCelestial puts the sun, or else the moon: x, and whether it is the sun
+  const hr = bdHour(d), k = (hr - 6) / 13.5, km = (hr >= 12 ? hr - 19.5 : hr + 4.5) / 10.5, day = k > -.04 && k < 1.04;
+  return { day, up: day || (km > -.04 && km < 1.04), x: Math.round(sunX(day ? k : km, W)) };
+}
+function bdPine(x, y, h, dark, light, snow) { // a stepped fir in three tiers, its left half lit
+  x = Math.round(x); y = Math.round(y); h = Math.max(6, Math.round(h));
+  const trunk = Math.max(1, Math.round(h * .14)), body = h - trunk, th = body / 3;
+  bdF(x - 1, y - trunk, 2, trunk, lit('#4a3424'));
+  for (let r = 0; r < body; r++) {
+    const ti = Math.floor(r / th), u = (r - ti * th) / th, half = Math.max(1, Math.round((ti + 1) / 3 * h * .28 * (.4 + .6 * u)));
+    const yy = y - h + r;
+    bdF(x - half, yy, half, 1, light); bdF(x, yy, half, 1, dark);
+    if (snow && u < .34) bdF(x - half, yy, half * 2 - (r % 2), 1, snow);
+  }
+}
+function bdDisc(x, y, r, c) { for (let yy = -r; yy <= r; yy++) { const w = Math.round(Math.sqrt(r * r - yy * yy)); bdF(x - w, y + yy, w * 2 + 1, 1, c); } }
+function bdCrown(x, y, r, c) { // a round crown: rim, body, a lit cap up on the left
+  x = Math.round(x); y = Math.round(y);
+  bdDisc(x, y, r, c[0]); bdDisc(x, y, r - 1, c[1]); bdDisc(x - Math.round(r * .3), y - Math.round(r * .3), Math.max(1, Math.round(r * .42)), c[2]);
+}
+function bdLeaves(i) { // a crown's colours by season: rim, body, light
+  if (bdWinter()) return ['#7a8494', '#e4eaf4', '#ffffff'];
+  const se = seasonNow();
+  if (se === 'autumn') return [['#7a3a1a', '#d0702a', '#f0a040'], ['#6a5a1a', '#c8a030', '#f0d060'], ['#2e5a30', '#3e8a44', '#6ab060']][i % 3];
+  if (se === 'spring' && i % 3 === 0) return ['#a05a78', '#f0a0c0', '#ffe0ec'];
+  return ['#2a5a30', '#3e9a46', '#7ad070'];
+}
+const bdGrass = () => bdWinter() ? ['#b4c2d8', '#e4eaf4', '#ffffff'] : seasonNow() === 'autumn' ? ['#6a7a34', '#98a046', '#c8c060'] : ['#3e7a3a', '#5aa04a', '#8ad060'];
+function bdFall(x, y, len, w, t, frozen) { // a falling stream: fades out at the bottom, light streaks run down it
+  const a0 = g.globalAlpha, water = lit(frozen ? '#c8e0f4' : '#8cc8f0'), foam = lit('#ffffff');
+  for (let s = 0; s < 3; s++) { g.globalAlpha = a0 * [1, .7, .35][s]; bdF(x, y + len * s / 3, w, len / 3 + 1, water); }
+  if (!frozen) for (let i = 0; i < len / (2 * S); i++) {
+    const yy = (i * 7 * S + t * .045) % len; g.globalAlpha = a0 * (1 - yy / len * .8);
+    bdF(x + (i * 3) % Math.max(1, w - 1), y + yy, 1, S + (i % 2), foam);
+  }
+  g.globalAlpha = a0;
+}
+
+// ----- Над облаками: a sea of clouds, floating islands with waterfalls, an airship, the Milky Way at night -----
+const CL = {
+  isles: [{ fx: .09, fy: .5, w: 40, k: .8, seed: 1, fall: true }, { fx: .33, fy: .27, w: 16, k: .92, seed: 2 },
+    { fx: .72, fy: .56, w: 54, k: .7, seed: 3, fall: true, hut: true }, { fx: .92, fy: .33, w: 24, k: .88, seed: 4, fall: true }],
+  layers: [{ y: 0, r: [5, 12], v: .5, k: .85, tone: 0 }, { y: .16, r: [8, 18], v: 1.1, k: .65, tone: .35 },
+    { y: .4, r: [11, 24], v: 1.9, k: .45, tone: .7 }, { y: .68, r: [15, 32], v: 3, k: .2, tone: 1 }],
+};
+const AIRSHIP = (() => { // nose to the right: a striped envelope, tail fins, a gondola with windows, a propeller
+  const rows = [];
+  for (let r = 0; r < 13; r++) { let s = '';
+    for (let c = 0; c < 35; c++) {
+      const u = (c + .5 - 19) / 15, v = (r + .5 - 4.5) / 4.5, inE = r < 9 && u * u + v * v <= 1;
+      if (inE) { const next = (c + 1.5 - 19) / 15; s += next * next + v * v > 1 ? 'n' : r <= 1 ? 'h' : r >= 7 ? 's' : (c - 4) % 6 === 3 ? 'b' : 'a'; }
+      else if (c <= 6 && ((r <= 2 && c >= 1 + r) || (r >= 6 && r <= 8 && c >= 1 + (8 - r)))) s += 'f';
+      else if (r === 9 && (c === 14 || c === 24)) s += 'l';
+      else if ((r === 10 || r === 12) && c >= 13 && c <= 25) s += 'k';
+      else if (r === 11 && c >= 12 && c <= 26) s += c === 12 ? 'p' : c % 2 ? 'w' : 'k';
+      else s += '.';
+    }
+    rows.push(s); }
+  return rows;
+})();
+function clIsle(it, H) {
+  const w = Math.round(it.w * Math.max(1, H / 760)) * S, half = w / 2, top = Math.round(w * .5), cw = w + 8 * S, ch = top + Math.round(w * .62) + 2, cx = Math.round(cw / 2);
+  const img = bdBake('cl.isle' + it.seed + '.' + w, bdEnv(), cw, ch, () => {
+    const gr = bdGrass(), snow = bdWinter(), cols = [];
+    for (let x = -half; x < half; x += S) {
+      const u = (x + S / 2) / half, j = .78 + .22 * Math.sin(x * .21 + it.seed * 3) * Math.cos(x * .07 + it.seed);
+      cols.push([cx + x, Math.max(S, Math.round(Math.pow(Math.max(0, 1 - u * u), .9) * w * .55 * j / S) * S)]);
+    }
+    for (const [X, dep] of cols) bdF(X - 1, top - 1, S + 2, dep + 2, lit(OUT));
+    for (const [X, dep] of cols) for (let y = 0; y < dep; y += S)
+      bdF(X, top + y, S, S, lit(y < dep * .3 ? '#8a6440' : y < dep * .7 ? '#6a4c32' : '#523a28', (X > cx ? .82 : 1) * (scRnd(X, y) < .12 ? .85 : 1)));
+    bdF(cx - half - 1, top - 2 * S - 1, w + 2, 2 * S + 2, lit(OUT));
+    bdF(cx - half, top - 2 * S, w, 2 * S, lit(gr[1])); bdF(cx - half, top - 2 * S, w, 1, lit(gr[2]));
+    for (let x = -half; x < half; x += S) if (scRnd(x, it.seed) < .35) bdF(cx + x, top, S, S * (1 + (scRnd(it.seed, x) * 2 | 0)), lit(gr[0]));
+    const g0 = top - 2 * S, n = Math.max(1, Math.round(it.w / 12));
+    if (it.hut) { // a little hut with a lit window at night
+      const hx = Math.round(cx + half * .12), hw = 8 * S, hh = 6 * S;
+      bdF(hx - 1, g0 - hh - 1, hw + 2, hh + 1, lit(OUT)); bdF(hx, g0 - hh, hw, hh, lit('#e8d8b8')); bdF(hx + hw - 2 * S, g0 - hh, 2 * S, hh, lit('#cbb894'));
+      for (let r = 0; r < 4 * S; r++) { const ww = hw + 2 * S - r * 2; bdF(hx - S + r - 1, g0 - hh - r - 1, ww + 2, 1, lit(OUT)); bdF(hx - S + r, g0 - hh - r - 1, ww, 1, lit(bdWinter() ? '#f4f8ff' : '#c05040')); }
+      bdF(hx + 2 * S, g0 - 4 * S, 2 * S, 2 * S, DARK > .35 ? emi('#ffd27a') : lit('#7ab0d8')); bdF(hx + 5 * S, g0 - 3 * S, S + 1, 3 * S, lit('#7a5434'));
+    }
+    for (let i = 0; i < n; i++) {
+      const tx = cx - half * .72 + (i + .5) / n * half * 1.44 + (scRnd(i, it.seed) - .5) * 4 * S, sz = Math.round((2.5 + scRnd(it.seed, i) * 2.5) * S);
+      if (it.hut && Math.abs(tx - cx - half * .12 - 4 * S) < 7 * S) continue;
+      if (snow ? i % 2 : scRnd(i, it.seed + 9) < .3) { bdPine(tx, g0, sz * 3.4, lit('#24483a'), lit('#386a4c'), snow && lit('#f4f8ff')); continue; }
+      bdF(tx - 1, g0 - sz * 1.6, 2, sz * 1.6, lit('#5a3a22'));
+      bdCrown(tx, g0 - sz * 1.7, sz, bdLeaves(i + it.seed).map(c => lit(c)));
+    }
+  });
+  return { img, cx, top: top - 2 * S, w };
+}
+function clLayer(i, L, W, H, hz) {
+  const T = 256 * S, maxR = L.r[1] * S, yb = maxR + 2 * S, top = Math.round(hz + L.y * (H - hz)), hh = H + BDM - top + yb;
+  const img = bdBake('cl.l' + i + '.' + W + 'x' + H, bdEnv() + hz, T, hh, () => {
+    const body = bdDim(mixHex('#bcc8e4', '#f2f6fc', L.tone)), sh = bdDim(mixHex('#97a6cc', '#c6d0e8', L.tone));
+    const warm = bdWarm() * .55, hi = mixHex(bdDim(mixHex('#dfe6f6', '#ffffff', L.tone)), '#ffb47a', warm);
+    const n = Math.max(3, Math.round(T / ((L.r[0] + L.r[1]) * S * .75))), puffs = [];
+    for (let j = 0; j < n; j++) puffs.push([(j + scRnd(j, i) * .6) * T / n, (L.r[0] + scRnd(i, j) * (L.r[1] - L.r[0])) * S]);
+    for (let x = 0; x < T; x += S) {
+      let e = yb;
+      for (const [c, r] of puffs) { let dx = Math.abs(x + S / 2 - c); dx = Math.min(dx, T - dx); if (dx < r) e = Math.min(e, yb + r * .35 - Math.sqrt(r * r - dx * dx)); }
+      e = Math.floor(e / S) * S;
+      bdF(x, e, S, hh - e, lit(body)); bdF(x, e, S, S, lit(hi));
+      if (e > S && (x / S) % 3 === 1) bdF(x, e + S, S, 1, lit(hi));
+      const s0 = Math.round((yb + maxR * .5 + Math.sin(x * .05 + i) * 2 * S) / S) * S;
+      bdF(x, s0, S, hh - s0, lit(sh)); if ((x / S) % 2) bdF(x, s0 - S, S, S, lit(sh));
+    }
+  });
+  return { img, y: top - yb, T };
+}
+function clMilky(W, H) { // a band of faint stars from the lower left to the upper right, with a dark rift
+  return bdBake('cl.milky' + W + 'x' + H, '1', W + 2 * BDM, H, (w, h) => {
+    const x0 = -.05 * w, y0 = .7 * h, x1 = 1.05 * w, y1 = .02 * h, len = Math.hypot(x1 - x0, y1 - y0), nx = -(y1 - y0) / len, ny = (x1 - x0) / len, bw = h * .1;
+    for (let i = 0; i < 60; i++) { const u = i / 59, cx = x0 + (x1 - x0) * u, cy = y0 + (y1 - y0) * u, r = bw * (1 + .45 * Math.sin(u * 9 + 1));
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, r); gr.addColorStop(0, 'rgba(196,204,255,.07)'); gr.addColorStop(1, 'rgba(196,204,255,0)');
+      g.fillStyle = gr; g.fillRect(cx - r, cy - r, r * 2, r * 2); }
+    const n = Math.round(w * h / 450);
+    for (let i = 0; i < n; i++) {
+      const u = scRnd(i, 1), dd = (scRnd(i, 2) + scRnd(i, 3) + scRnd(i, 4) - 1.5) / 1.5, x = x0 + (x1 - x0) * u + nx * dd * bw, y = y0 + (y1 - y0) * u + ny * dd * bw;
+      const big = scRnd(i, 6) < .05;
+      g.fillStyle = `rgba(${['232,236,255', '255,232,238', '210,224,255'][i % 3]},${((1 - Math.abs(dd)) * (.3 + .7 * scRnd(i, 5))).toFixed(2)})`;
+      g.fillRect(Math.round(x), Math.round(y), big ? S : 1, big ? S : 1);
+    }
+    g.fillStyle = 'rgba(8,10,28,.22)';
+    for (let i = 0; i < 260; i++) { const u = scRnd(i, 8), dd = Math.sin(u * 23) * .12 + (scRnd(i, 9) - .5) * .18;
+      g.fillRect(Math.round(x0 + (x1 - x0) * u + nx * dd * bw), Math.round(y0 + (y1 - y0) * u + ny * dd * bw), 3 * S, S); }
+  });
+}
+function clShip(t, W, H, P) { // now and then an airship crosses, one way and then back
+  const per = 150000, cyc = Math.floor(t / per), u = (t % per) / per; if (u > .5) return;
+  const k = S, w = AIRSHIP[0].length * k, dir = cyc % 2 ? -1 : 1, span = W + w + 40 * S, along = span * u / .5;
+  const [ox, oy] = bdOff(P, .7), x = dir > 0 ? -w - 20 * S + along : W + 20 * S - along, y = H * (.14 + .1 * scRnd(cyc, 7)) + Math.sin(t / 2400) * S;
+  const night = DARK > .4;
+  pxStamp(x + ox, y + oy, AIRSHIP, { h: lit('#f6eedc'), a: lit('#dccaa6'), b: lit('#c4523e'), s: lit('#ae9a78'), n: lit('#c4523e'), f: lit('#b04634'), l: lit('#5a4a3a'),
+    k: lit('#7a5434'), w: night ? emi('#ffd27a') : lit('#9cc8e4'), p: Math.floor(t / 90) % 2 ? lit('#3a3a44') : null }, dir < 0, k);
+  if (night && Math.floor(t / 600) % 2) bdF(x + ox + (dir > 0 ? w - k : 0), y + oy + 4 * k, S, S, '#ff5050');
+}
+BACKDROPS.clouds = {
+  name: 'Над облаками',
+  ground: (W, H) => bdSnap(H * .68), // the top of the sea of clouds
+  draw(t, d, P0) {
+    const P = bdArgs(P0, this.ground), { W, H } = P, hz = P.ground, a0 = g.globalAlpha;
+    if (DARK > .5 && (weather === 'clear' || weather === 'clouds')) {
+      const [ox, oy] = bdOff(P, 1); g.globalAlpha = a0 * Math.min(1, (DARK - .5) * 2.5) * (weather === 'clouds' ? .5 : 1);
+      g.drawImage(clMilky(W, H), -BDM + ox, oy); g.globalAlpha = a0;
+    }
+    clShip(t, W, H, P);
+    for (const it of CL.isles) { // islands behind the sea of clouds, their roots in it
+      const I = clIsle(it, H), [ox, oy] = bdOff(P, it.k), bob = Math.round(Math.sin(t / 3200 + it.seed * 2) * S);
+      const X = Math.round(W * it.fx - I.img.width / 2 + ox), Y = Math.round(H * it.fy - I.top + oy + bob);
+      g.drawImage(I.img, X, Y);
+      if (it.fall) bdFall(X + I.cx + Math.round(I.w * .3 / S) * S, Y + I.top + 2 * S, I.w * .8, I.w > 60 * S ? 3 * S : I.w > 30 * S ? 2 * S : S, t, seasonNow() === 'winter');
+    }
+    g.globalAlpha = a0 * .5; bdF(0, hz - 6 * S, W, 10 * S, SKY[1]); g.globalAlpha = a0 * .35; bdF(0, hz - 12 * S, W, 6 * S, SKY[1]); g.globalAlpha = a0;
+    CL.layers.forEach((L, i) => {
+      const Lr = clLayer(i, L, W, H, hz), [ox, oy] = bdOff(P, L.k), T = Lr.T, off = ((ox - t * L.v * S / 1000) % T + T) % T;
+      for (let x = off - T; x < W; x += T) g.drawImage(Lr.img, Math.round(x), Lr.y + oy);
+    });
+  },
+};
+
+// ----- Горы и лес: snowy ranges, a pine forest, a waterfall and a river; mist in the morning, northern lights on some nights -----
+const MT_RANGES = [
+  { k: .95, top: .24, amp: .3, seed: 1.7, f: [.0045, .011, .027], c: ['#a8b4dc', '#8492c2', '#6c7aac'], snow: .42 },
+  { k: .88, top: .35, amp: .22, seed: 5.3, f: [.007, .017, .039], c: ['#7c8eb6', '#5f709c', '#4c5c88'], snow: .2 },
+];
+function mtRidge(x, R, H) {
+  const [a, b, c] = R.f, s = R.seed;
+  const h = .55 * (1 - Math.abs(Math.sin(x * a + s))) ** 1.6 + .3 * (1 - Math.abs(Math.sin(x * b + s * 2.1))) ** 2 + .15 * (1 - Math.abs(Math.sin(x * c + s * 3.7)));
+  return H * (R.top + R.amp * (1 - h));
+}
+function mtGeo(W, H, ground) {
+  const forest = x => H * .58 + Math.sin(x * .006 + 1) * H * .025 + Math.sin(x * .017) * H * .012;
+  const meadow = x => H * .755 + Math.sin(x * .011) * 3 * S + Math.sin(x * .031) * S;
+  const fx = Math.round(W * .68 / S) * S, poolY = Math.round((meadow(fx) + 4 * S) / S) * S;
+  const riverX = y => fx + Math.sin((y - poolY) * .035) * 10 * S - (y - poolY) * .5, riverW = y => 5 * S + (y - poolY) * .2;
+  return { forest, meadow, fx, fy: Math.round((forest(fx) + 6 * S) / S) * S, poolY, riverX, riverW };
+}
+function mtRange(i, R, W, H) {
+  const snowK = R.snow + (bdWinter() ? .3 : seasonNow() === 'summer' ? -.08 : 0);
+  return bdBake('mt.r' + i + '.' + W + 'x' + H, bdEnv(), W + 2 * BDM, H + BDM, (w, h) => {
+    const yTop = x => Math.round(mtRidge(x, R, H) / S) * S;
+    for (let x = 0; x < w; x += S) {
+      const X = x - BDM, y = yTop(X), litSide = yTop(X + 3 * S) <= yTop(X - 3 * S);
+      bdF(x, y, S, h - y, lit(bdDim(litSide ? R.c[0] : R.c[1])));
+      const snowY = H * (R.top + R.amp * snowK) + Math.sin(X * .09) * 3 * S + Math.sin(X * .023 + i) * 5 * S;
+      if (y < snowY) { bdF(x, y, S, Math.round((snowY - y) / S) * S, lit(litSide ? '#f4f6ff' : '#c4cce8'));
+        if (scRnd(X, 3) < .3) bdF(x, Math.round(snowY / S) * S, S, S * (1 + (scRnd(X, 4) * 3 | 0)), lit(litSide ? '#dfe4f6' : '#aab4d8')); }
+      bdF(x, y, S, 1, lit(mixHex(R.c[2], '#ffffff', y < snowY ? .55 : .1)));
+      if (scRnd(X, i + 5) < .07) bdF(x, y + 5 * S + scRnd(i, X) * 22 * S, S, (2 + (scRnd(X, X) * 5 | 0)) * S, lit(R.c[2]));
+    }
+    const foot = Math.round(H * (R.top + R.amp * .9));
+    for (let b = 0; b < 5; b++) { g.globalAlpha = .1 + b * .07; bdF(0, foot + b * 3 * S, w, h, SKY[1]); }
+    g.globalAlpha = 1;
+  });
+}
+function mtForest(W, H, ground) {
+  const G = mtGeo(W, H, ground);
+  return bdBake('mt.forest.' + W + 'x' + H, bdEnv() + ground, W + 2 * BDM, H + BDM, (w, h) => {
+    const snow = bdWinter(), se = seasonNow(), hill = lit(snow ? '#d4dcea' : se === 'autumn' ? '#4a5a34' : '#2f5a3e');
+    for (let x = 0; x < w; x += S) { const y = Math.round(G.forest(x - BDM) / S) * S; bdF(x, y, S, h - y, hill); bdF(x, y, S, 1, lit(snow ? '#ffffff' : '#4a7a50')); }
+    const cl = G.fx + BDM; // the cliff the waterfall comes down: grey rock with ledges
+    for (let x = cl - 8 * S; x < cl + 8 * S; x += S) { const y = Math.round(G.forest(x - BDM) / S) * S + 2 * S;
+      bdF(x, y, S, h - y, lit(x < cl ? '#8a8694' : '#6c6878')); if (scRnd(x, 2) < .4) bdF(x, y + (4 + (scRnd(x, 3) * 10 | 0)) * S, S, S, lit('#545060')); }
+    const rows = Math.min(12, Math.ceil((G.meadow(0) - G.forest(0)) / (6 * S)) + 1);
+    for (let r = 0; r < rows; r++) for (let x = -2 * S; x < w + 4 * S;) {
+      const X = x - BDM, i = r * 997 + (x / S | 0), y = G.forest(X) + r * 6 * S + scRnd(i, 1) * 3 * S, ht = (11 + scRnd(i, 2) * 8 + r * .6) * S, k = .74 + Math.min(r, 6) * .045;
+      if (Math.abs(x - cl) > 10 * S) {
+        if (!snow && se !== 'summer' && scRnd(i, 3) < (se === 'autumn' ? .16 : .08)) {
+          bdF(x - 1, y - ht * .45, 2, ht * .45, lit('#5a3a22', k)); bdCrown(x, y - ht * .55, Math.round(ht * .24), bdLeaves(i).map(c => lit(c, k)));
+        } else bdPine(x, y, ht, lit('#1d4430', k), lit(se === 'autumn' ? '#3a6a3a' : '#2d6640', k), snow && lit('#f4f8ff', k));
+      }
+      x += (3 + scRnd(i, 4) * 3 | 0) * S;
+    }
+  });
+}
+function mtMeadow(W, H, ground) {
+  const G = mtGeo(W, H, ground);
+  return bdBake('mt.meadow.' + W + 'x' + H, bdEnv() + ground, W + 2 * BDM, H + BDM, (w, h) => {
+    const gr = bdGrass(), se = seasonNow(), snow = bdWinter();
+    for (let x = 0; x < w; x += S) { const y = Math.round(G.meadow(x - BDM) / S) * S;
+      bdF(x, y, S, h - y, lit(gr[1])); bdF(x, y, S, S, lit(gr[2]));
+      for (let yy = y + 3 * S; yy < h; yy += 3 * S) { const q = scRnd(x, yy);
+        if (q < .16) bdF(x, yy, S, S, lit(gr[0]));
+        else if (q > .985 && !snow && se !== 'autumn') bdF(x, yy, S, S, lit(['#f0d040', '#ff80a0', '#ffffff', '#a080f0'][(q * 1e4 | 0) % 4])); }
+    }
+    for (let i = 0; i < 70; i++) { const x = scRnd(i, 21) * w, y0 = G.meadow(x - BDM), y = y0 + 6 * S + scRnd(i, 22) * (h - y0), d = (y - y0) / (h - y0);
+      if (Math.abs(x - BDM - G.riverX(y)) < G.riverW(y) + 6 * S) continue;
+      if (i % 4 === 0) bdCrown(x, y - 2 * S, Math.round((2 + d * 3) * S), bdLeaves(i).map(c => lit(c, .9)));
+      else for (let k = 0; k < 3; k++) bdF(x + k * 2 * S, y - (k % 2 ? 2 : 1) * S * (1 + d), S, (k % 2 ? 2 : 1) * S * (1 + d), lit(gr[0])); }
+    for (let b = 0; b < 3; b++) { g.globalAlpha = .08 + b * .05; bdF(0, h - BDM - (3 - b) * 10 * S, w, h, lit(gr[0])); }
+    g.globalAlpha = 1;
+    const water = lit(snow ? '#b8d0ea' : bdDim('#4a8ad0')), bank = lit(snow ? '#9aaecc' : '#7a6a48'), edge = lit(snow ? '#e4eef8' : '#8cc4f0');
+    for (let y = G.poolY - 2 * S; y < h; y += 1) { const k = y < G.poolY ? 1 - (G.poolY - y) / (2 * S) : 1, cx = G.riverX(Math.max(G.poolY, y)) + BDM, rw = G.riverW(Math.max(G.poolY, y)) * (y < G.poolY ? .6 + .4 * k : 1) + (y < G.poolY + 4 * S ? 3 * S : 0);
+      bdF(cx - rw / 2 - 1, y, rw + 2, 1, bank); bdF(cx - rw / 2, y, rw, 1, water); bdF(cx - rw / 2, y, S, 1, edge); }
+    for (const [fx, sz] of [[.03, 46], [.075, 34], [.95, 50], [.905, 30]]) { const x = Math.round(W * fx) + BDM;
+      bdPine(x, G.meadow(x - BDM) + 26 * S, sz * S, lit('#1a3c2a'), lit('#2a5c3a'), snow && lit('#f4f8ff')); }
+    for (const fx of [.2, .46, .83]) { const x = Math.round(W * fx) + BDM, y = Math.round(G.meadow(x - BDM) / S) * S + 8 * S;
+      bdF(x - 1, y - 3 * S - 1, 7 * S + 2, 3 * S + 2, lit(OUT)); bdF(x, y - 3 * S, 7 * S, 3 * S, lit('#8a8a94')); bdF(x, y - 3 * S, 4 * S, S, lit(snow ? '#ffffff' : '#a8a8b4')); }
+  });
+}
+function mtAurora(t, d, W, H, P) {
+  const on = Q.get('aurora') === '1' || (Math.floor(d.getTime() / 864e5) * 7919) % 10 < 4; // on about four nights in ten
+  if (DARK < .6 || !on || weather === 'rain' || weather === 'snow') return;
+  const a0 = g.globalAlpha, op = g.globalCompositeOperation, k = Math.min(1, (DARK - .6) * 4) * (weather === 'clouds' ? .5 : 1), [ox] = bdOff(P, 1), step = 3 * S, s = t / 1000;
+  g.globalCompositeOperation = 'lighter';
+  for (let x = -step; x < W + step; x += step) {
+    const X = x - ox, yc = H * (.23 + .05 * Math.sin(X * .004 + s * .05) + .025 * Math.sin(X * .013 - s * .11));
+    const len = H * (.07 + .05 * (.5 + .5 * Math.sin(X * .009 + s * .07))), br = (.4 + .6 * (.5 + .5 * Math.sin(X * .021 + s * .3))) * k;
+    const yb = Math.round(yc / S) * S, L = Math.round(len / S) * S;
+    g.globalAlpha = a0 * br * .2; bdF(x, yb - L, step, L, '#40ff9a');
+    g.globalAlpha = a0 * br * .1; bdF(x, yb - L * 1.7, step, L * .7, '#b060ff');
+    g.globalAlpha = a0 * br * .45; bdF(x, yb - S, step, S, '#a0ffd0');
+  }
+  g.globalAlpha = a0; g.globalCompositeOperation = op;
+}
+function mtMist(t, d, W, y, P, k, seed) { // valley mist: thick in the morning, some all day in the rain
+  let m = Math.max(0, 1 - Math.abs(bdHour(d) - 7) / 2.6) * .55;
+  if (weather === 'rain') m = Math.max(m, .3); else if (weather === 'clouds') m = Math.max(m, .1);
+  if (m < .02) return;
+  const a0 = g.globalAlpha, [ox, oy] = bdOff(P, k), c = lit('#eef2fa'), step = 8 * S, drift = (t * .003) % step;
+  for (let x = -2 * step + drift; x < W + step; x += step) {
+    const X = x + ox, hh = Math.round((4 + 3 * Math.sin((x - drift) * .013 + seed + t / 9000)) * S / S) * S;
+    g.globalAlpha = a0 * m * .55; bdF(X, y + oy - hh, step, hh * 2, c);
+    g.globalAlpha = a0 * m * .3; bdF(X, y + oy - hh * 2, step, hh, c);
+  }
+  g.globalAlpha = a0;
+}
+BACKDROPS.mountains = {
+  name: 'Горы и лес',
+  ground: (W, H) => bdSnap(H * .6), // the sun sets behind the forest
+  draw(t, d, P0) {
+    const P = bdArgs(P0, this.ground), { W, H, ground } = P, G = mtGeo(W, H, ground);
+    mtAurora(t, d, W, H, P);
+    MT_RANGES.forEach((R, i) => {
+      const [ox, oy] = bdOff(P, R.k); g.drawImage(mtRange(i, R, W, H), -BDM + ox, oy);
+      mtMist(t, d, W, Math.round(H * (R.top + R.amp * .95)), P, R.k, i * 2);
+    });
+    const [fx, fy] = bdOff(P, .7), [mx, my] = bdOff(P, .45);
+    g.drawImage(mtForest(W, H, ground), -BDM + fx, fy);
+    mtMist(t, d, W, Math.round(H * .64), P, .7, 5);
+    g.drawImage(mtMeadow(W, H, ground), -BDM + mx, my);
+    const frozen = seasonNow() === 'winter';
+    bdFall(G.fx - 2 * S + fx, G.fy + fy, G.poolY - G.fy + my - fy, 4 * S, t, frozen);
+    if (!frozen) {
+      const a0 = g.globalAlpha, foam = lit('#ffffff'), shine = lit('#d8f0ff');
+      for (let i = 0; i < 10; i++) if (scRnd(i, Math.floor(t / 140)) < .6) bdF(G.fx - 5 * S + mx + (i * 7) % (10 * S), G.poolY + my - S + (i % 3), S, 1, foam);
+      const len = H + BDM - G.poolY;
+      for (let i = 0; i < 26; i++) { const yy = G.poolY + 3 * S + (i * 37 * S + t * .02 * S) % len, w = G.riverW(yy);
+        g.globalAlpha = a0 * .8; bdF(G.riverX(yy) + mx + (scRnd(i, 1) - .5) * w * .6, yy + my, 2 * S, 1, shine); }
+      g.globalAlpha = a0;
+    }
+  },
+};
+
+// ----- Морское побережье: waves, a glitter path under the sun or the moon, a lighthouse, a harbour with cranes, boats and gulls -----
+function seaGeo(W, H, ground) {
+  const hz = bdSnap(ground), head0 = Math.round(W * .79), lhX = Math.round(W * .885 / S) * S;
+  const headY = x => hz - Math.max(0, Math.min(1, (x - head0) / (W * .07))) * 16 * S - Math.sin(x * .05) * 2 * S;
+  const yl = Math.round(headY(lhX) / S) * S, yq = hz + 8 * S;
+  return { hz, head0, lhX, headY, yl, lamp: [lhX, yl - 43 * S], yq, q1: Math.round(W * .24), lamps: [.05, .12, .2].map(f => [Math.round(W * f), yq - 10 * S]) };
+}
+function seaWater(W, H, G) {
+  return bdBake('sea.water.' + W + 'x' + H, bdEnv() + G.hz, W + 2 * BDM, H + BDM - G.hz, (w, h) => {
+    const bands = ['#7aaad8', '#6698cc', '#5288c0', '#4278b2', '#3668a2', '#2c5a92', '#244e84'].map(c => mixHex(bdLitHex(bdDim(c)), SKY[1], 0));
+    const D = Math.max(S, H - G.hz);
+    for (let y = 0; y < h; y++) {
+      const f = Math.min(1, y / D) ** .7 * (bands.length - 1), b = Math.min(bands.length - 1, Math.floor(f)), fr = f - b;
+      const sky = Math.max(0, .4 - y / D * 1.2), col = mixHex(bands[b], SKY[1], sky);
+      g.fillStyle = col; g.fillRect(0, y, w, 1);
+      if (fr > .7 && b < bands.length - 1) { g.fillStyle = mixHex(bands[b + 1], SKY[1], sky); for (let x = (y % 2) * S; x < w; x += 2 * S) g.fillRect(x, y, S, 1); }
+    }
+    g.fillStyle = mixHex(bdLitHex('#c8e0f4'), SKY[1], .4); g.fillRect(0, 0, w, 1);
+  });
+}
+function seaFar(W, H, G) { // the far shore to the left, a far islet, town lights at night
+  return bdBake('sea.far.' + W + 'x' + H, bdEnv() + G.hz, W + 2 * BDM, G.hz + 2, (w, h) => {
+    const c = mixHex(bdLitHex('#6a7aa8'), SKY[1], .45), c2 = mixHex(bdLitHex('#7a8ab4'), SKY[1], .55);
+    for (let x = 0; x < w; x += S) { const X = x - BDM, taper = Math.max(0, Math.min(1, (W * .46 - X) / (W * .14)));
+      const hh = Math.round((7 + 5 * Math.sin(X * .011) + 3 * Math.sin(X * .027 + 1)) * taper) * S;
+      if (hh > 0) { g.fillStyle = c; g.fillRect(x, G.hz - hh, S, hh); }
+      const X2 = X - W * .6; if (Math.abs(X2) < 14 * S) { const h2 = Math.round(3 * (1 - (X2 / (14 * S)) ** 2) + 1) * S; g.fillStyle = c2; g.fillRect(x, G.hz - h2, S, h2); }
+      if (DARK > .4 && hh > 2 * S && scRnd(X, 11) < .12) { g.fillStyle = emi('#ffd890', .5 + DARK * .5); g.fillRect(x, G.hz - Math.round(scRnd(X, 12) * hh * .7) - S, 1, 1); }
+    }
+  });
+}
+function seaHarbour(W, H, G) {
+  return bdBake('sea.harbour.' + W + 'x' + H, bdEnv() + G.hz, W + 2 * BDM, G.yq + 12 * S, () => {
+    const o = BDM, yq = G.yq, q1 = G.q1 + o, snow = bdWinter(), night = DARK > .35, ol = lit(OUT);
+    const box = (x, y, w, h, c, side) => { bdF(x - 1, y - 1, w + 2, h + 2, ol); bdF(x, y, w, h, lit(c)); if (side) bdF(x + w - Math.round(w * .3), y, Math.round(w * .3), h, lit(side)); };
+    box(0, yq, q1, 7 * S, '#86868e'); bdF(0, yq, q1, 2 * S, lit(snow ? '#f0f4fa' : '#b4b4ba')); bdF(0, yq + 2 * S, q1, 1, lit('#5a5a62'));
+    for (let x = 4 * S; x < q1 - 2 * S; x += 9 * S) bdF(x, yq + 4 * S, S, 2 * S, lit('#3a3a44'));
+    // warehouses with gable roofs
+    for (const [x0, ww, hh, c] of [[W * .015, 26, 13, '#b86a44'], [W * .015 + 30 * S, 20, 10, '#c88a5a']]) {
+      const x = Math.round(x0 / S) * S + o, w = ww * S, h = hh * S, y = yq - h;
+      box(x, y, w, h, c, mixHex(c, '#000000', .2));
+      for (let r = 0; r < Math.round(w / 2 / S) * S * .5; r++) { const half = w / 2 + S - r * 2; bdF(x + w / 2 - half - 1, y - r - 1, half * 2 + 2, 1, ol); bdF(x + w / 2 - half, y - r - 1, half * 2, 1, lit(snow ? '#f4f8ff' : '#6a4a4a')); }
+      bdF(x + w / 2 - 3 * S, y + h - 6 * S, 6 * S, 6 * S, lit('#4a3a34'));
+      for (let wx = x + 2 * S; wx < x + w - 2 * S; wx += 4 * S) if (Math.abs(wx + S - x - w / 2) > 4 * S) bdF(wx, y + 3 * S, 2 * S, 2 * S, night && scRnd(wx, 1) < .7 ? emi('#ffd27a') : lit('#8aa8c0'));
+    }
+    // containers
+    const cx0 = Math.round(W * .125 / S) * S + o, CC = ['#d04a3a', '#3a7ac0', '#e0b030', '#3a9a5a', '#8a5ac0'];
+    for (let c = 0; c < 3; c++) for (let r = 0; r < 3 - (c === 2 ? 1 : 0); r++) { const x = cx0 + c * 8 * S, y = yq - (r + 1) * 4 * S, col = CC[(c * 3 + r) % 5];
+      box(x, y, 7 * S, 4 * S - 1, col); for (let k = x + S; k < x + 7 * S; k += 2 * S) bdF(k, y, 1, 4 * S - 1, lit(mixHex(col, '#000000', .25)));
+      if (snow && r === (c === 2 ? 1 : 2)) bdF(x, y, 7 * S, S, lit('#f4f8ff')); }
+    // two gantry cranes reaching over the water
+    for (const f of [.172, .214]) {
+      const x = Math.round(W * f / S) * S + o, top = yq - 28 * S, c = '#e8a030', cd = '#b87820';
+      for (const lx of [x, x + 7 * S]) { bdF(lx - 1, top, S + 2, yq - top, ol); bdF(lx, top, S, yq - top, lit(c)); }
+      for (let y = top + 4 * S; y < yq - 2 * S; y += 6 * S) line([x + S, y], [x + 7 * S, y + 5 * S], lit(cd));
+      bdF(x - 4 * S - 1, top - 2 * S - 1, 30 * S + 2, 2 * S + 2, ol); bdF(x - 4 * S, top - 2 * S, 30 * S, 2 * S, lit(c)); bdF(x - 4 * S, top - S, 30 * S, 1, lit(cd));
+      box(x + 2 * S, top - 6 * S, 4 * S, 4 * S, c, cd); bdF(x + 3 * S, top - 5 * S, 2 * S, S, night ? emi('#ffd27a') : lit('#8aa8c0'));
+      const tx = x + 19 * S; bdF(tx - S, top, 3 * S, S, lit('#5a5a62')); bdF(tx, top + S, 1, 18 * S, lit('#3a3a44')); bdF(tx - S, top + 19 * S, 3 * S, S, lit('#5a5a62'));
+      if (snow) bdF(x - 4 * S, top - 2 * S, 30 * S, 1, lit('#ffffff'));
+    }
+    // a cargo ship at the quay
+    const sx = q1 + 2 * S, sw = Math.round(W * .1 / S) * S, sy = yq + 2 * S;
+    for (let r = 0; r < 6 * S; r++) { const inset = Math.max(0, r - 3 * S); bdF(sx + inset - 1, sy + r, sw - inset * 2 + 2, 1, ol); bdF(sx + inset, sy + r, sw - inset * 2, 1, lit(r < 4 * S ? '#34445e' : '#a83a30')); }
+    box(sx + sw - 12 * S, sy - 6 * S, 9 * S, 6 * S, '#f0ece4', '#c8c4bc');
+    for (let k = 0; k < 3; k++) bdF(sx + sw - 11 * S + k * 3 * S, sy - 4 * S, 2 * S, S, night ? emi('#ffd27a') : lit('#5a7aa8'));
+    box(sx + sw - 9 * S, sy - 10 * S, 3 * S, 4 * S, '#d04a3a');
+    for (let k = 0; k < 3; k++) box(sx + 4 * S + k * 8 * S, sy - 3 * S, 7 * S, 3 * S, CC[(k + 2) % 5]);
+    for (const [lx, ly] of G.lamps) { bdF(lx + o, ly, 1, yq - ly, lit('#3a3a44')); bdF(lx + o - S, ly - S, 2 * S + 1, S, night ? emi('#ffe2a0') : lit('#5a5a62')); }
+  });
+}
+function seaHead(W, H, G) { // the headland, the keeper's house and the lighthouse
+  return bdBake('sea.head.' + W + 'x' + H, bdEnv() + G.hz, W - G.head0 + BDM * 2, G.hz + 8 * S, (w) => {
+    const o = -G.head0 + BDM, gr = bdGrass(), snow = bdWinter(), ol = lit(OUT), night = DARK > .3;
+    for (let x = 0; x < w; x += S) { const X = x - o, y = Math.round(G.headY(X) / S) * S, bot = G.hz + 4 * S + (scRnd(X, 1) * 3 | 0) * S;
+      if (y >= bot) continue; const litSide = G.headY(X + 2 * S) <= G.headY(X - 2 * S);
+      bdF(x, y - 1, S, bot - y + 2, ol); bdF(x, y, S, bot - y, lit(litSide ? '#9a8a74' : '#7a6a58'));
+      for (let yy = y + 3 * S; yy < bot; yy += 4 * S) if (scRnd(X, yy) < .35) bdF(x, yy, S, S, lit('#5e5044'));
+      bdF(x, y, S, 2 * S, lit(gr[1])); bdF(x, y, S, 1, lit(gr[2])); if (scRnd(X, 5) < .3) bdF(x, y + 2 * S, S, S, lit(gr[0])); }
+    const lx = G.lhX + o, yl = G.yl, hx = lx - 16 * S, hy = Math.round(G.headY(G.lhX - 12 * S) / S) * S + S;
+    bdF(hx - 1, hy - 6 * S - 1, 9 * S + 2, 6 * S + 1, ol); bdF(hx, hy - 6 * S, 9 * S, 6 * S, lit('#f0ece0')); bdF(hx + 6 * S, hy - 6 * S, 3 * S, 6 * S, lit('#cfcabc'));
+    for (let r = 0; r < 4 * S; r++) { const ww = 11 * S - r * 2; bdF(hx - S + r - 1, hy - 6 * S - r - 1, ww + 2, 1, ol); bdF(hx - S + r, hy - 6 * S - r - 1, ww, 1, lit(snow ? '#f4f8ff' : '#c0483a')); }
+    bdF(hx + 2 * S, hy - 4 * S, 2 * S, 2 * S, night ? emi('#ffd27a') : lit('#7ab0d8'));
+    const TH = 38 * S;
+    for (let r = 0; r < TH; r++) { const half = Math.round((4.5 - 1.6 * r / TH) * S), y = yl - r, red = Math.floor(r / (7 * S)) % 2 === 1;
+      bdF(lx - half - 1, y, half * 2 + 2, 1, ol); bdF(lx - half, y, half * 2, 1, lit(red ? '#cc4436' : '#f2eee4')); bdF(lx + Math.round(half * .4), y, half - Math.round(half * .4), 1, lit(red ? '#a83428' : '#cfcabc')); }
+    bdF(lx - S, yl - 4 * S, 2 * S, 4 * S, lit('#4a3a34')); bdF(lx - S, yl - 20 * S, S, 2 * S, lit('#3a3a44'));
+    const gy = yl - TH; bdF(lx - 5 * S - 1, gy - S - 1, 10 * S + 2, S + 2, ol); bdF(lx - 5 * S, gy - S, 10 * S, S, lit('#3a3a44'));
+    for (let x = lx - 5 * S; x <= lx + 5 * S; x += 2 * S) bdF(x, gy - 3 * S, 1, 2 * S, lit('#3a3a44'));
+    bdF(lx - 3 * S - 1, gy - 7 * S - 1, 6 * S + 2, 6 * S + 2, ol); bdF(lx - 3 * S, gy - 7 * S, 6 * S, 6 * S, night ? emi('#fff0a0') : lit('#a8d0e8'));
+    bdF(lx - S, gy - 7 * S, 1, 6 * S, lit('#3a3a44')); bdF(lx + S, gy - 7 * S, 1, 6 * S, lit('#3a3a44'));
+    for (let r = 0; r < 3 * S; r++) { const half = 4 * S - r; bdF(lx - half - 1, gy - 8 * S - r, half * 2 + 2, 1, ol); bdF(lx - half, gy - 8 * S - r, half * 2, 1, lit(snow ? '#f4f8ff' : '#cc4436')); }
+    bdF(lx, gy - 12 * S, 1, S + 1, lit('#3a3a44'));
+  });
+}
+const SAIL = ['.....r......', '.....mw.....', '....wmww....', '...wwmwww...', '..wwwmwwww..', '.wwwwmwwwww.', '.....m......', 'hhhhhhhhhhhh', '.dddddddddd.'];
+const SEA_BOATS = [{ f: .05, k: 1, v: .0011, seed: .15, hull: '#e8e4dc', dir: 1 }, { f: .07, k: 1, v: .0008, seed: .7, hull: '#c0483a', dir: -1 },
+  { f: .3, k: S, v: .0024, seed: .55, hull: '#3a5a9a', dir: -1 }, { f: .6, k: S, v: .0036, seed: .85, hull: '#c0483a', dir: 1 }];
+function seaBoat(b, t, W, H, G, P) {
+  const k = b.k, w = SAIL[0].length * k, span = W + w + 40 * S, [ox, oy] = bdOff(P, .9 - b.f * .8);
+  const x = ((b.seed * span + t * b.v * S * b.dir) % span + span) % span - w - 20 * S + ox;
+  const y = Math.round(G.hz + (H - G.hz) * b.f - (SAIL.length - 1) * k + Math.sin(t / 650 + b.seed * 20) * (k > 1 ? 1 : 0)) + oy;
+  pxStamp(x, y, SAIL, { r: lit('#e05a4a'), m: lit('#6a4a30'), w: lit(weather === 'rain' ? '#d8d8d4' : '#f4f0e8'), h: lit(b.hull), d: lit(mixHex(b.hull, '#000000', .35)) }, b.dir < 0, k, k === 1);
+  bdF(x + k, y + SAIL.length * k + (k > 1 ? 1 : 0), w - 2 * k, 1, lit('#1e3e6e'));
+  if (DARK > .4) bdF(x + (b.dir < 0 ? w - 6 * k : 5 * k), y, Math.max(1, k / 2), Math.max(1, k / 2), emi('#ffd070'));
+}
+const GULL = [['t.....t', '.ww.ww.', '...w...'], ['.......', 'tww.wwt', '...w...']];
+BACKDROPS.sea = {
+  name: 'Морское побережье',
+  ground: (W, H) => bdSnap(H * .65), // the sea's horizon
+  draw(t, d, P0) {
+    const P = bdArgs(P0, this.ground), { W, H, ground } = P, G = seaGeo(W, H, ground), a0 = g.globalAlpha;
+    let [ox, oy] = bdOff(P, .96);
+    g.drawImage(seaFar(W, H, G), -BDM + ox, oy);
+    [ox, oy] = bdOff(P, .9); g.drawImage(seaWater(W, H, G), -BDM + ox, G.hz + oy);
+    if (weather === 'clear' || weather === 'clouds') { // the sun's or the moon's path on the water
+      const s = bdSun(d, W), [gx] = bdOff(P, 1), fr = Math.floor(t / 170), warm = bdWarm();
+      if (s.up && (s.day || DARK > .5)) {
+        const col = emi(!s.day ? '#dfe6ff' : warm > .3 ? '#ffc070' : '#fff4c8'), k = (!s.day ? .6 : 1) * (weather === 'clouds' ? .45 : 1);
+        for (let y = G.hz + S, r = 0; y < H + oy; y += S, r++) {
+          const f = (y - G.hz) / (H - G.hz), spread = (3 + f * 26) * S;
+          for (let j = 0; j < 2 + (f * 3 | 0); j++) { if (scRnd(r * 7 + j, fr + j * 3) < .4) continue;
+            g.globalAlpha = a0 * k * (1 - f * .35); bdF(s.x + gx + (scRnd(r, j + fr) * 2 - 1) * spread, y + oy, (1 + f * 4 * scRnd(j, r)) * S, 1, col); }
+        }
+        g.globalAlpha = a0;
+      }
+    }
+    const light = lit(bdDim(weather === 'rain' ? '#e4ecf4' : '#9cc8f0')), dark = lit(bdDim('#24508a')), span = W + 2 * BDM;
+    for (let r = 0; r < 26; r++) { // waves: crests come and go, drifting slowly
+      const f = (r + .5) / 26, y = Math.round(G.hz + 2 * S + (H - G.hz) * f ** 1.5), len = (2 + f * 7) * S, [wx, wy] = bdOff(P, .9 - .5 * f), th = f > .5 ? S : 1;
+      for (let j = 0; j < 5 + r; j++) { const on = Math.sin(t / (1400 + 300 * scRnd(r, j)) + scRnd(j, r) * 6.28); if (on < (weather === 'rain' ? .05 : .25)) continue;
+        const x = ((scRnd(r, j * 3) * span + t * .0015 * S * (1 + f)) % span) - BDM + wx, L = Math.max(S, Math.round(len * on / S) * S);
+        bdF(x, y + wy, L, th, light); bdF(x + S, y + wy + th, L, 1, dark); }
+    }
+    for (const b of SEA_BOATS) if (b.f < .1) seaBoat(b, t, W, H, G, P);
+    [ox, oy] = bdOff(P, .8);
+    g.drawImage(seaHarbour(W, H, G), -BDM + ox, oy);
+    g.drawImage(seaHead(W, H, G), G.head0 - BDM + ox, oy);
+    const surf = lit('#ffffff'), sf = Math.floor(t / 320);
+    for (let x = G.head0; x < W + BDM; x += 3 * S) if (G.headY(x) < G.hz + 3 * S && scRnd(x, sf) < .5) bdF(x + ox, G.hz + 4 * S + oy + (scRnd(sf, x) * 2 | 0) * S, 2 * S, 1, surf);
+    for (let x = 0; x < G.q1; x += 4 * S) if (scRnd(x, sf + 3) < .25) bdF(x + ox, G.yq + 7 * S + oy, 2 * S, 1, surf);
+    for (const b of SEA_BOATS) if (b.f >= .1) seaBoat(b, t, W, H, G, P);
+    if (DARK < .6 && weather !== 'rain') { const ink = { t: lit('#4a4a58'), w: lit('#f8f8f4') }, [gx, gy] = bdOff(P, .75);
+      for (let i = 0; i < 5; i++) { const x = W * (.17 + .1 * Math.sin(t / 9000 + i * 1.3)) + Math.cos(t / 4100 + i * 2.2) * 30 * S, y = G.hz - H * (.07 + .05 * Math.cos(t / 7000 + i * 2));
+        pxStamp(x + gx, y + gy, GULL[Math.floor(t / 220 + i * 1.7) % 2], ink, false, 1, true); } }
+    if (DARK > .3) { // harbour lamps, and the lighthouse beam sweeping round
+      const op = g.globalCompositeOperation, k = Math.min(1, (DARK - .3) / .5); g.globalCompositeOperation = 'lighter';
+      for (const [lx, ly] of G.lamps) glow(lx + ox, ly - S + oy, 9 * S, '#ffc870', .3 * k);
+      const [lx, ly] = [G.lamp[0] + ox, G.lamp[1] + oy], th = t * .0011, c = Math.cos(th), s = Math.sin(th), reach = W * .6 * c, spread = (3 + 14 * Math.abs(c)) * S;
+      const gr = g.createLinearGradient(lx, ly, lx + reach, ly); gr.addColorStop(0, `rgba(255,240,180,${(.32 * k * (.35 + .65 * Math.abs(c))).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,240,180,0)');
+      g.fillStyle = gr; g.beginPath(); g.moveTo(lx, ly - S); g.lineTo(lx + reach, ly - spread); g.lineTo(lx + reach, ly + spread); g.lineTo(lx, ly + S); g.closePath(); g.fill();
+      glow(lx, ly, 10 * S, '#ffe8a0', .35 * k); if (s > .85) glow(lx, ly, 34 * S * (s - .85) / .15 + 4 * S, '#fff4c8', .55 * k);
+      g.globalCompositeOperation = op;
+    }
+  },
+};
+
+// ---------- the wallpaper picker: click a monitor in a room, choose what lies beyond the islands ----------
+// Monitors as the themes draw them: [x0, x1, y, z0, z1] on a wall y = const.
+const MONITORS = {
+  bedroom: [[6.1, 7.3, .501, 17, 24], [7.7, 8.9, .501, 17, 24]],
+  server: [[6.82, 7.53, .501, 16, 22], [7.72, 8.43, .501, 16, 22], [8.62, 9.33, .501, 16, 22]],
+  library: [[8.15, 8.95, 2.201, 14.5, 18.5]], greenhouse: [[7.25, 8.05, .451, 15.5, 19.5]], arcade: [[7.7, 9.4, .501, 16, 23]],
+};
+const BD_ORDER = ['city', 'clouds', 'mountains', 'sea'];
+function bdList() {
+  const out = Object.keys(BACKDROPS).map(id => ({ id, name: BACKDROPS[id].name || id }));
+  const rank = id => { const i = BD_ORDER.indexOf(id); return i < 0 ? 99 : i; };
+  return out.sort((a, b) => rank(a.id) - rank(b.id));
+}
+const bdCurrent = () => BACKDROPS[BACKDROP] ? BACKDROP : 'city';
+function monitorPts(r, m) { const [x0, x1, y, z0, z1] = m; return [scAt(r, x0, y, z0), scAt(r, x1, y, z0), scAt(r, x1, y, z1), scAt(r, x0, y, z1)]; }
+function monitorAt(x, y) {
+  for (let i = rooms.length - 1; i >= 0; i--) {
+    const r = rooms[i], list = MONITORS[THEME_KEY.get(r.theme)]; if (!list || r.ox == null) continue;
+    for (const m of list) {
+      const pts = monitorPts(r, m), cx = pts.reduce((s, p) => s + p[0], 0) / 4, cy = pts.reduce((s, p) => s + p[1], 0) / 4;
+      if (inside(pts.map(([px, py]) => { const l = Math.hypot(px - cx, py - cy) || 1; return [px + (px - cx) / l * 1.5, py + (py - cy) / l * 1.5]; }), x, y)) return { room: r, m };
+    }
+  }
+  return null;
+}
+const PK = { open: false, el: null, fade: null, big: null, room: null, m: null, hover: -1, cells: [], prev: new Map(), prevAt: 0, sig: '', raf: 0 };
+const PKC = { w: 72, h: 45, gap: 6, pad: 5, head: 13, lab: 15 };
+function pickSize() { const n = bdList().length, rows = Math.ceil(n / 2); return [PKC.pad * 2 + PKC.w * 2 + PKC.gap, PKC.head + 4 + rows * (PKC.h + PKC.lab + 2) + 2]; }
+function pickInit() {
+  if (PK.el) return;
+  PK.el = document.createElement('canvas'); PK.el.id = 'wallpapers';
+  Object.assign(PK.el.style, { position: 'fixed', zIndex: 4, imageRendering: 'pixelated', display: 'none', cursor: 'pointer', filter: 'drop-shadow(0 6px 14px rgba(0,0,0,.35))' });
+  PK.fade = document.createElement('canvas');
+  Object.assign(PK.fade.style, { position: 'fixed', left: '0', top: '0', zIndex: 1, pointerEvents: 'none', imageRendering: 'pixelated', display: 'none' });
+  PK.big = document.createElement('canvas');
+  document.body.append(PK.fade, PK.el);
+  PK.el.addEventListener('click', e => { e.stopPropagation(); pickClickAt(e.clientX, e.clientY); });
+  PK.el.addEventListener('mousemove', e => pickHover(e.clientX, e.clientY));
+  PK.el.addEventListener('mouseleave', () => pickHover(-1e4, -1e4));
+}
+function pickPreview(id) { // the whole backdrop at the screen's size, shrunk in halves to a thumbnail
+  const W = cv.width, H = cv.height, c = PK.big; c.width = W; c.height = H;
+  const saved = g; g = c.getContext('2d');
+  try {
+    const b = BACKDROPS[id], d = now(), P = { px: 0, py: 0, W, H, ground: b.ground ? b.ground(W, H) : bdGround(H), hr: d.getHours() + d.getMinutes() / 60 };
+    drawSky(P); b.draw(performance.now(), d, P);
+  } catch (e) { console.warn('backdrop preview', id, e); } finally { g = saved; }
+  const aspect = PKC.w / PKC.h; let sw = W, sh = Math.round(W / aspect); if (sh > H) { sh = H; sw = Math.round(H * aspect); }
+  let src = c, sx = Math.round((W - sw) / 2), sy = H - sh, w = sw, h = sh;
+  while (w > PKC.w * 2) { const t = document.createElement('canvas'); t.width = Math.ceil(w / 2); t.height = Math.ceil(h / 2);
+    const x = t.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(src, sx, sy, w, h, 0, 0, t.width, t.height); src = t; sx = sy = 0; w = t.width; h = t.height; }
+  const out = document.createElement('canvas'); out.width = PKC.w; out.height = PKC.h;
+  const x = out.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(src, sx, sy, w, h, 0, 0, PKC.w, PKC.h);
+  return out;
+}
+function pickRender() {
+  const list = bdList(), [W, H] = pickSize(), cur = bdCurrent(), el = PK.el;
+  if (el.width !== W || el.height !== H) { el.width = W; el.height = H; }
+  const sig = bdEnv() + list.map(b => b.id).join();
+  if (sig !== PK.sig || performance.now() - PK.prevAt > 4000) { PK.sig = sig; PK.prevAt = performance.now(); PK.prev = new Map(list.map(b => [b.id, pickPreview(b.id)])); }
+  const saved = g; g = el.getContext('2d');
+  try {
+    g.clearRect(0, 0, W, H);
+    bdF(0, 0, W, H, OUT); bdF(1, 1, W - 2, H - 2, '#f4f0e8'); bdF(1, H - 3, W - 2, 2, '#d8d0c0');
+    bdF(1, 1, W - 2, PKC.head - 2, '#7a6ad0'); bdF(1, 1, W - 2, 1, '#a090f0'); bdF(1, PKC.head - 1, W - 2, 1, OUT);
+    pfDraw('ОБОИ', 5, 4, '#ffffff', 1);
+    const cx = W - 11; bdF(cx, 3, 8, 7, OUT); bdF(cx + 1, 4, 6, 5, PK.hover === -2 ? '#ff7a6a' : '#e05a4a');
+    for (let i = 0; i < 3; i++) { bdF(cx + 2 + i, 5 + i, 1, 1, '#fff'); bdF(cx + 4 - i, 5 + i, 1, 1, '#fff'); }
+    PK.cells = [{ id: null, x: cx, y: 3, w: 8, h: 7 }];
+    list.forEach((b, i) => {
+      const x = PKC.pad + (i % 2) * (PKC.w + PKC.gap), y = PKC.head + 4 + Math.floor(i / 2) * (PKC.h + PKC.lab + 2), on = b.id === cur, hov = PK.hover === i;
+      PK.cells.push({ id: b.id, x: x - 2, y: y - 2, w: PKC.w + 4, h: PKC.h + PKC.lab });
+      if (on || hov) bdF(x - 2, y - 2, PKC.w + 4, PKC.h + PKC.lab, on ? '#ffe2a0' : '#e4ddf6');
+      bdF(x - 1, y - 1, PKC.w + 2, PKC.h + 2, on ? '#e0a020' : hov ? '#8a7ae0' : OUT);
+      const p = PK.prev.get(b.id); if (p) g.drawImage(p, x, y); else bdF(x, y, PKC.w, PKC.h, '#555');
+      const words = pfFit(b.name, 40).split(' '), lines = [];
+      for (const wd of words) { const l = lines.length ? lines[lines.length - 1] + ' ' + wd : wd; if (lines.length && pfWidth(l) <= PKC.w) lines[lines.length - 1] = l; else lines.push(wd); }
+      lines.slice(0, 2).forEach((l, j) => pfDraw(pfFit(l, 18), x + Math.max(0, Math.round((PKC.w - pfWidth(l)) / 2)), y + PKC.h + 2 + j * 6, on ? '#7a4a10' : '#3a3048', 1));
+      if (on) { bdF(x + 2, y + 2, 7, 7, OUT); bdF(x + 3, y + 3, 5, 5, '#ffd040'); bdF(x + 4, y + 5, 1, 1, OUT); bdF(x + 5, y + 6, 1, 1, OUT); bdF(x + 6, y + 4, 1, 2, OUT); }
+    });
+  } finally { g = saved; }
+}
+function pickPlace() { // above the monitor, or below it when there is no room; kept on screen
+  if (!PK.room) return;
+  const pts = monitorPts(PK.room, PK.m), k = PXD / DPR, xs = pts.map(p => p[0] * k), ys = pts.map(p => p[1] * k);
+  const sc = Math.max(2, Math.round(VIEW.base * 1.5 / DPR * 2) / 2), w = PK.el.width * sc, h = PK.el.height * sc;
+  const mx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  let top = Math.min(...ys) - h - 8; if (top < 8) top = Math.max(...ys) + 8;
+  const left = Math.max(8, Math.min(innerWidth - w - 8, mx - w / 2)); top = Math.max(8, Math.min(innerHeight - h - 8, top));
+  Object.assign(PK.el.style, { left: left + 'px', top: top + 'px', width: w + 'px', height: h + 'px' });
+}
+function pickTick() { if (!PK.open) return; pickPlace(); if (performance.now() - PK.prevAt > 4000) pickRender(); PK.raf = requestAnimationFrame(pickTick); }
+function openPicker(hit) {
+  pickInit(); PK.open = true; PK.room = hit.room; PK.m = hit.m; PK.hover = -1; PK.sig = '';
+  pickRender(); PK.el.style.display = 'block'; pickPlace();
+  cancelAnimationFrame(PK.raf); PK.raf = requestAnimationFrame(pickTick);
+}
+function closePicker() { if (!PK.open) return; PK.open = false; PK.room = null; PK.el.style.display = 'none'; cancelAnimationFrame(PK.raf); }
+function pickCell(x, y) { // page CSS pixels -> the cell under them: -2 the close box, -1 nothing
+  const r = PK.el.getBoundingClientRect(), ax = (x - r.left) / r.width * PK.el.width, ay = (y - r.top) / r.height * PK.el.height;
+  const i = PK.cells.findIndex(c => ax >= c.x && ax < c.x + c.w && ay >= c.y && ay < c.y + c.h);
+  return i < 0 ? -1 : i === 0 ? -2 : i - 1;
+}
+function pickHover(x, y) { if (!PK.open) return; const i = pickCell(x, y); if (i !== PK.hover) { PK.hover = i; pickRender(); } }
+function pickClickAt(x, y) {
+  const i = pickCell(x, y);
+  if (i === -2) return closePicker();
+  const b = bdList()[i]; if (!b || b.id === bdCurrent()) return;
+  // a short cross-fade: the old picture over the new one, fading out
+  const f = PK.fade; f.width = cv.width; f.height = cv.height; f.getContext('2d').drawImage(cv, 0, 0);
+  Object.assign(f.style, { width: cv.style.width, height: cv.style.height, transition: 'none', opacity: '1', display: 'block' });
+  void f.offsetWidth; f.style.transition = 'opacity .5s ease'; f.style.opacity = '0';
+  clearTimeout(PK.fadeT); PK.fadeT = setTimeout(() => { f.style.display = 'none'; }, 560);
+  setBackdrop(b.id);
+  if (!active) frame(performance.now()); else wake();
+  pickRender();
+}
+// Before the camera: a click on a monitor opens the picker; any click elsewhere while it is open just closes it.
+addEventListener('click', e => {
+  if (PK.el && e.target === PK.el) return;
+  if (PK.open) {
+    const hit = e.target === cv && mouse ? monitorAt(mouse[0], mouse[1]) : null, same = hit && hit.room === PK.room && hit.m === PK.m;
+    closePicker(); if (e.target !== cv) return;
+    e.stopImmediatePropagation(); if (hit && !same) openPicker(hit); return;
+  }
+  if (e.target !== cv || !mouse || SCENE === 'extra' || (hovered && hovered.agent)) return;
+  const hit = monitorAt(mouse[0], mouse[1]); if (!hit) return;
+  e.stopImmediatePropagation(); openPicker(hit);
+}, true);
+addEventListener('keydown', e => { if (PK.open && e.key === 'Escape') { closePicker(); e.stopImmediatePropagation(); } }, true);
+cv.addEventListener('mousemove', () => { cv.style.cursor = mouse && SCENE !== 'extra' && monitorAt(mouse[0], mouse[1]) ? 'pointer' : ''; });
+function bdInstall() {
+  const R0 = window.room, click0 = R0.click, pointer0 = R0.pointer;
+  // the app forwards clicks and the pointer in page CSS pixels: the picker takes its share first
+  R0.click = (x, y) => { if (PK.open && document.elementFromPoint(x, y) === PK.el) return pickClickAt(x, y); return click0(x, y); };
+  R0.pointer = (x, y) => { pointer0(x, y); if (PK.open) pickHover(x, y); };
+  R0.backdropList = () => bdList(); // [{id, name}] in the picker's order, for the app's settings
+  R0.closeWallpapers = closePicker;
+}
+
 // ---------- start ----------
 window.room = {
   setAgents: list => { demo = false; ctl.hidden = true; setAgents(list); },
@@ -3480,6 +4087,7 @@ if (PV && !PV.house) {
 ctl.hidden = !(demo || PV) || PV?.controls === false;
 layout();
 addEventListener('resize', layout);
+bdInstall();
 wake();
 </script>
 </body>
