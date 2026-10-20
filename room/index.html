@@ -1866,7 +1866,8 @@ function stepSprites(dt) {
     if (eggFrozen(sp)) { sp.moving = false; continue; }
     if (sp.exit && !sp.path.length) { // at the edge: off it goes
       const saved = R; R = sp.room; const [X, Y] = iso(sp.x, sp.y, sp.z); R = saved;
-      sp.fall = { x: X, y: Y, t0: performance.now(), seed: sp.seed }; sp.room = null; sp.state = 'fall'; sp.moving = false; continue;
+      // kept in world pixels, so a zoom or a scroll moves the jumper with the house instead of leaving it fixed on the screen
+      sp.fall = { x: X - sp.room.ox + sp.room.wx, y: Y - sp.room.oy + sp.room.wy, t0: performance.now(), seed: sp.seed }; sp.room = null; sp.state = 'fall'; sp.moving = false; continue;
     }
     const n = sp.path[0];
     sp.waving = false;
@@ -2372,14 +2373,18 @@ function lampGlow() {
 }
 // a hop off the edge, a short drop, then a parachute that sways down past the bottom of the screen
 function drawFallers(t) {
+  const r0 = rooms[0]; if (!r0) return;
+  const view = [r0.ox - r0.wx, r0.oy - r0.wy]; // world pixels to canvas pixels, the same for every room
+  const lift = Math.round((INSETS.top - INSETS.bottom) / 2 * DPR / VIEW.base), H1 = Math.ceil(innerHeight * DPR / VIEW.base);
+  const gone = VIEW.home[1] + H1 / 2 - lift + 60 * S; // the world y of 60 px below the screen at zoom 1
   for (const sp of [...sprites.values()]) {
     const f = sp.fall; if (!f) continue;
     const age = (t - f.t0) / 1000;
-    let x = f.x, y = f.y, open = 0;
+    let x = f.x + view[0], y = f.y + view[1], open = 0;
     if (age < .35) y -= Math.sin(age / .35 * Math.PI) * 10 * S;                       // hop
     else if (age < .75) y += ((age - .35) / .4) ** 2 * 14 * S;                         // free fall
     else { open = Math.min(1, (age - .75) / .3); y += 14 * S + (age - .75) * 16 * S; x += Math.sin((age - .75) * 1.6 + f.seed * 6) * 8 * S; }
-    if (y > cv.height + 60 * S) { sprites.delete(sp.id); continue; }
+    if (y - view[1] > gone) { sprites.delete(sp.id); continue; } // past the bottom of the whole-house view, zoomed in or not
     if (open > 0) {
       const w = Math.round((10 + 12 * open) * S), h = Math.round(9 * S * open), cx = Math.round(x), top = Math.round(y - 30 * S);
       const [c1, c2] = sp.vendor === 'codex' ? ['#5aa0f0', '#ffffff'] : ['#e86a4a', '#fff4e0'];
