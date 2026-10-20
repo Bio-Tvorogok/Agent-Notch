@@ -695,6 +695,7 @@ const BODY = ['..BBBBBBBB..', '..BEBBBBEB..', '..BBBBBBBB..', '..BBBBBBBB..', '.
 const MINI = ['.BBBBBB.', '.BEBBEB.', '.BBBBBB.', '.BBBBBB.'];
 const VENDOR = { claude: ['#d97757', '#a8533a'], codex: ['#eef0f6', '#9aa2b8'], home: ['#e8b880', '#b0844e'] };
 function drawClawd(X, Y, sp, t) {
+  if (sp.kind === 'cat') return drawCat(X, Y, sp, t);
   const small = sp.small, rows = small ? MINI : BODY, w = rows[0].length, C = S; // one sprite cell is S pixels
   if (drowsy(sp)) t *= .5; // a nearly full context makes it slow and sleepy
   const [body, dark] = VENDOR[sp.vendor] || VENDOR.claude;
@@ -732,7 +733,7 @@ function drawClawd(X, Y, sp, t) {
     g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, bw + 2, bw + 2); g.fillRect(bx + 3 * S - 1, by + bw, 2 * S + 2, 2 * S + 1);
     g.fillStyle = '#ffffff'; g.fillRect(bx, by, bw, bw); g.fillRect(bx + 3 * S, by + bw, 2 * S, 2 * S);
     g.fillStyle = '#f0a000'; g.fillRect(bx + 4 * S, by + 2 * S, S, 4 * S); g.fillRect(bx + 4 * S, by + 7 * S, S, S);
-  } else if (st === 'error') {
+  } else if (st === 'error' && !sp.fire) {
     for (let i = 0; i < 3; i++) { const k = ((t / 900) + i / 3) % 1;
       g.fillStyle = i === 1 ? `rgba(240,90,60,${(1 - k) * .9})` : `rgba(120,120,130,${(1 - k) * .8})`; g.fillRect(Math.round(X) - 3 * S + i * 3 * S, Math.round(top - 2 * S - k * 10 * S), 2 * S, 2 * S); }
   } else if (sleeping && st !== 'shower') {
@@ -740,6 +741,7 @@ function drawClawd(X, Y, sp, t) {
     const zx = Math.round(X + 5 * S + k * 3 * S), zy = Math.round(top - 2 * S - k * 8 * S);
     g.fillRect(zx, zy, 3 * S, S); g.fillRect(zx + S, zy + S, S, S); g.fillRect(zx, zy + 2 * S, 3 * S, S);
   }
+  drawProps(X, Y, sp, t, left, top, w * C, armRow);
   sp.hit = [left - 2 * S, top - 2 * S, (w + 4) * C, (rows.length + legH + 4) * C];
 }
 
@@ -1054,6 +1056,7 @@ function setAgents(list) {
       }
     }
     if (a.state !== 'done') sp.errand = null;
+    if (sceneTrack(sp, a, prev)) continue;
     const [target, cat] = sp.errand ? [sp.errand.room, sp.errand.cat] : placeFor(sp);
     if (!sp.goal || sp.goal.cat !== cat || sp.goal.room !== target) setGoal(sp, pickSpot(sp, target, cat));
   }
@@ -1061,6 +1064,7 @@ function setAgents(list) {
   for (const sp of [...sprites.values()]) if (sp.kind === 'agent' && !seen.has(sp.id) && !sp.leaving) {
     sp.leaving = true; sp.errand = null;
     if (sp.alpha < .5 || !sp.room) { sp.fade = 0; continue; }
+    if (sceneLeave(sp)) continue;
     sp.exit = true; sp.state = 'idle'; sp.goal = null;
     routeTo(sp, sp.room, [sp.room.NX * .55, sp.room.NY - .1, 0]);
   }
@@ -1202,6 +1206,488 @@ function glow(x, y, rad, color, k) {
   const c = rgb(color), gr = g.createRadialGradient(x, y, 0, x, y, rad);
   gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${k})`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
   g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+}
+
+// ---------- scenes: props, helpers, fire, fireworks, daily routines, the cat, life in the sky ----------
+// All of it hangs off a few hooks: updateScenes() and drawSceneOverlays() in frame(), sceneTrack() and sceneLeave() in setAgents(),
+// drawCat() and drawProps() in drawClawd(). A sprite keeps its scene state on itself: sp.hold is a short errand that pauses
+// the agent's normal goal (posting mail, putting out a fire, celebrating, handing over a result), sp.fire, sp.scene (residents).
+// ?season=autumn|winter|spring|summer and ?sky=busy help to look at the seasonal and sky scenes.
+const SC = { init: false, puffs: [], fireworks: [], papers: [], mailFlag: -1e9 };
+const scClamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const scPick = list => list[Math.floor(Math.random() * list.length)];
+const THEME_KEY = new Map(Object.entries(THEMES).map(([k, v]) => [v, k]));
+function scAt(room, x, y, z) { const s = R; R = room; const p = iso(x, y, z); R = s; return p; }
+function scPos(sp) {
+  if (sp.onBridge) { const q = bridgePoint(sp.onBridge.pair, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u); return q && [q[0], q[1]]; }
+  return sp.room ? scAt(sp.room, sp.x, sp.y, sp.z) : null;
+}
+const scArrived = sp => !sp.path.length && !sp.onBridge && !!sp.goal && sp.room === sp.goal.room;
+function scPuff(sp, col) { if (sp.room && !sp.onBridge) SC.puffs.push({ room: sp.room, x: sp.x, y: sp.y, z: sp.z, t0: performance.now(), col: col || '#ffffff', seed: Math.random() * 6 }); }
+
+// a little sprite from a row of characters: one cell is k pixels, with the same 1px dark outline as everything else
+function pxStamp(x0, y0, rows, pal, flip, k = 1, noLine) {
+  x0 = Math.round(x0); y0 = Math.round(y0); const w = rows[0].length;
+  const X = c => x0 + (flip ? w - 1 - c : c) * k;
+  if (!noLine) { g.fillStyle = lit(OUT); rows.forEach((row, r) => { for (let c = 0; c < w; c++) if (row[c] !== '.') g.fillRect(X(c) - 1, y0 + r * k - 1, k + 2, k + 2); }); }
+  rows.forEach((row, r) => { for (let c = 0; c < w; c++) { const ch = row[c]; if (ch !== '.' && pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(X(c), y0 + r * k, k, k); } } });
+}
+const PROP = {
+  flask: ['..ggg..', '..gwg..', '..gwg..', '.gwwwg.', 'gwwwwwg', 'gLLLLLg', 'gLlLLLg', '.ggggg.'],
+  hammerUp: ['...HHH', '...HhH', '..b...', '.b....', 'b.....'],
+  hammerDown: ['....HH', 'bbbbhH', '....HH'],
+  lens: ['DDD', 'DlD', 'DDD'],
+  book: ['ppppbpppp', 'pllpbpllp', 'ppppbpppp', 'pllpbplpp', 'ccccccccc'],
+  page: ['p', 'p', 'p', 'p'],
+  letter: ['eeeeeeee', 'edeeeede', 'eedrrdee', 'eeeddeee', 'eeeeeeee'],
+  mug: ['kkk.', 'mmmh', 'mmmh', 'mmm.'],
+  can: ['..hhh...', '.h...h..', 'cccccc.s', 'cCcccss.', 'cccccc..', 'cccccc..'],
+  ext: ['..kk.', '.rrrk', 'rRrr.', 'rRrr.', 'rRrr.', 'wwww.', 'rrrr.', 'rrrr.'],
+  paper: ['pppp', 'pllp', 'pppp', 'pllp', 'pppp'],
+  fire: [['...r...', '..rr...', '..ror.r', '.rooor.', '.royyor', 'royyyor', '.ryyyr.'],
+         ['....r..', '...rr..', 'r.ror..', '.roor..', 'rooyyor', 'royyyor', '.ryyyr.']],
+  fireSmall: [['..r..', '.ror.', 'royor', '.ryr.'], ['...r.', '.ror.', 'royor', '.ryr.']],
+};
+// the prop an agent holds while it works, from its activity line ("Bash · pnpm test", "Edit · file.swift" ...)
+function propFor(act) {
+  const a = String(act || '').toLowerCase();
+  if (/^bash/.test(a) && /\b(test|tests|jest|pytest|vitest|mocha|rspec|xctest|phpunit|unittest)\b/.test(a)) return 'flask';
+  if (/^(edit|write|multiedit|notebookedit)\b/.test(a)) return 'hammer';
+  if (/^(websearch|webfetch|web)/.test(a)) return 'binoculars';
+  if (/^(read|grep|glob)\b/.test(a)) return 'book';
+  return null;
+}
+
+// ----- held props, drawn over the Clawd that holds them -----
+function drawProps(X, Y, sp, t, left, top, bw, armRow) {
+  const C = S, cy = top + armRow * C, rx = left + bw, h = sp.hold, a0 = g.globalAlpha;
+  g.globalAlpha = sp.alpha;
+  if (sp.fire) drawFire(X, top, sp, t);
+  const book = () => {
+    const bx = Math.round(X) - 4, by = top + (sp.small ? 2 : 3) * C;
+    pxStamp(bx, by, PROP.book, { p: lit('#f8f4e8'), l: lit('#a8a0b0'), b: lit('#c8b8a0'), c: lit('#b04848') });
+    if ((t / 2600 + sp.seed) % 1 < .12) pxStamp(bx + 3 + Math.round(((t / 2600 + sp.seed) % 1) / .12 * 2), by - 3, PROP.page, { p: lit('#ffffff') });
+  };
+  if (h && h.kind === 'mail' && h.stage === 'go') pxStamp(rx - 4, cy - 5, PROP.letter, { e: lit('#f8f4e8'), d: lit('#c0b0a0'), r: lit('#e04040') });
+  else if (h && h.kind === 'handover' && h.stage === 'walk') pxStamp(rx - 3, cy - 4, PROP.paper, { p: lit('#ffffff'), l: lit('#8a90a8') });
+  else if (h && h.kind === 'ext') {
+    const flip = h.dir < 0;
+    pxStamp(flip ? left - 1 : rx - 4, cy - 3, PROP.ext, { k: lit('#2a2a30'), r: lit('#e03a30'), R: lit('#ff8a70'), w: lit('#f4f0e8') }, flip);
+  } else if (sp.kind === 'agent' && sp.agent && sp.state === 'working' && !sp.moving && !sp.path.length) {
+    const what = propFor(sp.agent.activity);
+    if (what === 'flask') {
+      pxStamp(rx - 4, cy - 6, PROP.flask, { g: lit('#e0eef4'), w: lit('#b8dce8'), L: emi('#5ad070', .75 + .25 * AMB[0]), l: emi('#b8ffc0') });
+      for (let i = 0; i < 3; i++) { const k = (t / 800 + i / 3 + sp.seed) % 1;
+        g.fillStyle = `rgba(190,255,200,${(1 - k) * .9})`; g.fillRect(Math.round(rx - 1 + Math.sin(t / 220 + i * 2)), Math.round(cy - 8 - k * 9), 1 + (i === 1 ? 1 : 0), 1 + (i === 1 ? 1 : 0)); }
+    } else if (what === 'hammer') {
+      const down = Math.floor(t / 190 + sp.seed * 3) % 2;
+      if (!down) pxStamp(rx - 2, cy - 5, PROP.hammerUp, { H: lit('#8a94a4'), h: lit('#c8d0dc'), b: lit('#a0663a') });
+      else {
+        pxStamp(rx - 2, cy - 1, PROP.hammerDown, { H: lit('#8a94a4'), h: lit('#c8d0dc'), b: lit('#a0663a') });
+        const n = Math.floor(t / 190);
+        for (let i = 0; i < 4; i++) { const r = ((n * 7 + i * 13) % 9) - 4, q = ((n * 5 + i * 11) % 7) - 5;
+          g.fillStyle = emi(i % 2 ? '#fff4a0' : '#ffb030'); g.fillRect(rx + 5 + r, cy + q, 1, 1); }
+      }
+    } else if (what === 'binoculars') {
+      const eyes = sp.small ? [2, 5] : [3, 8];
+      g.fillStyle = lit('#2a2a34'); g.fillRect(left + eyes[0] * C + 2, top + C, (eyes[1] - eyes[0]) * C - 2, 1);
+      for (const c of eyes) pxStamp(left + c * C - 1, top + C - 1, PROP.lens, { D: lit('#3a3a48'), l: (t / 1700 + c) % 1 < .15 ? emi('#ffffff') : emi('#7ab8f0', .6 + .4 * AMB[0]) });
+    } else if (what === 'book') book();
+  } else if (sp.kind === 'home' && sp.scene) {
+    const here = scArrived(sp);
+    if (sp.scene === 'coffee') {
+      pxStamp(rx - 3, cy - 3, PROP.mug, { k: lit('#5a3420'), m: lit('#f08060'), h: lit('#d06848') });
+      for (let i = 0; i < 2; i++) { const k = (t / 1100 + i / 2) % 1; g.fillStyle = `rgba(255,255,255,${(1 - k) * .7})`; g.fillRect(Math.round(rx - 2 + i + Math.sin(t / 300 + i * 3)), Math.round(cy - 5 - k * 6), 1, 1); }
+    } else if (sp.scene === 'water') {
+      const pour = here && sp.goal.cat === 'water';
+      pxStamp(rx - 3, cy - 4 + (pour ? 1 : 0), PROP.can, { h: lit('#3a7050'), c: lit('#58a070'), C: lit('#8ad0a0'), s: lit('#4a8a60') });
+      if (pour) for (let i = 0; i < 3; i++) { const k = (t / 600 + i / 3) % 1; g.fillStyle = emi('#7ac8ff', .6 + .4 * AMB[0]); g.fillRect(Math.round(rx + 5 + k * 2), Math.round(cy - 1 + k * 9), 1, 2); }
+    } else if (sp.scene === 'read' && here && sp.goal.cat === 'read') book();
+  }
+  g.globalAlpha = a0;
+}
+function drawFire(X, top, sp, t) {
+  const small = !!sp.fire.foamed && t - sp.fire.foamed < 1500, k = sp.small ? 1 : 2;
+  const rows = (small ? PROP.fireSmall : PROP.fire)[Math.floor(t / 130 + sp.seed * 5) % 2];
+  const w = rows[0].length * k, x0 = Math.round(X - w / 2 + (k === 2 ? 1 : 0)), y0 = top - rows.length * k + k;
+  g.save(); g.globalCompositeOperation = 'lighter'; glow(X, y0 + rows.length * k / 2, 16 * S, '#ff7a30', .22 + .08 * Math.sin(t / 90)); g.restore();
+  pxStamp(x0, y0, rows, { r: emi('#e8402a'), o: emi('#ff9a30'), y: emi('#ffe878') }, false, k);
+  for (let i = 0; i < 3; i++) { const e = (t / 700 + i / 3 + sp.seed) % 1; g.fillStyle = `rgba(255,${160 + i * 30},60,${1 - e})`; g.fillRect(Math.round(X - 3 + i * 3 + Math.sin(t / 160 + i) * 2), Math.round(y0 - 2 - e * 12), 1, 1); }
+}
+
+// ----- the house cat: a sprite of its own that walks the same stairs and bridges, never hoverable -----
+const CAT = {
+  walk1: ['........b.b.', 'b.......bbbb', 'b.......bebn', '.bbsbsbsbbb.', '..bwwwwwbb..', '..b.b..b.b..'],
+  walk2: ['........b.b.', 'b.......bbbb', 'b.......bebn', '.bbsbsbsbbb.', '..bwwwwwbb..', '...b.b..b.b.'],
+  sit1: ['.....b.b.', '.....bbbb', '.....bebn', '....bbbb.', '...bsbwb.', '...bbbwb.', 'bb.bsbwb.', '.bbbbbbb.'],
+  sit2: ['.....b.b.', '.....bbbb', '.....bebn', '....bbbb.', '...bsbwb.', 'b..bbbwb.', '.b.bsbwb.', '.bbbbbbb.'],
+  nap: ['......b.b.', '..bbbbbbbb', '.bsbsbbbcb', 'bbbbbbbbbb', 'sssbbbbbb.'],
+};
+const CAT_DESK = { bedroom: 14, server: 14, library: 13.5, greenhouse: 14.5, arcade: 14 };
+function drawCat(X, Y, sp, t) {
+  const a0 = g.globalAlpha; g.globalAlpha *= sp.alpha;
+  const n = sp.path[0];
+  if (sp.onBridge) sp.face = sp.onBridge.forward ? 1 : -1;
+  else if (n && n.p) { const dx = (n.p[0] - sp.x) - (n.p[1] - sp.y); if (Math.abs(dx) > .05) sp.face = Math.sign(dx); }
+  const pose = sp.moving ? 'walk' : (sp.pose || 'sit');
+  const rows = pose === 'walk' ? (Math.floor(t / 120) % 2 ? CAT.walk2 : CAT.walk1) : pose === 'nap' ? CAT.nap : (Math.floor(t / 700 + sp.seed * 7) % 6 === 0 ? CAT.sit2 : CAT.sit1);
+  const w = rows[0].length, x0 = Math.round(X - w / 2), y0 = Math.round(Y) - rows.length;
+  g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x0 + 1, Math.round(Y), w - 2, 1);
+  pxStamp(x0, y0, rows, { b: lit('#e8a052'), s: lit('#b8692c'), w: lit('#f8e4c8'), e: DARK > .5 ? emi('#c8f060') : lit('#2a3420'), n: lit('#f08a8a'), c: lit('#7a4a24') }, sp.face < 0);
+  if (pose === 'nap') { const k = (t / 1800 + sp.seed) % 1; g.fillStyle = `rgba(255,255,255,${(1 - k) * .8})`;
+    const zx = Math.round(X + (sp.face < 0 ? -6 : 4) + k * 3), zy = Math.round(y0 - 2 - k * 7); g.fillRect(zx, zy, 3, 1); g.fillRect(zx + 1, zy + 1, 1, 1); g.fillRect(zx, zy + 2, 3, 1); }
+  g.globalAlpha = a0;
+}
+function catNaps() {
+  const out = [];
+  for (const r of rooms) {
+    for (const p of r.theme.spots.sleep || []) out.push([r, p]);
+    for (const wd of r.theme.windows) if (wd.wall === 'R' && !wd.vent) out.push([r, [(wd.a + wd.b) / 2, .22, wd.z0 - 1.5]]);
+  }
+  return out;
+}
+function catGo(c, room, p, want) {
+  setGoal(c, { room, cat: 'cat', i: -1, p });
+  c.want = want; c.pose = 'sit';
+  if (p[2] > 3 && c.path.length) c.path.splice(c.path.length - 1, 0, { r: room, p: [scClamp(p[0] + .2, .4, room.NX - .4), scClamp(p[1] + 1.0, .4, room.NY - .4), 0] }); // jump up from the floor
+}
+function catThink(c, t) {
+  if (c.deskOf) { const a = sprites.get(c.deskOf); if (!a || a.state !== 'working' || a.path.length || a.goal?.cat !== 'work') { c.deskOf = null; c.next = Math.min(c.next, t); } }
+  if (!c.path.length && c.want) c.pose = c.want;
+  if (c.path.length || t < c.next || c.onBridge) return;
+  const roll = Math.random();
+  const desks = [...sprites.values()].filter(a => a.kind === 'agent' && a.state === 'working' && a.room && !a.path.length && a.goal?.cat === 'work' && a.z > 3
+    && CAT_DESK[THEME_KEY.get(a.room.theme)] && !(THEME_KEY.get(a.room.theme) === 'library' && a.goal.i === 1)
+    && ![...sprites.values()].some(o => o.kind === 'cat' && o !== c && o.deskOf === a.id));
+  if (desks.length && roll < .3) {
+    const a = scPick(desks); catGo(c, a.room, [a.x + .15, a.y - 1.15, CAT_DESK[THEME_KEY.get(a.room.theme)] + .6], 'sit'); // on the keyboard
+    c.deskOf = a.id; c.next = t + 12000 + Math.random() * 9000;
+  } else if (roll < .75) {
+    const naps = catNaps(); if (!naps.length) { c.next = t + 4000; return; }
+    const [room, p] = scPick(naps); catGo(c, room, p.slice(), 'nap'); c.deskOf = null; c.next = t + 18000 + Math.random() * 22000;
+  } else {
+    const room = scPick(rooms), p = scPick([...(room.theme.spots.pace || []), room.theme.hub]).slice();
+    p[0] = scClamp(p[0] + (Math.random() - .5), .4, room.NX - .4); p[2] = 0;
+    catGo(c, room, p, 'sit'); c.deskOf = null; c.next = t + 6000 + Math.random() * 7000;
+  }
+}
+
+// ----- residents (kind 'home') live by the clock: coffee in the morning, plants by day, a book in the evening, bed at night -----
+const PLANTS = { bedroom: [[9.0, 3.2, 0]], greenhouse: [[1.8, 2.0, 0], [4.6, 6.6, 0], [5.3, 1.6, 0]] };
+const ROOF_PLANTS = [[2.2, 6.8, 0], [1.4, 1.8, 0], [9.0, 2.2, 0]];
+function plantSpots(r) {
+  const out = (PLANTS[THEME_KEY.get(r.theme)] || []).map(p => [r, p]);
+  if (!roomAt(r.tower, r.floor + 1)) out.push([r, [1.4, 5.2, 0]]); // the potted plant in the corner, where no stairs stand
+  if (shared('roof')) out.push([shared('roof'), scPick(ROOF_PLANTS)]);
+  return out;
+}
+function residentRoutine(h, t, d) {
+  if (h.next !== Infinity) { h.next = Infinity; h.rNext = t + 1200; } // the routine replaces updateResidents' random visits
+  if (h.fade < 1 || h.hold || h.errand || h.path.length || t < (h.rNext || 0)) return;
+  const hr = d.getHours() + d.getMinutes() / 60, r = h.homeRoom, roll = Math.random(), K = shared('kitchen'), roof = shared('roof');
+  const go = (goal, scene, state, ms) => { setGoal(h, goal); h.scene = scene; h.state = 'idle'; h.arriveState = state; h.rNext = t + ms; };
+  const errand = (room, cat, ms) => { h.errand = { room, cat, until: t + ms }; };
+  if (hr >= 23 || hr < 6) {
+    if (h.goal && h.goal.cat === 'sleep' && h.goal.room === r) { h.state = 'idle-sleep'; h.rNext = t + 20000; }
+    else go(pickSpot(h, r, 'sleep'), null, 'idle-sleep', 20000);
+  } else if (hr < 10) {
+    if (K && roll < .6) { errand(K, 'coffee', 9000); go(pickSpot(h, K, 'coffee'), 'coffee', 'idle', 3000); }
+    else go(pickSpot(h, r, roll < .8 ? 'read' : 'pace'), roll < .8 ? 'read' : h.scene, 'idle', 12000);
+  } else if (hr < 19) {
+    const plants = plantSpots(r);
+    if (roll < .45 && plants.length) { const [room, p] = scPick(plants); if (room !== r) errand(room, 'water', 9000); go({ room, cat: 'water', i: -1, p }, 'water', 'idle', 9000); }
+    else if (roll < .55 && shared('bath')) { errand(shared('bath'), 'wash', 5000); go(pickSpot(h, shared('bath'), 'wash'), null, 'idle', 3000); }
+    else { const cat = scPick(['web', 'task', 'pace', 'read']); go(pickSpot(h, r, cat), cat === 'read' ? 'read' : null, 'idle', 9000 + Math.random() * 6000); }
+  } else {
+    if (roll < .7) go(pickSpot(h, r, 'read'), 'read', 'idle', 15000);
+    else if (roof && roll < .85) { errand(roof, 'look', 8000); go(pickSpot(h, roof, 'look'), null, 'idle', 3000); }
+    else go(pickSpot(h, r, 'pace'), null, 'idle', 8000);
+  }
+}
+
+// ----- holds: short errands that pause an agent's normal goal -----
+function releaseHold(sp, quiet) {
+  const h = sp.hold; if (!h) return; sp.hold = null;
+  if (h.z0 != null && !sp.path.length) sp.z = h.z0;
+  if (quiet) return;
+  if (sp.kind === 'agent' && sp.agent) {
+    sp.state = sp.agent.state;
+    if (h.errand && sp.agent.state === 'done') { sp.errand = h.errand; sp.errand.until = Math.max(sp.errand.until, performance.now() + 8000); }
+    const [room, cat] = sp.errand ? [sp.errand.room, sp.errand.cat] : placeFor(sp);
+    setGoal(sp, pickSpot(sp, room, cat));
+  } else if (sp.kind === 'home') { sp.state = 'idle'; sp.rNext = 0; if (h.errand) sp.errand = h.errand; }
+}
+const MAIL_SPOT = [9.4, 4.3, 0];
+function startMail(sp) {
+  sp.hold = { kind: 'mail', stage: 'go', t0: performance.now() };
+  setGoal(sp, { room: shared('kitchen'), cat: 'mail', i: -1, p: MAIL_SPOT });
+}
+function startCelebrate(sp) {
+  const t = performance.now();
+  sp.hold = { kind: 'celebrate', t0: t, start: t, errand: sp.errand, state: 'fall', z0: null }; // 'fall' draws the arms up
+  sp.errand = null; sp.state = 'fall';
+  SC.fireworks.push({ room: sp.room || sp.homeRoom, t0: t, seed: Math.floor(Math.random() * 5) });
+}
+function startHandover(sp, vanish) {
+  const p = sprites.get(sp.agent.parentId), r = p.room;
+  sp.hold = { kind: 'handover', vanish, parent: p.id, stage: 'walk', t0: performance.now(), errand: sp.errand, state: 'idle' };
+  sp.errand = null; sp.state = 'idle';
+  setGoal(sp, { room: r, cat: 'handover', i: -1, p: [scClamp(p.x + .8, .4, r.NX - .4), scClamp(p.y + .6, .4, r.NY - .4), 0] });
+}
+function extGoal(o, tg) {
+  const r = tg.room; let x = tg.x + 1.1, dir = -1;
+  if (x > r.NX - .4) { x = tg.x - 1.1; dir = 1; }
+  setGoal(o, { room: r, cat: 'ext', i: -1, p: [scClamp(x, .4, r.NX - .4), scClamp(tg.y + .3, .4, r.NY - .4), 0] });
+  o.hold.dir = dir;
+}
+function findFireHelper(sp, t) {
+  if (!sp.room || sp.onBridge) return;
+  const hp = sp.fire.helper && sprites.get(sp.fire.helper);
+  if (hp && hp.hold?.kind === 'ext' && hp.hold.target === sp.id) return;
+  if (t < (sp.fire.retry || 0)) return; sp.fire.retry = t + 2000;
+  let best = null, bs = Infinity;
+  for (const o of sprites.values()) {
+    if (o === sp || (o.kind !== 'home' && o.kind !== 'agent') || o.room !== sp.room || o.hold || o.leaving || o.exit || o.fire || o.onBridge || o.alpha < .5) continue;
+    if (o.state === 'shower' || (o.agent && (o.agent.state === 'error' || o.agent.state === 'waiting'))) continue;
+    const score = Math.hypot(o.x - sp.x, o.y - sp.y) + (o.kind === 'home' ? 0 : o.state === 'working' ? 20 : 8);
+    if (score < bs) { bs = score; best = o; }
+  }
+  if (!best) return;
+  best.hold = { kind: 'ext', target: sp.id, t0: t, errand: best.errand, state: 'idle', dir: -1 };
+  best.errand = null; best.state = 'idle'; best.scene = null;
+  extGoal(best, sp); sp.fire.helper = best.id;
+}
+function stepHold(sp, t) {
+  const h = sp.hold;
+  if (h.state) sp.state = h.state;
+  if (h.kind === 'mail') {
+    if (h.stage === 'go' && scArrived(sp) && sp.goal.cat === 'mail') { h.stage = 'drop'; h.t1 = t; SC.mailFlag = t; }
+    else if ((h.stage === 'drop' && t - h.t1 > 900) || t - h.t0 > 60000) releaseHold(sp);
+  } else if (h.kind === 'ext') {
+    const tg = sprites.get(h.target);
+    if (!tg || !tg.fire || (tg.room !== sp.room && !sp.path.length && !sp.onBridge) || t - h.t0 > 90000) { releaseHold(sp); return; }
+    h.spraying = false;
+    if (scArrived(sp)) {
+      const dist = Math.hypot(tg.x - sp.x, tg.y - sp.y);
+      if (dist <= 2) { h.spraying = true; h.sprayFrom ??= t; tg.fire.foamed = t; }
+      else if (t > (h.re || 0)) { h.re = t + 1500; extGoal(sp, tg); }
+    }
+  } else if (h.kind === 'celebrate') {
+    if (sp.path.length) { h.t0 = t; if (t - h.start > 8000) releaseHold(sp); return; }
+    if (h.z0 == null) h.z0 = sp.z;
+    const e = t - h.t0;
+    if (e > 1800) { releaseHold(sp); return; }
+    sp.z = h.z0 + Math.abs(Math.sin(e / 600 * Math.PI)) * 7;
+  } else if (h.kind === 'handover') {
+    const p = sprites.get(h.parent);
+    if (h.stage === 'walk') {
+      if (scArrived(sp) || t - h.t0 > 25000 || !p) { h.stage = 'give'; h.t1 = t; if (p && p.room && p.room === sp.room) SC.papers.push({ from: sp, to: p, t0: t }); }
+    } else if (t - h.t1 > 1100) {
+      sp.handed = true;
+      if (h.vanish) { scPuff(sp); sp.hold = null; sp.alpha = 0; sp.fade = 0; }
+      else releaseHold(sp);
+    }
+  }
+}
+
+// ----- hooks from setAgents -----
+// returns true while a hold keeps the agent from its usual goal
+function sceneTrack(sp, a, prev) {
+  const t = performance.now();
+  if (a.state === 'working' && !sp.workSince) sp.workSince = t;
+  if (!prev && a.parentId && !sp.popped) { // a new subagent pops out of a cloud next to its parent
+    sp.popped = true; const p = sprites.get(a.parentId);
+    if (p && p.room && !p.onBridge && p.alpha > .5) { const r = p.room;
+      sp.room = r; sp.x = scClamp(p.x + .9, .4, r.NX - .4); sp.y = scClamp(p.y + .6, .4, r.NY - .4); sp.z = 0; sp.path = []; sp.alpha = 0; scPuff(sp); }
+  }
+  const h = sp.hold;
+  if (h) {
+    const ok = h.kind === 'mail' ? a.state === 'working' : h.kind === 'ext' ? a.state !== 'error' && a.state !== 'waiting' : h.kind === 'handover' ? !h.vanish && a.state === 'done' : a.state === 'done';
+    if (!ok) releaseHold(sp);
+  }
+  if (!sp.hold && prev && prev !== 'done' && a.state === 'done') {
+    if (a.parentId && sprites.get(a.parentId)?.room && !sp.handed) startHandover(sp, false);
+    else if (!a.parentId && sp.workSince && t - sp.workSince > 8000) startCelebrate(sp);
+  }
+  if (a.state === 'done') sp.workSince = null;
+  const git = a.state === 'working' && /\bgit\s+(commit|push)\b/i.test(a.activity || '');
+  if (!git) sp.mailAct = null;
+  else if (!sp.hold && a.activity !== sp.mailAct && shared('kitchen') && sp.room && !sp.onBridge && sp.alpha > .5) { sp.mailAct = a.activity; startMail(sp); }
+  if (sp.hold) { if (sp.hold.state) sp.state = sp.hold.state; return true; }
+  return false;
+}
+// an agent gone from the list: subagents hand their result to the parent and vanish in a puff (true = handled here)
+function sceneLeave(sp) {
+  if (sp.hold && sp.hold.kind !== 'handover') releaseHold(sp, true);
+  if (!sp.agent?.parentId) return false;
+  if (sp.hold?.kind === 'handover') { sp.hold.vanish = true; return true; }
+  const p = sprites.get(sp.agent.parentId);
+  if (!sp.handed && p && p.room && !p.leaving && !p.onBridge) { startHandover(sp, true); return true; }
+  scPuff(sp); sp.alpha = 0; sp.fade = 0; return true;
+}
+
+// ----- a mailbox in the kitchen, its flag up for a while after a commit is posted -----
+{ const items = THEMES.kitchen.items;
+  THEMES.kitchen.items = (add, D) => { items(add, D);
+    add(13.0, () => { B(9.45, 3.3, 0, .14, .14, 12, '#6a6a74', 0, 1); B(9.1, 3.05, 12, .75, .55, 4.5, '#3a6ad0'); B(9.15, 3.1, 16.5, .65, .45, .8, '#5a8ae8');
+      FY(9.25, 9.7, 3.601, 14, 14.6, '#1a2040'); pix(9.2, 3.6, 13, '#f4f0e8', 0, S, 1); });
+    add(13.01, () => { const up = D.t - SC.mailFlag < 15000;
+      B(9.86, 3.35, 12.5, .06, .06, up ? 6 : 2, '#6a6a74', 0, 1);
+      if (up) FX(3.38, 3.65, 9.9, 16.5, 18.5, '#e04040'); else FX(3.38, 3.8, 9.9, 13.2, 14.4, '#e04040'); }, true); }; }
+
+// ----- per frame: state, then the sky behind the house -----
+function updateScenes(t, d) {
+  if (!SC.init) { SC.init = true; ACTS.push('Bash · git commit -m "scenes"', 'Bash · swift test', 'Write · Scenes.swift', 'WebFetch · docs', 'Bash · git push'); }
+  if (rooms.length && ![...sprites.values()].some(s => s.kind === 'cat')) spawn('__cat', shared('kitchen') || rooms[0], { kind: 'cat', vendor: 'home', small: true, state: 'idle', pose: 'sit', next: t + 3000 });
+  for (const sp of [...sprites.values()]) {
+    if (sp.kind === 'agent') {
+      if (sp.agent?.state === 'error' && !sp.leaving) { sp.errSince ??= t; if (!sp.fire && t - sp.errSince > 3000) sp.fire = { t0: t }; }
+      else { sp.errSince = null; if (sp.fire) { sp.fire = null; scPuff(sp, '#9a9aa6'); } }
+    }
+    if (sp.kind === 'home' && String(sp.id).startsWith('home:')) residentRoutine(sp, t, d);
+    if (sp.kind === 'cat') catThink(sp, t);
+    if (sp.hold) stepHold(sp, t);
+    if (sp.arriveState && !sp.path.length) { sp.state = sp.arriveState; sp.arriveState = null; }
+  }
+  for (const sp of sprites.values()) if (sp.fire) findFireHelper(sp, t);
+  drawSkyLife(t);
+}
+
+// ----- life in the sky: birds, now and then a plane or a hot-air balloon -----
+const SKYLIFE = { birds: [], plane: null, balloon: null, next: null, last: 0 };
+const BIRD = [['#.....#', '.#...#.', '..#.#..', '...#...'], ['...#...', '.##.##.', '#.....#']];
+const PLANE = ['tt...........', 'ttbbbbbbbbbb.', '.bwbwbwbwbwbn', '..bbbbbbbbbb.', '......ww.....'];
+const BALLOON = (() => { const rows = [];
+  for (let r = 0; r < 12; r++) { const k = (r - 5.5) / 6.2, half = r < 10 ? Math.round(Math.sqrt(Math.max(0, 1 - k * k)) * 6.5) : 2 - (r - 10);
+    let s = ''; for (let c = 0; c < 13; c++) s += Math.abs(c - 6) <= half ? (Math.floor((c + 1) / 2) % 2 ? 'a' : 'b') : '.'; rows.push(s); }
+  rows.push('....l...l....', '.....l.l.....', '....kkkkk....', '....kkkkk....'); return rows; })();
+function drawSkyLife(t) {
+  const L = SKYLIFE, dt = Math.min(100, t - (L.last || t)), W = cv.width, H = cv.height, busy = Q.get('sky') === 'busy';
+  L.last = t;
+  if (!L.next) L.next = { bird: t + 3000, plane: t + (busy ? 2000 : 50000 + Math.random() * 100000), balloon: t + (busy ? 4000 : 80000 + Math.random() * 160000) };
+  if (t > L.next.bird) {
+    L.next.bird = t + (busy ? 5000 : 12000 + Math.random() * 25000);
+    if (DARK < .6 && weather !== 'rain' && L.birds.length < 3) { const dir = Math.random() < .5 ? 1 : -1;
+      L.birds.push({ x: dir > 0 ? -30 * S : W + 30 * S, y: H * (.06 + Math.random() * .3), dir, v: (.012 + Math.random() * .008) * S, n: 3 + Math.floor(Math.random() * 3), seed: Math.random() * 1000 }); }
+  }
+  if (t > L.next.plane) { L.next.plane = t + (busy ? 15000 : 90000 + Math.random() * 150000);
+    if (!L.plane) { const dir = Math.random() < .5 ? 1 : -1; L.plane = { x: dir > 0 ? -20 * S : W + 20 * S, y: H * (.05 + Math.random() * .12), dir, v: .02 * S }; } }
+  if (t > L.next.balloon) { L.next.balloon = t + (busy ? 30000 : 150000 + Math.random() * 200000);
+    if (!L.balloon && DARK < .5 && weather !== 'rain' && weather !== 'snow') { const dir = Math.random() < .5 ? 1 : -1; L.balloon = { x: dir > 0 ? -12 * S : W + 12 * S, y: H * (.12 + Math.random() * .22), dir, v: .004 * S, seed: Math.random() * 9 }; } }
+  const ink = lit('#3a3448');
+  L.birds = L.birds.filter(f => {
+    f.x += f.dir * f.v * dt;
+    for (let i = 0; i < f.n; i++) { const rank = Math.ceil(i / 2), side = i % 2 ? 1 : -1;
+      const bx = f.x - f.dir * rank * 7 * S, by = f.y + side * rank * 4 * S + Math.sin(t / 700 + i + f.seed) * S;
+      pxStamp(bx - 3, by - 2, BIRD[Math.floor((t + f.seed + i * 97) / 160) % 2], { '#': ink }, false, 1, true); }
+    return f.dir > 0 ? f.x < W + 60 * S : f.x > -60 * S;
+  });
+  if (L.plane) { const p = L.plane; p.x += p.dir * p.v * dt;
+    if (DARK < .5) for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(255,255,255,${.5 * (1 - i / 40)})`; g.fillRect(Math.round(p.x - p.dir * (8 + i * 3)), Math.round(p.y + 1), 3, 1); }
+    pxStamp(p.x - 6, p.y - 2, PLANE, { t: lit('#c84a4a'), b: lit('#e8ecf2'), w: lit('#5a7aa8'), n: lit('#c0c8d4') }, p.dir < 0);
+    if (DARK >= .3 && Math.floor(t / 500) % 2) { g.fillStyle = '#ff4040'; g.fillRect(Math.round(p.x - p.dir * 6), Math.round(p.y - 2), 1, 1); g.fillStyle = '#ffffff'; g.fillRect(Math.round(p.x + p.dir * 1), Math.round(p.y + 2), 1, 1); }
+    if (p.dir > 0 ? p.x > W + 140 * S : p.x < -140 * S) L.plane = null; }
+  if (L.balloon) { const b = L.balloon; b.x += b.dir * b.v * dt;
+    pxStamp(b.x - 6 * S, b.y + Math.sin(t / 1500 + b.seed) * 2 * S, BALLOON, { a: lit('#e85a5a'), b: lit('#f4d050'), l: lit('#6a5040'), k: lit('#a0703a') }, false, S);
+    if (b.dir > 0 ? b.x > W + 20 * S : b.x < -20 * S) L.balloon = null; }
+}
+
+// ----- overlays drawn after the rooms: lamps, foam, paper, puffs, fireworks, the season -----
+const FW_COLORS = ['#ff5a5a', '#ffd040', '#5ae0ff', '#a0ff70', '#ff80e0'];
+function drawSceneOverlays(t) {
+  drawSeason(t);
+  if (DARK > .45) { // agents keep working at night: a warm desk-lamp glow over busy desks
+    g.save(); g.globalCompositeOperation = 'lighter';
+    for (const sp of sprites.values()) if (sp.kind === 'agent' && sp.state === 'working' && sp.goal?.cat === 'work' && scArrived(sp)) { const [x, y] = scAt(sp.room, sp.x + .2, sp.y - 1.1, sp.z + 11); glow(x, y, 26 * S, '#ffc870', .55 * (DARK - .3)); }
+    g.restore();
+  }
+  for (const sp of sprites.values()) { // white foam from the extinguisher
+    const h = sp.hold; if (!h || h.kind !== 'ext' || !h.spraying) continue;
+    const tg = sprites.get(h.target), a = scPos(sp), b = tg && scPos(tg); if (!b || !a) continue;
+    const ax = a[0] + h.dir * (sp.small ? 7 : 12), ay = a[1] - (sp.small ? 8 : 12), bx = b[0], by = b[1] - (tg.small ? 10 : 18);
+    for (let i = 0; i < 9; i++) { const k = (t / 450 + i / 9) % 1, x = ax + (bx - ax) * k, y = ay + (by - ay) * k - Math.sin(k * Math.PI) * 4 * S, s = 1 + (i % 3 ? 1 : 2);
+      g.fillStyle = lit('#b8c8d8'); g.fillRect(Math.round(x) - 1, Math.round(y) - 1, s + 2, s + 2); g.fillStyle = emi('#ffffff', .85 + .15 * AMB[0]); g.fillRect(Math.round(x), Math.round(y), s, s); }
+    const n = Math.min(7, Math.floor((t - (h.sprayFrom || t)) / 350));
+    for (let i = 0; i < n; i++) { const x = Math.round(b[0] + ((i * 7) % 13) - 6 - 2), y = Math.round(b[1] - 2 - (i % 3) * 2);
+      g.fillStyle = lit('#a8b8c8'); g.fillRect(x - 1, y - 1, 6, 4); g.fillStyle = emi('#f4f8ff'); g.fillRect(x, y, 4, 2); }
+  }
+  SC.papers = SC.papers.filter(p => { // the subagent's result changes hands
+    const e = (t - p.t0) / 900, a = scPos(p.from), b = scPos(p.to); if (e > 1 || !a || !b) return false;
+    const x = a[0] + (b[0] - a[0]) * e, y = a[1] + (b[1] - a[1]) * e - 10 * S - Math.sin(e * Math.PI) * 10 * S;
+    pxStamp(x - 2, y - 2, PROP.paper, { p: lit('#ffffff'), l: lit('#8a90a8') }); return true;
+  });
+  SC.puffs = SC.puffs.filter(p => {
+    const e = (t - p.t0) / 750; if (e > 1) return false;
+    const [cx, cy] = scAt(p.room, p.x, p.y, p.z), c = rgb(p.col);
+    for (let i = 0; i < 8; i++) { const ang = i / 8 * Math.PI * 2 + p.seed, r = 2 * S + e * 8 * S, s = Math.max(1, Math.round((1 - e) * 3 * S)) + 1;
+      const x = Math.round(cx + Math.cos(ang) * r - s / 2), y = Math.round(cy - 6 * S + Math.sin(ang) * r * .6 - s / 2);
+      g.fillStyle = `rgba(${c[0] * .7 | 0},${c[1] * .7 | 0},${c[2] * .75 | 0},${(1 - e) * .8})`; g.fillRect(x - 1, y - 1, s + 2, s + 2);
+      g.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${1 - e})`; g.fillRect(x, y, s, s); }
+    return true;
+  });
+  SC.fireworks = SC.fireworks.filter(f => { // above the top of the agent's stack
+    const e = t - f.t0; if (e > 3800 || !rooms.includes(f.room)) return false;
+    const top = rooms.filter(r => r.tower === f.room.tower).reduce((a, b) => b.floor > a.floor ? b : a, f.room);
+    const base = scAt(top, top.NX / 2, top.NY / 2, top.theme.open ? 24 : WH);
+    for (let k = 0; k < 3; k++) {
+      const tk = e - k * 520; if (tk < 0) continue;
+      const bx = Math.round(base[0] + (k - 1) * 28 * S), by = Math.round(Math.max(base[1] - (42 + (k % 2) * 16) * S, (26 + (k % 2) * 12) * S)), col = FW_COLORS[(k + f.seed) % FW_COLORS.length];
+      if (tk < 600) { const y = base[1] - 4 * S + (by - base[1] + 4 * S) * (tk / 600);
+        g.fillStyle = emi('#fff0c0'); g.fillRect(bx, Math.round(y), S, 2 * S);
+        for (let j = 1; j < 4; j++) { g.fillStyle = `rgba(255,200,120,${.6 - j * .15})`; g.fillRect(bx, Math.round(y + j * 2 * S), S, S); } continue; }
+      const b = (tk - 600) / 1500; if (b > 1) continue;
+      if (b < .12) { g.fillStyle = `rgba(255,255,255,${1 - b / .12})`; g.fillRect(bx - 2 * S, by - 2 * S, 5 * S, 5 * S); }
+      for (let j = 0; j < 20; j++) { const ang = j / 20 * Math.PI * 2, rr = (1 - (1 - b) ** 2) * 30 * S, x = bx + Math.cos(ang) * rr, y = by + Math.sin(ang) * rr + b * b * 10 * S;
+        if (b > .6 && (j + Math.floor(t / 90)) % 3 === 0) continue; // twinkle out
+        g.globalAlpha = 1 - b * .8; g.fillStyle = emi(j % 4 ? col : '#ffffff'); g.fillRect(Math.round(x), Math.round(y), S + 1, S + 1);
+        g.fillStyle = emi(col, .6); g.fillRect(Math.round(bx + Math.cos(ang) * rr * .7), Math.round(by + Math.sin(ang) * rr * .7 + b * b * 7 * S), 1, 1); }
+      g.globalAlpha = 1;
+    }
+    return true;
+  });
+}
+
+// ----- seasons by the calendar: autumn leaves, winter snow caps, spring blossoms -----
+function seasonNow() {
+  const s = Q.get('season') || PV?.season; if (s) return s;
+  const m = now().getMonth(); return m >= 8 && m <= 10 ? 'autumn' : (m === 11 || m <= 1) ? 'winter' : m <= 4 ? 'spring' : 'summer';
+}
+const scRnd = (i, k) => { const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+function drawSeason(t) {
+  const se = seasonNow(); if (se === 'summer') return;
+  const winter = se === 'winter' && weather !== 'snow';
+  if (winter) {
+    const white = lit('#f4f8ff');
+    for (const r of rooms) if (!r.theme.open && !roomAt(r.tower, r.floor + 1)) { const saved = R; R = r; // snow on the wall tops
+      poly([iso(0, 0, WH), iso(0, r.NY, WH), iso(-.45, r.NY, WH), iso(-.45, -.45, WH)], white); poly([iso(0, 0, WH), iso(r.NX, 0, WH), iso(r.NX, -.45, WH), iso(-.45, -.45, WH)], white); R = saved; }
+    const roof = shared('roof');
+    if (roof) for (const [a, b] of [[[0, 8], [10, 8]], [[10, 0], [10, 8]]]) { const p = scAt(roof, a[0], a[1], 11.5), q = scAt(roof, b[0], b[1], 11.5); line(p, q, white); line([p[0], p[1] - 1], [q[0], q[1] - 1], white); }
+  }
+  for (const r of rooms) {
+    if (r.floor !== 0) continue;
+    const NX = r.NX, NY = r.NY;
+    if (winter || se === 'spring') for (let i = 0; i < 44; i++) { // the two grass strips in front of the room
+      const front = i % 2, u = scRnd(i, r.seed), v = scRnd(i, r.seed + 7);
+      const p = front ? scAt(r, -1.2 + u * (NX + 2.4), NY + .1 + v * 1.05, -SLAB) : scAt(r, NX + .1 + v * 1.05, -1.2 + u * (NY + 2.4), -SLAB);
+      const x = Math.round(p[0]), y = Math.round(p[1]);
+      if (winter) { g.fillStyle = lit('#f4f8ff'); g.fillRect(x - 2, y, 3 + (i % 3) * 2, 2); g.fillStyle = lit('#d8e2f0'); g.fillRect(x - 2, y + 2, 3 + (i % 3) * 2, 1); }
+      else if (i % 3) { g.fillStyle = lit(i % 4 ? '#f8a8c8' : '#ffffff'); g.fillRect(x, y, 2, 2); g.fillStyle = lit('#f0d040'); g.fillRect(x, y, 1, 1); }
+    }
+    if (winter) { const w = lit('#f4f8ff'); line(scAt(r, -1.2, NY + 1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); line(scAt(r, NX + 1.2, -1.2, -SLAB), scAt(r, NX + 1.2, NY + 1.2, -SLAB), w); }
+    if (se === 'autumn' || se === 'spring') { // leaves or petals drifting down around the island
+      const top = scAt(r, NX / 2, NY / 2, WH)[1] - 30 * S, bot = scAt(r, NX + 1.2, NY + 1.2, -SLAB)[1] + 50 * S;
+      const L = scAt(r, 0, NY + 1.2, 0)[0] - 14 * S, Rr = scAt(r, NX + 1.2, 0, 0)[0] + 14 * S;
+      const cols = se === 'autumn' ? ['#e8803a', '#d0502a', '#f0b040', '#b86a30'] : ['#f8b0c8', '#fff0f4', '#f490b0'];
+      for (let i = 0; i < (se === 'autumn' ? 9 : 6); i++) {
+        const k = (t / (9000 + (i * 1373) % 5000) + scRnd(i, r.seed + 3)) % 1;
+        const x = L + scRnd(i, r.seed + 5) * (Rr - L) + Math.sin(t / 900 + i * 2) * 8 * S, y = top + k * (bot - top);
+        g.globalAlpha = k < .1 ? k * 10 : k > .85 ? (1 - k) / .15 : 1; g.fillStyle = lit(cols[i % cols.length]);
+        if (Math.floor(t / 260 + i) % 2) { g.fillRect(Math.round(x), Math.round(y), 2, 1); g.fillRect(Math.round(x) + 1, Math.round(y) + 1, 1, 1); }
+        else { g.fillRect(Math.round(x), Math.round(y), 1, 2); g.fillRect(Math.round(x) + 1, Math.round(y), 1, 1); }
+      }
+      g.globalAlpha = 1;
+    }
+  }
 }
 
 // ---------- drawing a room ----------
@@ -1547,12 +2033,14 @@ function frame(t) {
   if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
   updateResidents(t); updateErrands(t); stepSprites(dt);
+  updateScenes(t, d);
   for (const br of bridges) drawBridge(br);
   drawBridgeWalkers(t);
   const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
   for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) drawRoom(r, t, d);
   drawEscapes(t);
   drawFallers(t);
+  drawSceneOverlays(t);
   updateTip(); updateControls(d);
 }
 
