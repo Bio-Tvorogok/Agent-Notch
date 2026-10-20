@@ -187,6 +187,19 @@ function chair(cx, cy, c) {
   B(cx - .3, cy - .3, 0, .6, .6, .6, '#3a3a44'); B(cx - .06, cy - .06, .6, .12, .12, 4.4, '#55555f', 0, 1);
   B(cx - .36, cy - .36, 5, .72, .72, 1.6, c); B(cx - .36, cy + .26, 5.5, .72, .16, 10, c);
 }
+// lounge seats for agents who find the desks taken: they sit there with a laptop. The seat height is what spots.seat takes.
+function beanbag(x, y, c) { // z 3
+  B(x - .45, y - .42, 0, .9, .84, 2.2, c); B(x - .38, y - .36, 2.2, .76, .72, .6, mixHex(c, '#ffffff', .15)); B(x - .45, y - .5, 2.2, .9, .3, 2.6, mixHex(c, '#000000', .1));
+  pix(x - .1, y + .1, 2.9, mixHex(c, '#ffffff', .35)); }
+function armchair(x, y, c) { // z 5
+  B(x - .45, y - .4, 0, .9, .85, 4.4, c); B(x - .38, y - .3, 4.4, .76, .7, .8, mixHex(c, '#ffffff', .12));
+  B(x - .5, y - .55, 4.4, 1.0, .22, 8, mixHex(c, '#000000', .12)); B(x - .55, y - .4, 4.4, .16, .85, 3.4, mixHex(c, '#000000', .06)); B(x + .4, y - .4, 4.4, .16, .85, 3.4, mixHex(c, '#000000', .06)); }
+function sofa2(x0, y, c) { // two places at x0 + .5 and x0 + 1.4, z 5
+  B(x0, y - .4, 0, 1.9, .85, 4.4, c); B(x0 + .08, y - .3, 4.4, .82, .7, .8, mixHex(c, '#ffffff', .12)); B(x0 + 1.0, y - .3, 4.4, .82, .7, .8, mixHex(c, '#ffffff', .12));
+  B(x0, y - .55, 4.4, 1.9, .22, 8, mixHex(c, '#000000', .12)); B(x0 - .12, y - .4, 4.4, .16, .85, 3.4, mixHex(c, '#000000', .06)); B(x0 + 1.86, y - .4, 4.4, .16, .85, 3.4, mixHex(c, '#000000', .06)); }
+function cushion(x, y, c) { // z 1.5
+  B(x - .42, y - .42, 0, .84, .84, 1.5, c); B(x - .3, y - .3, 1.5, .6, .6, .2, mixHex(c, '#ffffff', .2));
+  for (const [dx, dy] of [[-.42, -.42], [.38, -.42], [-.42, .38], [.38, .38]]) pix(x + dx, y + dy, .6, '#f0c040'); }
 function stool(cx, cy, h, c) { B(cx - .07, cy - .07, 0, .14, .14, h, '#666670', 0, 1); B(cx - .3, cy - .3, h, .6, .6, 1.6, c); }
 function pot(x, y, s, c, leafA, leafB, seed, hh = 5) { B(x, y, 0, s, s, hh, c); FY(x, x + s, y + s + .001, hh - 1.2, hh - .6, mixHex(c, '#000000', .25)); leaves(x + s / 2, y + s / 2, hh - .5, Math.max(2, Math.round(s * 6)), leafA, leafB, seed); }
 function tallPlant(x, y, c, seed) { B(x, y, 0, .6, .6, 6, c); B(x + .27, y + .27, 6, .06, .06, 10, '#5a4a2a', 0, 1);
@@ -200,7 +213,7 @@ const THEMES = {
     floor: { kind: 'planks', a: '#cf9156', b: '#b67a46' }, rug: [3.4, 3.1, 8.2, 6.6, '#7cc4e4', '#a8dcf2'],
     windows: [{ wall: 'R', a: 2.2, b: 4.4, z0: 24, z1: 50, curtain: '#e676a8' }],
     clock: { wall: 'L', at: 7.0, z: 54 }, hub: [5.4, 3.3, 0],
-    spots: { work: [[6.7, 2.3, 6.6], [8.4, 2.3, 6.6]], read: [[4.5, 4.8, 5], [6.8, 6.0, 5]], web: [[3.65, 1.6, 0]],
+    spots: { seat: [[1.6, 6.3, 3], [3.2, 7.1, 1.5]], work: [[6.7, 2.3, 6.6], [8.4, 2.3, 6.6]], read: [[4.5, 4.8, 5], [6.8, 6.0, 5]], web: [[3.65, 1.6, 0]],
       sleep: [[0.85, 1.7, 10.6], [1.9, 1.7, 10.6]], wait: [[7.0, 6.95, 0], [5.2, 7.0, 0], [7.6, 6.4, 0]], pace: [[3.4, 3.3, 0], [5.0, 2.8, 0]], task: [[6.6, 4.3, 0], [7.4, 5.2, 0]] },
     decor() {
       B(5.8, 0, 38, 3.2, .6, 1.5, '#9a6a44');
@@ -216,6 +229,7 @@ const THEMES = {
         pix(.04, y, z - 1, ['#ffd060', '#ff80c0', '#80e0ff'][i % 3], DARK > .2); }
     },
     items(add, D) {
+      add(7.5, () => beanbag(1.6, 6.3, '#e47aa8')); add(9.9, () => cushion(3.2, 7.1, '#7cc4e4'));
       add(2, () => {
         B(.15, .2, 0, 2.4, 3.1, 5, '#a0603a'); B(.15, .08, 0, 2.4, .25, 20, '#8a4e30'); FY(.35, 2.35, .34, 12, 18, '#a0603a');
         B(.2, .35, 5, 2.3, 2.9, 3.5, '#fbf6ee'); B(.2, 1.3, 8.5, 2.3, 1.95, 1.8, '#e47aa8'); B(.2, 1.3, 10.3, 2.3, .3, .4, '#f4a8c8');
@@ -257,7 +271,7 @@ const THEMES = {
     floor: { kind: 'tiles', a: '#c8ced8', b: '#aab2c0', step: 1 },
     windows: [{ wall: 'R', a: 4.9, b: 6.4, z0: 38, z1: 52 }],
     clock: { wall: 'R', at: 7.3, z: 56, dark: true }, hub: [6.0, 3.4, 0],
-    spots: { work: [[7.4, 2.4, 6.6], [8.8, 2.4, 6.6]], read: [[2.3, 2.0, 0], [3.7, 2.0, 0], [1.9, 2.6, 0]], web: [[5.6, 1.5, 0]],
+    spots: { seat: [[1.7, 6.9, 5], [2.6, 6.9, 5], [1.4, 4.2, 3]], work: [[7.4, 2.4, 6.6], [8.8, 2.4, 6.6]], read: [[2.3, 2.0, 0], [3.7, 2.0, 0], [1.9, 2.6, 0]], web: [[5.6, 1.5, 0]],
       sleep: [[8.3, 5.4, 5.5], [9.25, 5.4, 5.5]], wait: [[5.0, 6.4, 0], [4.4, 6.9, 0], [6.6, 6.9, 0]], pace: [[3.2, 4.6, 0], [5.6, 3.0, 0]], task: [[2.4, 5.4, 0], [3.4, 5.9, 0]] },
     decor() {
       B(1.4, .05, 50, 3.3, .5, 1.5, '#5a6070'); for (let x = 1.6; x < 4.5; x += .9) line(iso(x, .3, 50), iso(x + .3, .3, 46), lit('#2a2e38'));
@@ -268,6 +282,7 @@ const THEMES = {
       for (let x = 0; x < 10; x += .25) pix(x, .02, 58, '#40e0ff', true, S, 1);
     },
     items(add, D) {
+      add(8.1, () => sofa2(1.2, 6.9, '#4a6a9a')); add(5.2, () => beanbag(1.4, 4.2, '#58a070'));
       const rack = x0 => { add(x0 + 1.4, () => { B(x0, .1, 0, 1.3, 1.2, 46, '#2c3038'); for (let z = 4; z < 44; z += 6) { FY(x0 + .1, x0 + 1.2, 1.301, z, z + 4.5, '#3c424e'); FY(x0 + .1, x0 + 1.2, 1.302, z + 4, z + 4.5, '#4c5462'); } });
         add(x0 + 1.41, () => { for (let k = 0; k < 7; k++) for (let j = 0; j < 4; j++) { const ph = (k * 13 + j * 7 + Math.round(x0 * 17)) % 10, a = .5 + .5 * Math.sin(D.t / (1300 + ph * 300) + ph);
           pix(x0 + .2 + j * .22, 1.31, 7 + k * 6, mixHex('#1e2a24', ph % 3 ? '#60ff90' : '#ffc040', .3 + .7 * a), true); } }, true); };
@@ -298,10 +313,12 @@ const THEMES = {
     floor: { kind: 'parquet', a: '#d49e62', b: '#bc864c' }, rug: [2.6, 3.4, 7.0, 6.4, '#b04848', '#d06a5a'],
     windows: [{ wall: 'R', a: 3.5, b: 6.0, z0: 22, z1: 54, arch: true }],
     clock: { wall: 'L', at: 6.6, z: 56 }, hub: [6.4, 3.4, 0],
-    spots: { work: [[8.5, 3.6, 6.6], [5.1, 6.2, 6.6]], read: [[2.2, 1.9, 0], [3.1, 4.6, 6.0]], web: [[4.7, 1.7, 0]],
+    bare: { work: [1] }, // the stool by the candle has no screen: a laptop there
+    spots: { seat: [[1.5, 7.0, 3], [1.6, 3.0, 5]], work: [[8.5, 3.6, 6.6], [5.1, 6.2, 6.6]], read: [[2.2, 1.9, 0], [3.1, 4.6, 6.0]], web: [[4.7, 1.7, 0]],
       sleep: [[7.95, 6.9, 6], [8.9, 6.9, 6]], wait: [[4.6, 7.0, 0], [3.4, 7.3, 0], [4.0, 6.3, 0]], pace: [[4.4, 3.0, 0], [6.1, 3.7, 0]], task: [[5.6, 3.3, 0]] },
     decor() { framed('L', 4.4, 6.2, 30, 44, '#e8c890', '#6a8a5a'); },
     items(add, D) {
+      add(8.1, () => beanbag(1.5, 7.0, '#c09050')); add(4.2, () => armchair(1.6, 3.0, '#4a8a5a'));
       const shelfR = (x0, x1, s) => add((x0 + x1) / 2 + .5, () => {
         B(x0, .1, 0, x1 - x0, .9, 54, '#8a5232'); FY(x0 + .1, x1 - .1, 1.001, 2, 52, '#5a3420');
         for (let z = 3; z < 50; z += 9) { bookRow(x0 + .15, x1 - .15, 1.002, z, 6.5, s + z); FY(x0 + .1, x1 - .1, 1.003, z - 1, z, '#8a5232'); }
@@ -338,13 +355,14 @@ const THEMES = {
     name: 'Оранжерея', wallL: '#f0f4ee', wallR: '#f0f4ee', low: '#c06848', lowH: 12, lowKind: 'brick', trim: '#e8ece4', pattern: 'glass',
     floor: { kind: 'stone', a: '#bcb8a8', b: '#a8a494' },
     windows: [], clock: { wall: 'L', at: 7.0, z: 56 }, hub: [5.0, 3.2, 0],
-    spots: { work: [[7.0, 2.2, 6.6], [8.6, 2.2, 6.6]], read: [[1.9, 2.4, 0], [3.7, 1.6, 0]], web: [[5.2, 1.5, 0]],
+    spots: { seat: [[1.5, 6.6, 5], [2.7, 7.3, 1.5]], work: [[7.0, 2.2, 6.6], [8.6, 2.2, 6.6]], read: [[1.9, 2.4, 0], [3.7, 1.6, 0]], web: [[5.2, 1.5, 0]],
       sleep: [[7.9, 6.0, 12.6], [8.7, 6.0, 12.6]], wait: [[5.4, 6.6, 0], [4.4, 7.1, 0], [6.2, 7.2, 0]], pace: [[3.2, 3.0, 0], [5.2, 4.6, 0]], task: [[5.6, 3.2, 0]] },
     decor() {
       for (const [x, s] of [[3.6, 1], [5.9, 2], [8.3, 3]]) { line(iso(x, .4, WH), iso(x, .4, 48), lit('#6a5a4a')); B(x - .25, .15, 44, .5, .5, 4, '#e07050'); leaves(x, .4, 44, 3, '#3e9a46', '#7ad070', s);
         for (let k = 0; k < 5; k++) pix(x - .2 + k * .1, .7, 42 - k * 1.5, '#4aa84a'); }
     },
     items(add, D) {
+      add(7.7, () => armchair(1.5, 6.6, '#c8a060')); add(9.6, () => cushion(2.7, 7.3, '#58a070'));
       add(2.4, () => { B(.1, .3, 0, 1.2, 3.6, 9, '#a0603a'); B(.15, .35, 9, 1.1, 3.5, .5, '#5a3a24');
         for (let i = 0; i < 6; i++) { leaves(.7, .7 + i * .55, 9.3, 2, '#3e9a46', '#7ad070', i); if (i % 2) pix(.75, .7 + i * .55, 11.5, '#e05a4a'); } });
       add(2.9, () => { B(1.7, .4, 0, .7, .7, 7, '#e07050'); B(1.98, .68, 7, .16, .16, 20, '#8a6a3a');
@@ -379,7 +397,7 @@ const THEMES = {
     floor: { kind: 'carpet', a: '#4a3c8c', b: '#5a4ca0' },
     windows: [{ wall: 'L', a: 4.6, b: 6.4, z0: 32, z1: 52 }],
     clock: { wall: 'R', at: 7.4, z: 54, dark: true }, hub: [5.4, 3.4, 0],
-    spots: { work: [[8.0, 2.3, 6.6], [9.2, 2.3, 6.6]], read: [[3.1, 2.0, 6.5], [3.1, 3.3, 6.5]], web: [[5.1, 1.8, 0], [6.3, 1.8, 0]],
+    spots: { seat: [[1.6, 6.5, 3], [2.7, 7.3, 3]], work: [[8.0, 2.3, 6.6], [9.2, 2.3, 6.6]], read: [[3.1, 2.0, 6.5], [3.1, 3.3, 6.5]], web: [[5.1, 1.8, 0], [6.3, 1.8, 0]],
       sleep: [[6.5, 5.7, 5], [7.7, 6.5, 5]], wait: [[4.6, 6.8, 0], [3.4, 6.4, 0], [5.6, 7.2, 0]], pace: [[4.6, 3.6, 0], [6.0, 3.0, 0]], task: [[5.6, 4.7, 0]] },
     decor() {
       for (let x = 0; x < 10; x += .25) pix(x, .02, 58, '#ff5ac8', true, S, 1);
@@ -389,6 +407,7 @@ const THEMES = {
       FX(1.0, 4.0, .04, 18, 36, '#111118'); framed('R', 7.6, 8.6, 26, 40, '#f0d040', '#e04a5a'); framed('L', 6.6, 7.6, 30, 44, '#5ae0ff', '#2a2452');
     },
     items(add, D) {
+      add(7.7, () => beanbag(1.6, 6.5, '#5ae0b0')); add(9.6, () => beanbag(2.7, 7.3, '#ff70c0'));
       add(.5, () => FX(1.1, 3.9, .05, 19, 35, ['#4a7af0', '#6a4af0', '#4ac0f0'][Math.floor(D.t / 4000) % 3], true), true);
       const cab = (x0, c, sc) => { add(x0 + 1.15, () => {
         B(x0, .1, 0, 1.0, 1.1, 34, c); B(x0, 1.2, 13, 1.0, .4, 2, '#222230'); FY(x0 + .12, x0 + .88, 1.201, 17, 27, '#101018');
@@ -1378,6 +1397,9 @@ function placeFor(sp) {
   if (['work', 'read', 'web', 'task'].includes(cat)) {
     const own = home.theme.spots[cat] || [], busy = [...sprites.values()].filter(o => o !== sp && o.goal && o.goal.room === home && o.goal.cat === cat).length;
     if (own.length && busy >= own.length) {
+      const seats = home.theme.spots.seat || [], sat = [...sprites.values()].filter(o => o !== sp && o.goal && o.goal.room === home && o.goal.cat === 'seat').length;
+      if (sp.goal?.cat === 'seat' && sp.goal.room === home && sp.goal.i >= 0) return [home, 'seat']; // stay where it settled
+      if (sat < seats.length) return [home, 'seat']; // a beanbag or an armchair in its own room, with a laptop
       const free = r => r && r.theme.spots.cowork && [...sprites.values()].filter(o => o !== sp && o.goal && o.goal.room === r && o.goal.cat === 'cowork').length < r.theme.spots.cowork.length;
       if (sp.goal?.cat === 'cowork' && free(sp.goal.room)) return [sp.goal.room, 'cowork']; // stay where it settled
       const room = [shared('kitchen'), shared('roof'), yardOn() ? YARD : null].find(free);
@@ -2462,6 +2484,7 @@ function pxStamp(x0, y0, rows, pal, flip, k = 1, noLine) {
   rows.forEach((row, r) => { for (let c = 0; c < w; c++) { const ch = row[c]; if (ch !== '.' && pal[ch]) { g.fillStyle = pal[ch]; g.fillRect(X(c), y0 + r * k, k, k); } } });
 }
 const PROP = {
+  laptop: ['.LLLLLLLL.', '.LMMMMMML.', '.LMMMoMML.', '.LMMMMMML.', 'BBBBBBBBBB'],
   flask: ['..ggg..', '..gwg..', '..gwg..', '.gwwwg.', 'gwwwwwg', 'gLLLLLg', 'gLlLLLg', '.ggggg.'],
   hammerUp: ['...HHH', '...HhH', '..b...', '.b....', 'b.....'],
   hammerDown: ['....HH', 'bbbbhH', '....HH'],
@@ -2515,6 +2538,12 @@ function drawBathing(X, sp, t, left, top, bw) {
   g.globalAlpha = a0;
 }
 
+// working away from a screen: on a lounge seat, in a shared room, or at a desk that has none
+function onLaptop(sp) {
+  const gl = sp.goal; if (!gl || !sp.room || gl.room !== sp.room) return false;
+  if (gl.cat === 'seat' || gl.cat === 'cowork') return true;
+  return !!(gl.cat === 'work' && sp.room.theme.bare && (sp.room.theme.bare.work || []).includes(gl.i));
+}
 // ----- held props, drawn over the Clawd that holds them -----
 function drawProps(X, Y, sp, t, left, top, bw, armRow) {
   const C = S, cy = top + armRow * C, rx = left + bw, h = sp.hold, a0 = g.globalAlpha;
@@ -2530,6 +2559,10 @@ function drawProps(X, Y, sp, t, left, top, bw, armRow) {
   else if (h && h.kind === 'ext') {
     const flip = h.dir < 0;
     pxStamp(flip ? left - 1 : rx - 4, cy - 3, PROP.ext, { k: lit('#2a2a30'), r: lit('#e03a30'), R: lit('#ff8a70'), w: lit('#f4f0e8') }, flip);
+  } else if (sp.kind === 'agent' && sp.agent && sp.state === 'working' && !sp.moving && !sp.path.length && onLaptop(sp)) {
+    const lx = Math.round(X) - 5, ly = cy - 1, glow = .75 + .25 * Math.sin(t / 900 + sp.seed * 9);
+    pxStamp(lx, ly, PROP.laptop, { L: lit('#8a909c'), M: lit('#c8ccd4'), o: emi('#ffffff', glow), B: lit('#6a707c') });
+    g.fillStyle = `rgba(150,210,255,${(.18 * glow).toFixed(3)})`; g.fillRect(lx + 1, ly - 2 * C, 8, 2 * C); // the screen lights the face
   } else if (sp.kind === 'agent' && sp.agent && sp.state === 'working' && !sp.moving && !sp.path.length) {
     const what = propFor(sp.agent.activity);
     if (what === 'flask') {
