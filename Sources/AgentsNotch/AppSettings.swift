@@ -40,6 +40,8 @@ final class AppSettings: ObservableObject {
     @Published var soundEvents: SoundPrefs { didSet { save(soundEvents, "soundEvents") } }
     /// A small toast under the notch when an agent finishes.
     @Published var finishToast: Bool { didSet { save(finishToast, "finishToast") } }
+    /// The agents' house as the desktop wallpaper.
+    @Published var roomWallpaper: Bool { didSet { save(roomWallpaper, "roomWallpaper") } }
     @Published var isRecordingShortcut = false
     @Published var hotKeyError: String?
 
@@ -80,6 +82,7 @@ final class AppSettings: ObservableObject {
         answerFromNotch = load("answerFromNotch", true)
         sounds = load("sounds", true)
         finishToast = load("finishToast", true)
+        roomWallpaper = load("roomWallpaper", false)
         rows.parts = DisplayOrder.normalize(rows.parts)
         card.blocks = DisplayPreset.migrate(card.blocks)
         if !shortcuts.isValid { shortcuts = ShortcutPrefs() }

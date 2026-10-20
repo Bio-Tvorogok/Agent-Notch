@@ -55,6 +55,7 @@ PLIST
 python3 scripts/update-config.py "$APP/Contents/Info.plist"
 
 [ -f assets/AppIcon.icns ] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+mkdir -p "$APP/Contents/Resources/room" && cp room/index.html "$APP/Contents/Resources/room/index.html"
 
 codesign --force --sign - "$APP/Contents/Helpers/notch-hook"
 # An ad-hoc signature is pinned by its hash, and macOS ties Accessibility to that hash: every new build would
