@@ -18,6 +18,9 @@ final class RoomInfoFeed {
     /// The last usage sent, as `room.setUsage(...)` takes it; empty until the limits are read.
     private(set) var lastUsage = ""
     private var send: (String) -> Void = { _ in }
+    /// The Codex pet last sent (RoomCodexPet.stamp), "-" for none; checked again on the timer.
+    private var petSent = ""
+    private var petReading = false
     private var changed: () -> Void = {}
 
     func start(store: Store, changed: @escaping () -> Void, send: @escaping (String) -> Void) {
@@ -31,8 +34,9 @@ final class RoomInfoFeed {
             }
             .store(in: &subs)
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.readContexts() }
+            MainActor.assumeIsolated { self?.readContexts(); self?.pushPet() }
         }
+        pushPet()
     }
 
     func stop() {
@@ -42,11 +46,14 @@ final class RoomInfoFeed {
         agents = [:]
         contexts = [:]
         lastUsage = ""
+        petSent = ""
     }
 
     /// The page reloaded: send everything again.
     func resend(store: Store) {
         lastUsage = ""
+        petSent = ""
+        pushPet()
         let usage = store.usage
         pushUsage(limits: usage.limits, spend: usage.spend, complete: usage.spendComplete, warning: store.settings.limits.warningPercent)
     }
@@ -80,6 +87,27 @@ final class RoomInfoFeed {
                 self.reading = false
                 let kept = result.filter { self.agents[$0.key] != nil }
                 if kept != self.contexts { self.contexts = kept; self.changed() }
+            }
+        }
+    }
+
+    /// Codex agents look like the user's own Codex pet when there is one (`~/.codex/pets`), decoded off the main thread.
+    private func pushPet() {
+        guard !petReading else { return }
+        petReading = true
+        let known = petSent
+        queue.async { [weak self] in
+            let pet = CodexPet.find()
+            let stamp = pet.map(RoomCodexPet.stamp) ?? "-"
+            let js: String? = stamp == known ? nil
+                : pet.flatMap(RoomCodexPet.payload).map { "window.room && room.setCodexPet && room.setCodexPet(\($0)); true" }
+                    ?? "window.room && room.setCodexPet && room.setCodexPet(null); true"
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.petReading = false
+                    if let js { self.petSent = stamp; self.send(js) }
+                }
             }
         }
     }

@@ -348,6 +348,9 @@ run("auditDeliveryResult") { try safeUninstall.auditDelivery() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
 
 let configRoots = ConfigRootChecks()
+let codexPets = CodexPetChecks()
+run("codexPetNewestWins") { try codexPets.newestWins() }
+run("codexPetCodexHome") { try codexPets.codexHome() }
 run("configClaudeHooks") { try configRoots.hooks(.claude) }
 run("configCodexHooks") { try configRoots.hooks(.codex) }
 run("configClaudeDiscovery") { try configRoots.discovery(.claude) }
