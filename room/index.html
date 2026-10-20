@@ -700,18 +700,20 @@ const MINI = ['.BBBBBB.', '.BEBBEB.', '.BBBBBB.', '.BBBBBB.'];
 const VENDOR = { claude: ['#d97757', '#a8533a'], codex: ['#eef0f6', '#9aa2b8'], home: ['#e8b880', '#b0844e'] };
 function drawClawd(X, Y, sp, t) {
   if (sp.kind === 'cat') return drawCat(X, Y, sp, t);
+  const egg = eggLook(sp, t);
   const small = sp.small, rows = small ? MINI : BODY, w = rows[0].length, C = S; // one sprite cell is S pixels
   if (drowsy(sp)) t *= .5; // a nearly full context makes it slow and sleepy
-  const [body, dark] = VENDOR[sp.vendor] || VENDOR.claude;
+  const [body, dark] = egg?.gold || VENDOR[sp.vendor] || VENDOR.claude;
   const st = sp.state, moving = sp.moving;
   const hop = st === 'waiting' && !moving ? Math.round(Math.abs(Math.sin(t / 260)) * 3) : (moving ? (Math.floor(t / 110) % 2) * C : 0);
-  const legH = small ? 1 : 2, left = Math.round(X - w * C / 2), top = Math.round(Y - (rows.length + legH) * C - hop);
+  const legH = small ? 1 : 2, left = Math.round(X - w * C / 2), top = Math.round(Y - (rows.length + legH) * C - hop) - (egg ? egg.dy : 0);
   const red = st === 'error' ? .5 + .5 * Math.sin(t / 300) : 0, bc = red ? mixHex(body, '#e0503c', red * .7) : body;
   const sleeping = st === 'done' || st === 'idle-sleep' || st === 'shower';
   let armRow = 2;
   if (st === 'waiting') armRow = Math.sin(t / 260) > 0 ? 0 : 1;
   else if (st === 'fall') armRow = 0;
   else if (st === 'working' && !moving && sp.seated) armRow = 2 + (Math.floor(t / 160) % 2);
+  if (egg && egg.arms != null) armRow = egg.arms;
   g.globalAlpha *= sp.alpha;
   g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(left + C, Math.round(Y) - 1, (w - 2) * C, 2);
   const aw = small ? 1 : 2, cells = [];
@@ -719,6 +721,7 @@ function drawClawd(X, Y, sp, t) {
   for (let k = 0; k < aw; k++) { cells.push([k, armRow, 'A'], [w - 1 - k, armRow, 'A']); if (!small) cells.push([k, armRow + 1, 'A'], [w - 1 - k, armRow + 1, 'A']); }
   const legs = small ? [1, 3, 4, 6] : [2, 4, 7, 9];
   legs.forEach((c, i) => { const lift = moving && ((i + Math.floor(t / 110)) % 2) ? 1 : 0; for (let k = 0; k < legH - lift; k++) cells.push([c, rows.length + k, 'L']); });
+  if (egg?.eye) eggEyes(cells, egg.eye);
   g.fillStyle = lit(OUT); for (const [c, r] of cells) g.fillRect(left + c * C - 1, top + r * C - 1, C + 2, C + 2);
   for (const [c, r, ch] of cells) {
     let col = ch === 'L' ? dark : bc;
@@ -731,6 +734,7 @@ function drawClawd(X, Y, sp, t) {
     }
   }
   infoOverClawd(sp, left, top, rows, C, bc, sleeping, t);
+  if (egg?.after) eggAfter(X, Y, sp, t, left, top, w * C);
   g.globalAlpha = 1;
   if (st === 'waiting') {
     const bw = 9 * S, bx = Math.round(X) - (bw >> 1), by = top - 12 * S + Math.round(Math.sin(t / 400) * S);
@@ -904,6 +908,7 @@ function buildCache(r) {
   r.theme.items(add, D);
   infoItems(r, add, D);
   houseItems(r, add, D);
+  eggItems(r, add);
   for (const it of items) if (!it.dyn) it.baked = bake(r, it.draw);
   const above = roomAt(r.tower, r.floor + 1);
   r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items,
@@ -1399,6 +1404,7 @@ function stepSprites(dt) {
     sp.alpha += Math.sign(sp.fade - sp.alpha) * Math.min(Math.abs(sp.fade - sp.alpha), dt / 450);
     if (sp.leaving && sp.alpha <= .01) { sprites.delete(sp.id); continue; }
     if (sp.fall) continue;
+    if (eggFrozen(sp)) { sp.moving = false; continue; }
     if (sp.exit && !sp.path.length) { // at the edge: off it goes
       const saved = R; R = sp.room; const [X, Y] = iso(sp.x, sp.y, sp.z); R = saved;
       sp.fall = { x: X, y: Y, t0: performance.now(), seed: sp.seed }; sp.room = null; sp.state = 'fall'; sp.moving = false; continue;
@@ -1529,7 +1535,10 @@ const METEORS = { list: [], next: 0 };
 function shootingStar(t, P, force) {
   const r = Math.random(); METEORS.list.push({ x: P.W * (.1 + Math.random() * .8), y: P.ground * (.05 + Math.random() * .35), dir: r < .5 ? -1 : 1, t0: t, life: 650 + Math.random() * 500, len: 9 + Math.round(Math.random() * 8), force });
 }
+// where the sun and the clouds were drawn this frame, for the click secrets
+let LAST_SUN = null, LAST_CLOUDS = [];
 function drawCelestial(t, d, P) {
+  LAST_SUN = null;
   drawStars(t, P);
   const sky = (weather === 'clear' || weather === 'clouds') && SCENE !== 'extra'; // one sun: the extra screens leave it to the main one
   const ox = Math.round(P.px), oy = Math.round(P.py), hr = P.hr, arc = k => P.ground + 5 * S - Math.sin(Math.PI * k) * (P.ground - P.H * .1);
@@ -1541,6 +1550,7 @@ function drawCelestial(t, d, P) {
       g.drawImage(moonImage(p), mx - 6 * S, my - 6 * S); }
     const k = (hr - 6) / 13.5;
     if (k > -.08 && k < 1.08) { const low = 1 - Math.min(1, Math.max(0, Math.sin(Math.PI * k)) * 3.2), x = Math.round(sunX(k, P.W)) + ox, y = Math.round(arc(k)) + oy;
+      LAST_SUN = [x, y];
       const core = mixHex('#fff4c0', '#ff9a50', low), halo = rgb(mixHex('#fff0b4', '#ff8a50', low));
       const sg = g.createRadialGradient(x, y, 0, x, y, (26 + low * 14) * S); sg.addColorStop(0, `rgba(${halo},${.55 + low * .2})`); sg.addColorStop(1, `rgba(${halo},0)`);
       g.fillStyle = sg; g.fillRect(x - 40 * S, y - 40 * S, 80 * S, 80 * S);
@@ -1565,9 +1575,11 @@ function drawClouds(t, P) {
   const n = { clear: 3, clouds: 9, rain: 10, snow: 7 }[weather] ?? 3, wet = weather === 'rain' || weather === 'snow';
   const w = sunGlow(P.hr), body = lit(wet ? (weather === 'rain' ? '#8a8ea4' : '#d0d4e2') : '#f6f8fc'), shade = lit(wet ? (weather === 'rain' ? '#6c7088' : '#aab0c4') : '#d4dcec');
   const warm = mixHex('#ffb27a', '#ff7a8a', P.hr > 12 ? .4 : .1), alpha = wet ? .86 - DARK * .25 : .82 - DARK * .4, ox = Math.round(P.px * .8), oy = Math.round(P.py * .8);
+  LAST_CLOUDS = [];
   for (let i = 0; i < n; i++) {
     const cw = (26 + (i * 17) % 30) * S, x = Math.round(((i * 131 * S + t * (.004 + (i % 3) * .002) * S) % (P.W + 80 * S)) - 60 * S) + ox;
     const y = Math.round(8 * S + (i * 29 * S) % Math.max(20, Math.min(P.H * .3, P.ground * .45))) + oy;
+    LAST_CLOUDS.push([x, y, cw]);
     g.globalAlpha = alpha;
     g.fillStyle = body; g.fillRect(x, y, cw, 5 * S); g.fillRect(x + 5 * S, y - 3 * S, cw - 12 * S, 3 * S); g.fillRect(x + 9 * S, y - 5 * S, (cw * .35) | 0, 2 * S);
     g.fillStyle = shade; g.fillRect(x + S, y + 4 * S, cw - 2 * S, S);
@@ -2783,10 +2795,12 @@ function frame(t) {
   g = main;
   stepCamera(t, dt);
   drawBackground(t, d);
+  eggSky(t, d);
   if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
   updateResidents(t); updateErrands(t); stepSprites(dt);
   updateScenes(t, d);
+  eggStep(t);
   for (const br of bridges) drawBridge(br);
   drawBridgeWalkers(t);
   const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
@@ -2795,6 +2809,7 @@ function frame(t) {
   drawFallers(t);
   drawSceneOverlays(t);
   drawMist(t, d);
+  eggOver(t);
   updateTip(); updateControls(d);
 }
 
@@ -2974,6 +2989,7 @@ function focusRoom(r) {
 // a click on a room (not on a Clawd) flies to it; a click on the sky flies back out
 cv.addEventListener('click', () => {
   if (!mouse || SCENE === 'extra' || (hovered && hovered.agent)) return;
+  if (eggClick(mouse[0], mouse[1])) return; // the easter eggs' secrets come first
   // zoomed in: only a click right on a room counts; anywhere else around it goes back to the overview
   const zoomed = viewTarget().zoom > 1.01;
   const r = zoomed ? roomUnder(mouse[0], mouse[1]) : roomNear(mouse[0], mouse[1]);
@@ -3027,6 +3043,410 @@ function drawIslets(t) {
   });
 }
 
+// ---------- easter eggs: rare visitors, holidays by the calendar, click secrets, a party, golden and high-fiving Clawds ----------
+// Hooks: eggSky() right after the background, eggStep() after updateScenes(), eggOver() after the overlays (all in frame());
+// eggItems() in buildCache(), eggFrozen() in stepSprites(), eggLook()/eggEyes()/eggAfter() in drawClawd(), eggClick() in the camera's click handler.
+// ?date=YYYY-MM-DD previews a holiday; ?egg=ufo|whale|ghost|party|golden|highfive (or room.egg(name)) starts an event right now.
+const EGG = { on: !(PV && !PV.house), hol: {}, shades: 0, rain: new Map(), purr: 0, purrNext: 0, catClicks: [], letter: null, tipN: 0, hearts: [], heartNext: 0,
+  stars: [], ufo: null, ufoTry: 0, whale: null, ghost: null, party: false, partyUntil: 0, want: Q.get('egg'), fwNext: 0, seen: null };
+const eggStore = {
+  get(k) { try { return JSON.parse(localStorage.getItem('room.egg.' + k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem('room.egg.' + k, JSON.stringify(v)); } catch { /* private window: the egg is just less rare */ } },
+};
+// a persistent random schedule: due once the stored moment has passed; eggSchedule() picks the next one
+const DAY_MS = 864e5;
+function eggSchedule(name, a, b) { const at = Date.now() + (a + Math.random() * (b - a)) * DAY_MS; eggStore.set(name + '.next', at); return at; }
+function eggDue(name, a, b) { let at = eggStore.get(name + '.next'); if (typeof at !== 'number') at = eggSchedule(name, a, b); return Date.now() >= at; }
+function eggHolidays(d) {
+  const q = /^(\d{4})-(\d\d)-(\d\d)$/.exec(Q.get('date') || ''), m = q ? +q[2] - 1 : d.getMonth(), day = q ? +q[3] : d.getDate();
+  EGG.hol = { xmas: (m === 11 && day >= 20) || (m === 0 && day <= 7), newYear: m === 0 && day === 1, halloween: m === 9 && day >= 25,
+    valentine: m === 1 && day === 14, fools: m === 3 && day === 1 };
+}
+const eggRound = p => [Math.round(p[0]), Math.round(p[1])];
+
+// ----- the sky: where drawBackground puts the sun and the clouds (the same formulas), shades, rain, the constellation, the whale, bats -----
+function eggSunAt(d) { return SCENE === 'extra' ? null : LAST_SUN; } // as drawn by drawCelestial this frame
+function eggClouds(t) { return LAST_CLOUDS; } // [x, y, w] as drawn by drawClouds: a cloud covers x..x+w, y-5S..y+5S
+function eggShades([x, y]) { // pixel sunglasses and a grin
+  g.fillStyle = '#16121e';
+  g.fillRect(x - 5 * S, y - 2 * S, 4 * S, 2 * S + 1); g.fillRect(x + S, y - 2 * S, 4 * S, 2 * S + 1); g.fillRect(x - S, y - 2 * S, 2 * S, S);
+  g.fillRect(x - 6 * S, y - 2 * S, S, 1); g.fillRect(x + 5 * S, y - 2 * S, S, 1);
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(x - 4 * S, y - 2 * S + 1, S, 1); g.fillRect(x + 2 * S, y - 2 * S + 1, S, 1);
+  g.fillStyle = '#d88a30'; g.fillRect(x - 2 * S, y + 2 * S, 4 * S, 1); g.fillRect(x - 2 * S - 1, y + 2 * S - 1, 1, 1); g.fillRect(x + 2 * S, y + 2 * S - 1, 1, 1);
+}
+// a Clawd among the stars: body, arms, legs and eyes, in units of 4S
+const CONST_STARS = [[2, 0], [10, 0], [10, 6], [2, 6], [0, 2.6], [12, 2.6], [4.2, 1.8], [7.8, 1.8], [3, 8.4], [5, 8.4], [7, 8.4], [9, 8.4]];
+const CONST_LINES = [[[2, 0], [10, 0]], [[10, 0], [10, 6]], [[10, 6], [2, 6]], [[2, 6], [2, 0]], [[2, 2.6], [0, 2.6]], [[10, 2.6], [12, 2.6]],
+  [[3, 6], [3, 8.4]], [[5, 6], [5, 8.4]], [[7, 6], [7, 8.4]], [[9, 6], [9, 8.4]]];
+function eggConstellation(t) {
+  if (DARK <= .45) return;
+  const a = Math.min(1, (DARK - .45) / .35), u = 4 * S, ox = Math.round(Math.min(cv.width * .7, cv.width - 15 * u)), oy = Math.round(cv.height * .07);
+  const P = ([x, y]) => [ox + x * u, oy + y * u];
+  for (const [p, q] of CONST_LINES) line(P(p), P(q), `rgba(190,205,255,${.16 * a})`);
+  CONST_STARS.forEach((s, i) => { const [x, y] = eggRound(P(s)), tw = .6 + .4 * Math.sin(t / 1300 + i * 2.1);
+    g.fillStyle = `rgba(255,248,215,${a * tw})`; g.fillRect(x - 1, y - 1, 2, 2);
+    if (i < 6) { g.fillStyle = `rgba(255,248,215,${a * tw * .4})`; g.fillRect(x - 3, y - 1, 1, 2); g.fillRect(x + 2, y - 1, 1, 2); g.fillRect(x - 1, y - 3, 2, 1); g.fillRect(x - 1, y + 2, 2, 1); } });
+}
+// a big pixel whale: a body that tapers to the tail, a forked fluke, a striped belly, a pectoral fin
+const WHALE = (() => {
+  const W = 40, H = 16, rows = [];
+  const cyAt = c => c < 16 ? 7.5 - (16 - c) * .22 : 7.5;
+  const half = c => c >= 13 ? Math.max(1.4, 5.6 * Math.sqrt(Math.max(0, 1 - Math.pow(Math.abs(c - 26.5) / 13.5, 2.6)))) : c >= 5 ? 1.0 + (c - 5) * .05 : 4.2 - c * .55;
+  for (let r = 0; r < H; r++) { let s = '';
+    for (let c = 0; c < W; c++) {
+      const cy = cyAt(c), dy = r + .5 - cy, h = half(c); let ch = '.';
+      if (Math.abs(dy) <= h && !(c <= 1 && Math.abs(dy) < 1)) {
+        ch = dy - 1 < -h ? 'h' : 'b';
+        if (c > 15 && dy > h * .3) ch = r % 2 ? 'g' : 'l';
+        if (c === 33 && r === 7) ch = 'e';
+        if (r === 9 && c >= 30 && c <= 38) ch = 'm';
+      }
+      if (r >= 11 && r <= 14 && c >= 22 - (r - 11) && c <= 25 - (r - 11)) ch = 'f';
+      s += ch;
+    }
+    rows.push(s);
+  }
+  return rows;
+})();
+function eggNewWhale(t) { const dir = Math.random() < .5 ? 1 : -1; return { t0: t, dir, y: cv.height * (.12 + Math.random() * .1), seed: Math.random() * 9 }; }
+function eggWhale(t) {
+  if (!EGG.whale && SCENE !== 'extra' && eggDue('whale', 2, 5)) { eggSchedule('whale', 2, 5); EGG.whale = eggNewWhale(t); }
+  const w = EGG.whale; if (!w) return;
+  const span = cv.width + 120 * S, x = w.dir > 0 ? -50 * S + (t - w.t0) * span / 110000 : cv.width + 50 * S - (t - w.t0) * span / 110000;
+  if (w.dir > 0 ? x > cv.width + 60 * S : x < -60 * S) { EGG.whale = null; return; }
+  const k = S + 1, y = Math.round(w.y + Math.sin(t / 2600 + w.seed) * 3 * S), x0 = Math.round(x - 20 * k);
+  pxStamp(x0, y, WHALE, { b: lit('#5a7ec0'), h: lit('#86a8e0'), l: lit('#dce6f4'), g: lit('#a8b8d8'), e: lit('#141a2a'), m: lit('#3a4e80'), f: lit('#46669e') }, w.dir < 0, k);
+  const sp = (t - w.t0) % 7000; // now and then a spout over the blowhole
+  if (sp < 1800) { const hx = x0 + (w.dir > 0 ? 30 : 9) * k, q = sp / 1800;
+    for (let i = 0; i < 7; i++) { const side = i % 2 ? 1 : -1, rise = Math.min(1, q * 2) * (3 + (i >> 1) * 3) * S, fall = Math.max(0, q * 2 - 1) * 4 * S;
+      g.fillStyle = `rgba(220,240,255,${(1 - q) * .9})`; g.fillRect(Math.round(hx + side * (i >> 1) * S * (.5 + q)), Math.round(y - rise + fall), S, S); } }
+}
+const BAT = [['#.....#', '##.#.##', '.#####.', '...#...'], ['.......', '..#.#..', '#######', '#.....#']];
+function eggBats(t) {
+  const roof = shared('roof') || rooms[0]; if (!roof) return;
+  const [cx, cy] = scAt(roof, roof.NX / 2, roof.NY / 2, 60);
+  for (let i = 0; i < 5; i++) { const a = t / (2300 + i * 310) + i * 1.7, x = cx + Math.cos(a) * (46 + i * 9) * S, y = cy + Math.sin(a * 1.3) * 12 * S - i * 5 * S;
+    const f = BAT[Math.floor(t / 130 + i) % 2], X = Math.round(x), Y = Math.round(y); pxStamp(X - 3 * S, Y - 2 * S, f, { '#': emi('#4a3462') }, false, S, true);
+    g.fillStyle = '#ff6a40'; g.fillRect(X - S + 1, Y, 1, 1); g.fillRect(X + S, Y, 1, 1); }
+}
+function eggSky(t, d) {
+  eggHolidays(d);
+  if (!EGG.on) return;
+  if (SCENE !== 'extra') { eggConstellation(t); eggWhale(t); }
+  if (t < EGG.shades) { const s = eggSunAt(d); if (s) eggShades(s); }
+  if (EGG.rain.size) { const cl = eggClouds(t);
+    for (const [i, until] of EGG.rain) {
+      const c = cl[i]; if (!c || t > until) { EGG.rain.delete(i); continue; }
+      const [x, y, w] = c, fade = Math.min(1, (until - t) / 600);
+      g.fillStyle = `rgba(70,76,100,${.38 * fade})`; g.fillRect(x, y, w, 5 * S); g.fillRect(x + 5 * S, y - 3 * S, w - 12 * S, 3 * S); g.fillRect(x + 9 * S, y - 5 * S, (w * .35) | 0, 2 * S);
+      for (let j = 0; j < w / (2 * S) - 1; j++) { const k = (t / 700 + scRnd(j, i)) % 1, dx = x + 2 * S + j * 2 * S + Math.round(scRnd(j, i + 3) * S);
+        g.fillStyle = DARK > .5 ? `rgba(170,200,245,${fade * (1 - k * .7)})` : `rgba(60,100,190,${fade * (1 - k * .7)})`; g.fillRect(dx, Math.round(y + 5 * S + k * 60 * S), 1, 3 * S); }
+    } }
+  if (EGG.hol.halloween && DARK > .5 && SCENE !== 'extra') eggBats(t);
+}
+
+// ----- state per frame: today's agent count, the party, the UFO, the ghost, high fives, New Year's fireworks -----
+const GOLD = ['#f4c63a', '#b88a1e'];
+function eggCount() {
+  const today = new Date().toDateString();
+  if (!EGG.seen || EGG.seen.day !== today) { const s = eggStore.get('seen'); EGG.seen = s && s.day === today && Array.isArray(s.ids) ? s : { day: today, n: 0, ids: [], gold: [] }; }
+  let dirty = false;
+  for (const sp of sprites.values()) {
+    if (sp.kind !== 'agent' || sp.eggSeen || !sp.agent) continue;
+    sp.eggSeen = true; const id = String(sp.agent.id);
+    if (EGG.seen.gold.includes(id)) sp.golden = true;
+    if (EGG.seen.ids.includes(id)) continue;
+    EGG.seen.ids.push(id); if (EGG.seen.ids.length > 3000) EGG.seen.ids.splice(0, 1000);
+    if (++EGG.seen.n % 100 === 0) { sp.golden = true; EGG.seen.gold.push(id); } // every 100th agent of the day
+    dirty = true;
+  }
+  if (dirty) eggStore.set('seen', EGG.seen);
+}
+function eggUfoPick(test) {
+  const ok = s => s.kind !== 'cat' && s.room && !s.onBridge && s.alpha > .6 && !s.fall && !s.leaving && !s.exit && !s.hold;
+  const all = [...sprites.values()];
+  let c = all.filter(s => ok(s) && !s.path.length && (s.state === 'done' || s.state === 'idle-sleep'));
+  if (!c.length && test) c = all.filter(s => ok(s) && !s.path.length);
+  if (!c.length && test) c = all.filter(ok);
+  const open = c.filter(s => s.room.theme.open); return open.length ? open : c; // out on the roof or in the yard if anyone sleeps there
+}
+function eggStartUfo(t, test) { const c = eggUfoPick(test); if (!c.length) return false; EGG.ufo = { t0: t, target: scPick(c), dir: Math.random() < .5 ? 1 : -1, hold: true, lift: 0 }; return true; }
+const UFO_T = [3200, 3700, 4700, 5900, 6900, 7400, 10400]; // arrives, beam on, lifted, held, put back, beam off, gone
+function eggUfoStep(t) {
+  const u = EGG.ufo; if (!u) return;
+  const e = t - u.t0, tg = u.target, here = sprites.get(tg.id) === tg && (tg.room || tg.onBridge);
+  const p = here ? scPos(tg) : null; if (p) u.at = p;
+  if (!u.at || e > UFO_T[6]) { EGG.ufo = null; return; }
+  const hx = u.at[0], hy = Math.max(14 * S, u.at[1] - 52 * S);
+  u.x = hx; u.y = hy;
+  if (e < UFO_T[0]) { const k = 1 - Math.pow(1 - e / UFO_T[0], 3); u.x = hx - u.dir * (1 - k) * cv.width * .75; u.y = hy - (1 - k) * 30 * S; }
+  else if (e > UFO_T[5]) { const k = Math.pow((e - UFO_T[5]) / (UFO_T[6] - UFO_T[5]), 2); u.x = hx + u.dir * k * cv.width * .85; u.y = hy - k * 60 * S; }
+  u.hold = e < UFO_T[5];
+  const lift = e < UFO_T[1] ? 0 : e < UFO_T[2] ? (e - UFO_T[1]) / (UFO_T[2] - UFO_T[1]) : e < UFO_T[3] ? 1 : e < UFO_T[4] ? 1 - (e - UFO_T[3]) / (UFO_T[4] - UFO_T[3]) : 0;
+  u.lift = Math.round(lift * 16 * S + (lift > .9 ? Math.sin(e / 180) * S : 0));
+  u.beam = e < UFO_T[0] ? 0 : e < UFO_T[1] ? (e - UFO_T[0]) / (UFO_T[1] - UFO_T[0]) : e < UFO_T[4] ? 1 : e < UFO_T[5] ? 1 - (e - UFO_T[4]) / (UFO_T[5] - UFO_T[4]) : 0;
+}
+function eggHi5(a, b, t, reroute) {
+  const until = t + 1500;
+  a.hi5 = { t0: t, until, reroute }; b.hi5 = { t0: t, until, reroute };
+  a.hi5Next = b.hi5Next = t + 40000; EGG.stars.push({ a, b, t0: t });
+}
+function eggHighFives(t) {
+  for (const sp of sprites.values()) if (sp.hi5 && t >= sp.hi5.until) { if (sp.hi5.reroute && sp.goal) setGoal(sp, sp.goal); sp.hi5 = null; }
+  const list = [];
+  for (const sp of sprites.values()) {
+    if (sp.kind !== 'agent' || sp.alpha < .6 || sp.hold || sp.fall || sp.leaving || sp.exit || sp.hi5 || t < (sp.hi5Next || 0)) continue;
+    if (sp.state === 'done' || sp.state === 'shower' || sp.state === 'idle-sleep' || (EGG.ufo && EGG.ufo.target === sp)) continue;
+    const at = scPos(sp); if (at) list.push([sp, at, sp.onBridge ? sp.onBridge.pair : sp.room]);
+  }
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const [a, pa, wa] = list[i], [b, pb, wb] = list[j];
+    if (a.vendor === b.vendor || wa !== wb || (!a.moving && !b.moving) || a.hi5 || b.hi5) continue;
+    if (Math.abs(pa[0] - pb[0]) < 10 * S && Math.abs(pa[1] - pb[1]) < 5 * S) eggHi5(a, b, t, false);
+  }
+}
+function eggForceHi5(t) { // the test hook: a Claude and a Codex Clawd meet right now (the second one pops in beside the first)
+  const ok = s => s.kind === 'agent' && s.room && !s.onBridge && s.alpha > .5 && !s.hold && !s.fall && !s.leaving && !s.exit && !s.hi5;
+  const all = [...sprites.values()].filter(ok), cl = all.filter(s => s.vendor === 'claude'), cx = all.filter(s => s.vendor === 'codex');
+  if (!cl.length || !cx.length) return false;
+  const a = cl.find(s => s.z < 1) || cl[0], b = cx.find(s => s.room === a.room) || cx[0], r = a.room;
+  if (b.room !== r || Math.hypot(b.x - a.x - .9, b.y - a.y) > .4 || Math.abs(b.z - a.z) > 1) {
+    scPuff(b); b.room = r; b.x = scClamp(a.x + .9, .4, r.NX - .4); b.y = scClamp(a.y, .4, r.NY - .4); b.z = a.z > 3 ? 0 : a.z; b.path = []; scPuff(b, '#fff0a0');
+  }
+  eggHi5(a, b, t, true); return true;
+}
+function eggStep(t) {
+  if (!EGG.on) return;
+  if (EGG.want && t > 2500 && t > (EGG.wantTry || 0) && rooms.length) { // retried for a while: the Clawds need a moment to arrive
+    EGG.wantTry = t + 500; EGG.want = EGG.want.split(',').filter(n => !eggTrigger(n.trim()) && t < 30000).join(',') || null; }
+  const d = now();
+  eggCount();
+  let working = 0; for (const sp of sprites.values()) if (sp.kind === 'agent' && !sp.leaving && sp.agent?.state === 'working') working++;
+  EGG.party = SCENE !== 'extra' && (working >= 8 || t < EGG.partyUntil);
+  if (!EGG.ufo && DARK > .6 && t > EGG.ufoTry && SCENE !== 'extra') { EGG.ufoTry = t + 5000; if (eggDue('ufo', 2, 5) && eggStartUfo(t, false)) eggSchedule('ufo', 2, 5); }
+  eggUfoStep(t);
+  if (!EGG.ghost && d.getHours() === 3 && d.getMinutes() < 5 && SCENE !== 'extra') { const k = d.toDateString(); if (eggStore.get('ghost.day') !== k) { eggStore.set('ghost.day', k); EGG.ghost = { t0: t, dir: Math.random() < .5 ? 1 : -1 }; } }
+  eggHighFives(t);
+  if (EGG.hol.newYear && d.getHours() === 0 && d.getMinutes() < 15 && t > EGG.fwNext && rooms.length && SCENE !== 'extra') { // midnight on the first of January
+    EGG.fwNext = t + 1100 + Math.random() * 900; SC.fireworks.push({ room: scPick(rooms), t0: t, seed: Math.floor(Math.random() * 5) }); }
+}
+const eggFrozen = sp => { const n = performance.now(); return !!((sp.hi5 && n < sp.hi5.until) || (EGG.ufo && EGG.ufo.target === sp && EGG.ufo.hold)); };
+
+// ----- Clawds: golden, dancing, beamed up, high-fiving, walking backwards on the first of April -----
+function eggLook(sp, t) {
+  if (!EGG.on || sp.kind === 'cat') return null;
+  let o = null; const set = () => o || (o = { dy: 0 });
+  if (sp.golden) { set().gold = GOLD; o.after = true; }
+  if (EGG.party && sp.kind === 'agent' && sp.state === 'working') set().dy += Math.round(Math.abs(Math.sin(t * Math.PI / 480)) * 3); // to the beat
+  if (EGG.ufo && EGG.ufo.target === sp && EGG.ufo.lift) set().dy += EGG.ufo.lift;
+  if (sp.hi5 && t < sp.hi5.until) set().arms = 0;
+  if (EGG.hol.fools && sp.moving) { // eyes on the side it came from: it walks backwards
+    let dir = 0;
+    if (sp.onBridge) { const br = bridges.find(b => b[2] === sp.onBridge.pair[0] && b[3] === sp.onBridge.pair[1]); if (br) dir = Math.sign(br[1][0] - br[0][0]) * (sp.onBridge.forward ? 1 : -1); }
+    else { const n = sp.path[0]; if (n && n.p && n.r === sp.room) dir = Math.sign((n.p[0] - sp.x) - (n.p[1] - sp.y)); }
+    if (dir) set().eye = -dir;
+  }
+  return o;
+}
+function eggEyes(cells, k) { const add = []; for (const cl of cells) if (cl[2] === 'E') { cl[2] = 'B'; add.push([cl[0] + k, cl[1], 'E']); } cells.push(...add); }
+function eggAfter(X, Y, sp, t, left, top, bw) { // golden sparkles
+  g.save(); g.globalCompositeOperation = 'lighter'; glow(X, top + 4 * S, 12 * S, '#ffc830', .12 + .4 * DARK); g.restore();
+  for (let i = 0; i < 3; i++) {
+    const ph = t / 900 + i / 3 + sp.seed * 3, k = ph % 1, j = Math.floor(ph), a = Math.sin(k * Math.PI);
+    const x = Math.round(left - 2 * S + ((j * 7 + i * 5) % 9) / 8 * (bw + 4 * S)), y = Math.round(top - 2 * S + ((j * 3 + i * 11) % 7) / 6 * 12 * S);
+    g.fillStyle = `rgba(255,244,180,${a})`; g.fillRect(x, y - 1, 1, 3); g.fillRect(x - 1, y, 3, 1);
+    if (a > .75) { g.fillStyle = '#ffffff'; g.fillRect(x, y, 1, 1); }
+  }
+}
+
+// ----- holiday props and the disco on the roof, as live items of the room so Clawds sort with them -----
+function eggGarland(x0, y0, x1, y1, z = 11.2) {
+  const n = Math.max(2, Math.round(Math.hypot(x1 - x0, y1 - y0) / .9)), steps = n * 6; let prev = null;
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps, p = iso(x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, z - Math.sin((i % 6) / 6 * Math.PI) * 2.2);
+    if (prev) { line(prev, p, lit('#2e7a3a')); line([prev[0], prev[1] + 1], [p[0], p[1] + 1], lit('#4aa84a')); }
+    prev = p;
+    if (i % 3 === 1) { const c = ['#ff5a5a', '#ffd040', '#5ae0ff', '#ff80e0'][(i / 3 | 0) % 4], on = DARK > .2 && (Math.floor(D.t / 650) + i) % 3 !== 0;
+      g.fillStyle = on ? emi(c) : lit(c); rect(Math.round(p[0]), Math.round(p[1]) + 1, S, S); }
+  }
+}
+function eggTree(x, y) {
+  B(x - .35, y - .35, 0, .7, .7, 3, '#c04848'); B(x - .1, y - .1, 3, .2, .2, 3, '#6a4a2a');
+  const [cx, by] = eggRound(iso(x, y, 5));
+  [[9, 9, 0], [7, 8, 6], [5, 7, 11]].forEach(([w, h, up], k) => {
+    const b = by - up * S, tri = [[cx - w * S, b], [cx + w * S, b], [cx, b - h * S]];
+    polyOutline(tri, lit(OUT)); poly(tri, lit(k % 2 ? '#3e9a46' : '#2e8a3e'));
+    poly([[cx, b - h * S], [cx + w * S, b], [cx + w * S - 2 * S, b]], lit('#246e32'));
+    for (let i = 0; i < 4 - k; i++) { const ox = Math.round((i - (3 - k) / 2) * 3.4 * S), oy = b - 2 * S - ((i + k) % 2) * 2 * S, c = ['#ff5a5a', '#ffd040', '#5ae0ff', '#ff80e0'][(i + k) % 4];
+      g.fillStyle = DARK > .2 && (Math.floor(D.t / 500) + i + k) % 4 ? emi(c) : lit(c); rect(cx + ox, oy, S, S); }
+  });
+  const top = by - 18 * S; g.fillStyle = emi('#ffe060'); rect(cx - 1, top - 3 * S, 2, 4 * S); rect(cx - 1 - S, top - 2 * S, 2 + 2 * S, 2 * S);
+  if (DARK > .3) { g.save(); g.globalCompositeOperation = 'lighter'; glow(cx, top - S, 12 * S, '#ffe080', .25 * DARK); glow(cx, by - 8 * S, 20 * S, '#ffb070', .12 * DARK); g.restore(); }
+}
+function eggPumpkin(x, y, z, s) {
+  const h = s * 7; B(x, y, z, s, s, h, '#e8802a');
+  FY(x + s * .48, x + s * .54, y + s + .002, z + .4, z + h - .4, '#c0601a'); FX(y + s * .48, y + s * .54, x + s + .002, z + .4, z + h - .4, '#c0601a');
+  B(x + s * .42, y + s * .42, z + h, .08, .08, 1.2, '#4a6a2a', 0, 1);
+  const em = DARK > .3, c = em ? '#ffd040' : '#5a2a10';
+  pix(x + s * .2, y + s + .003, z + h * .75, c, em, S, S); pix(x + s * .62, y + s + .003, z + h * .75, c, em, S, S); pix(x + s * .3, y + s + .003, z + h * .35, c, em, S * 3, 1);
+  if (em) { const [gx, gy] = iso(x + s / 2, y + s, z + h / 2); g.save(); g.globalCompositeOperation = 'lighter'; glow(gx, gy, 10 * S, '#ff9030', .3 * DARK); g.restore(); }
+}
+function eggPorch(r, e, add) {
+  const right = e.side === 'right', len = e.stoop ? 1 : PD, base = right ? r.NX + e.c : e.c + r.NY;
+  const XY = (u, v) => right ? [R.NX + u, e.c + v] : [e.c + v, R.NY + u];
+  const rail = (v, z) => { const [ax, ay] = XY(0, v), [bx, by] = XY(len, v); eggGarland(ax, ay, bx, by, z); };
+  add(base + .31, () => { if (EGG.hol.xmas) rail(-.7, 10.2); }, true);
+  add(base + len + .8, () => { if (EGG.hol.halloween) { const [x, y] = XY(len - .62, .15); eggPumpkin(x, y, 0, .42); } }, true);
+  add(base + len + .86, () => { if (EGG.hol.xmas) rail(.7, 10.2); }, true);
+}
+const DISCO = ['#ff5a8a', '#5ae0ff', '#ffd040', '#a0ff70', '#c080ff', '#ff9a40'];
+function eggItems(r, add) {
+  if (!EGG.on) return;
+  if (r.key === '__roof') {
+    add(-.9, () => { if (EGG.hol.xmas) { eggGarland(0, 0, 10, 0); eggGarland(0, 0, 0, 8); } }, true);
+    add(30.1, () => { if (EGG.hol.xmas) { eggGarland(0, 8, 10, 8); eggGarland(10, 0, 10, 8); } }, true);
+    add(6.1, () => { if (EGG.hol.xmas) eggTree(1.6, 4.0); }, true);
+    add(-.4, () => { if (!EGG.party) return; g.save(); g.globalCompositeOperation = 'lighter'; // light spots sweeping over the deck
+      DISCO.forEach((c, i) => { const a = D.t / 1100 + i / DISCO.length * Math.PI * 2, x = 5 + Math.cos(a) * 3.4, y = 4 + Math.sin(a * 1.2) * 2.6, q = .5, k = rgb(c);
+        poly([iso(x - q, y, .05), iso(x, y - q, .05), iso(x + q, y, .05), iso(x, y + q, .05)], `rgba(${k[0]},${k[1]},${k[2]},${.35 + .35 * DARK})`); });
+      g.restore(); }, true);
+    add(99, () => { if (!EGG.party) return;
+      line(iso(10, 0, 30), iso(0, 8, 30), lit('#5a4a3a')); const [bx, by] = eggRound(iso(5, 4, 24)), [wx, wy] = eggRound(iso(5, 4, 30)); line([wx, wy], [bx, by - 4 * S], lit('#c0c0c8'));
+      g.save(); g.globalCompositeOperation = 'lighter';
+      DISCO.forEach((c, i) => { const a = D.t / 1100 + i / DISCO.length * Math.PI * 2, k = rgb(c); line([bx, by], iso(5 + Math.cos(a) * 3.4, 4 + Math.sin(a * 1.2) * 2.6, 0), `rgba(${k[0]},${k[1]},${k[2]},${.1 + .15 * DARK})`); });
+      glow(bx, by, 16 * S, '#ffffff', .1 + .2 * DARK); g.restore();
+      const rr = 4 * S, rot = Math.floor(D.t / 160);
+      g.fillStyle = lit(OUT); for (let y = -rr - 1; y <= rr; y++) { const h = Math.round(Math.sqrt(Math.max(0, (rr + .5) ** 2 - (y + .5) ** 2))); rect(bx - h - 1, by + y, h * 2 + 2, 1); }
+      for (let y = -rr; y < rr; y++) { const h = Math.round(Math.sqrt(Math.max(0, rr * rr - (y + .5) ** 2)));
+        for (let x = -h; x < h; x++) { const f = ((x + 64 + rot * 2) >> 1) + ((y + 64) >> 1), sh = ['#e8ecf4', '#9aa2b8', '#c8cede', '#ffffff'][f & 3];
+          g.fillStyle = (f % 7 === 0) ? emi(DISCO[(f + rot) % DISCO.length]) : emi(sh, .8 + .2 * AMB[0] - (x + y > 2 ? .2 : 0)); rect(bx + x, by + y, 1, 1); } }
+    }, true);
+  }
+  for (const pair of bridgePairs) { const k = pair[0] === r ? 0 : pair[1] === r ? 1 : -1; if (k >= 0 && pair.ends?.[k]) eggPorch(r, pair.ends[k], add); }
+  if (r.key === '__bath' && yardOn()) eggPorch(r, YARD_DOOR, add);
+}
+
+// ----- overlays after the rooms: hearts, high-five stars, the UFO and its beam, the ghost, the letter -----
+const HEART = ['.rr.rr.', 'rwrrrrr', 'rrrrrrr', '.rrrrr.', '..rrr..', '...r...'];
+const STAR5 = ['..y..', '.yyy.', 'yyyyy', '.yyy.', '.y.y.'];
+const UFO_ART = ['.......' + 'c'.repeat(6) + '.......', '......cw' + 'c'.repeat(6) + '......', '.....' + 'c'.repeat(10) + '.....', '..' + 'm'.repeat(16) + '..',
+  'm' + 'M'.repeat(18) + 'm', '.mmlmmmlmmmlmmmlmmm.', '....' + 'd'.repeat(12) + '....'];
+const GHOST = ['...wwwwww...', '..wwwwwwww..', '..wEwwwwEw..', 'wwwwwwwwwwww', 'wwwwwoowwwww', '..wwwwwwww..', '..wwwwwwww..'];
+const GHOST_HEM = [['..w.ww.ww.w.'], ['..ww.ww.ww..']];
+const EGG_TIPS = [
+  'Наведи курсор на Clawd — увидишь, над чем работает агент.',
+  'Клик по Clawd открывает его сессию.',
+  'Жёлтый «!» над головой: агент ждёт твоего ответа.',
+  'Дым и огонь — агент застрял на ошибке, загляни к нему.',
+  'Закончив, Clawd идёт в душ, на крышу или во двор.',
+  'Клик по комнате приближает её, Esc — обратно к дому.',
+  'Сабагент отдаёт результат родителю и исчезает в облачке.',
+  'После git commit Clawd несёт письмо в этот ящик.',
+  'Сонный, медленный Clawd — его контекст почти заполнен.',
+];
+const eggCard = document.createElement('div');
+eggCard.style.cssText = 'position:fixed;left:0;top:0;z-index:3;pointer-events:none;max-width:230px;padding:8px 11px;border:2px solid #2a1f2e;border-radius:8px;' +
+  'background:#fffaf0;color:#2a1f2e;font:500 12px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;box-shadow:3px 3px 0 rgba(0,0,0,.25);' +
+  'transform:translate(-50%,calc(-100% - 10px));opacity:0;transition:opacity .2s';
+eggCard.innerHTML = '<b style="display:block;font-size:11px;letter-spacing:.04em;color:#c0563a;margin-bottom:2px">✉ Совет дня</b><span></span>' +
+  '<i style="position:absolute;left:50%;bottom:-7px;width:10px;height:10px;margin-left:-6px;background:#fffaf0;border:2px solid #2a1f2e;border-top:0;border-left:0;transform:rotate(45deg)"></i>';
+document.body.appendChild(eggCard);
+function eggMailbox() { // [room, box] of the mailbox in the room's tiles (the yard's is drawn in the bathroom's coordinates)
+  if (yardOn()) { const b = shared('bath'); return b ? [b, [3.6, 7.2, -SLAB + 12, .75, .55, 5.3]] : null; }
+  const k = shared('kitchen'); return k ? [k, [9.1, 3.05, 12, .75, .55, 5.3]] : null;
+}
+function eggBoxRect(r, [x, y, z, w, d, h]) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const a of [0, w]) for (const b of [0, d]) for (const c of [0, h]) { const p = scAt(r, x + a, y + b, z + c); x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  return [x0, y0, x1, y1];
+}
+function eggOver(t) {
+  if (!EGG.on) return;
+  const cat = [...sprites.values()].find(s => s.kind === 'cat');
+  if (EGG.hol.valentine && rooms.length && t > EGG.heartNext && SCENE !== 'extra') { // hearts float up all over the house
+    EGG.heartNext = t + 420; const r = scPick(rooms), p = scAt(r, Math.random() * r.NX, Math.random() * r.NY, Math.random() * WH * .8);
+    EGG.hearts.push({ x: p[0], y: p[1], t0: t, life: 4200, seed: Math.random() * 6, col: scPick(['#ff5a8a', '#ff80b0', '#e8405a']) }); }
+  if (t < EGG.purr && cat && t > EGG.purrNext) { const p = scPos(cat); EGG.purrNext = t + 380;
+    if (p) EGG.hearts.push({ x: p[0] + (Math.random() - .5) * 6, y: p[1] - 9, t0: t, life: 2200, seed: Math.random() * 6, col: '#ff6a9a', small: true }); }
+  EGG.hearts = EGG.hearts.filter(h => {
+    const e = (t - h.t0) / h.life; if (e > 1) return false;
+    g.globalAlpha = e > .7 ? (1 - e) / .3 : 1;
+    pxStamp(h.x - 3 + Math.sin(e * 6 + h.seed) * 3 * S, h.y - 3 - e * (h.small ? 14 : 34) * S, HEART, { r: lit(h.col), w: emi('#ffffff') });
+    g.globalAlpha = 1; return true;
+  });
+  if (t < EGG.purr && cat && Math.floor(t / 140) % 2) { const p = scPos(cat); if (p) { g.fillStyle = lit('#f8e4c8'); g.fillRect(Math.round(p[0]) + 7, Math.round(p[1]) - 5, 2, 1); g.fillRect(Math.round(p[0]) + 8, Math.round(p[1]) - 3, 2, 1); } }
+  EGG.stars = EGG.stars.filter(s => { // the high five
+    const e = (t - s.t0) / 1500, a = scPos(s.a), b = scPos(s.b); if (e > 1 || !a || !b) return false;
+    const x = (a[0] + b[0]) / 2, y = Math.min(a[1], b[1]) - (s.a.small && s.b.small ? 14 : 22) * S - e * 5 * S, k = e > .12 && e < .7 ? 2 : 1;
+    g.globalAlpha = e > .75 ? (1 - e) / .25 : 1;
+    pxStamp(x - 2.5 * k, y - 2.5 * k, STAR5, { y: emi('#ffe050') }, false, k);
+    for (let i = 0; i < 4; i++) { const ang = i * Math.PI / 2 + Math.PI / 4, rr = (6 + e * 10) * S; g.fillStyle = emi('#fff4b0'); g.fillRect(Math.round(x + Math.cos(ang) * rr), Math.round(y + Math.sin(ang) * rr), S, S); }
+    g.globalAlpha = 1; return true;
+  });
+  const u = EGG.ufo;
+  if (u && u.x != null) {
+    if (u.beam > 0 && u.at) { // a cone of light from the saucer down to the Clawd
+      const top = [[u.x - 5 * S, u.y + 6 * S], [u.x + 5 * S, u.y + 6 * S]], bot = [[u.at[0] + 13 * S, u.at[1] + S], [u.at[0] - 13 * S, u.at[1] + S]];
+      g.save(); g.globalCompositeOperation = 'lighter';
+      poly([...top, ...bot], `rgba(150,255,190,${.2 * u.beam})`);
+      for (let i = 0; i < 4; i++) { const k = ((t / 900) + i / 4) % 1, y = u.y + 6 * S + k * (u.at[1] - u.y - 6 * S), hw = 5 * S + k * 8 * S;
+        g.fillStyle = `rgba(200,255,220,${.35 * u.beam * (1 - k)})`; g.fillRect(Math.round(u.x - hw), Math.round(y), Math.round(hw * 2), 1); }
+      glow(u.at[0], u.at[1], 18 * S, '#a0ffc0', .35 * u.beam); g.restore();
+    }
+    const blink = Math.floor(t / 180) % 3;
+    pxStamp(u.x - 10 * S, u.y - 3 * S, UFO_ART, { c: lit('#9ae8d0'), w: emi('#ffffff'), m: lit('#9aa2b8'), M: lit('#d0d6e4'), d: lit('#5a6278'),
+      l: emi(['#ff5a5a', '#ffd040', '#5ae0ff'][blink]) }, false, S);
+  }
+  const gh = EGG.ghost;
+  if (gh) { const e = (t - gh.t0) / 26000; if (e > 1) EGG.ghost = null;
+    else { const span = cv.width + 60 * S, x = gh.dir > 0 ? -30 * S + e * span : cv.width + 30 * S - e * span, y = cv.height * .42 + Math.sin(t / 800) * 6 * S;
+      g.save(); g.globalCompositeOperation = 'lighter'; glow(x, y - 2 * S, 22 * S, '#b0c8ff', .18); g.restore();
+      g.globalAlpha = .5 + .12 * Math.sin(t / 300);
+      pxStamp(x - 6 * S, y - 9 * S, [...GHOST, ...GHOST_HEM[Math.floor(t / 300) % 2]], { w: emi('#e4ecff'), E: '#1a1424', o: '#1a1424' }, gh.dir < 0, S, true);
+      g.globalAlpha = 1; } }
+  const L = EGG.letter;
+  if (L) { const e = t - L.t0, mb = eggMailbox();
+    if (e > 6500 || !mb || mb[0] !== L.room) { EGG.letter = null; eggCard.style.opacity = 0; }
+    else { const [x0, y0, x1] = eggBoxRect(mb[0], mb[1]), cx = (x0 + x1) / 2, rise = Math.min(1, e / 450), ly = y0 - 3 - rise * 9 * S + Math.sin(e / 300) * S;
+      pxStamp(cx - 4, ly, PROP.letter, { e: lit('#f8f4e8'), d: lit('#c0b0a0'), r: lit('#e04040') });
+      if (e > 350) { eggCard.style.opacity = 1;
+        eggCard.style.left = scClamp(cx * PXD / DPR, 125, innerWidth - 125) + 'px'; eggCard.style.top = Math.max(70, ly * PXD / DPR) + 'px'; } } }
+}
+
+// ----- clicks: the sun, the cat, the mailbox, a cloud (before the camera gets the click) -----
+function eggClick(x, y) {
+  if (!EGG.on || SCENE === 'extra') return false;
+  const t = performance.now(), overHouse = !!roomUnder(x, y);
+  const s = eggSunAt(now());
+  if (s && !overHouse && Math.hypot(x - s[0], y - s[1]) < 7 * S) { EGG.shades = t + 60000; return true; }
+  const cat = [...sprites.values()].find(c => c.kind === 'cat' && c.alpha > .5), cp = cat && scPos(cat);
+  if (cp && Math.abs(x - cp[0]) < 9 && y > cp[1] - 12 && y < cp[1] + 3) {
+    EGG.catClicks = EGG.catClicks.filter(c => t - c < 1300); EGG.catClicks.push(t);
+    if (EGG.catClicks.length >= 3) { EGG.catClicks = []; EGG.purr = t + 4500; EGG.purrNext = t; cat.next = Math.max(cat.next || 0, t + 6000); }
+    return true;
+  }
+  const mb = eggMailbox();
+  if (mb) { const [x0, y0, x1, y1] = eggBoxRect(mb[0], mb[1]);
+    if (x >= x0 - 3 && x <= x1 + 3 && y >= y0 - 3 && y <= y1 + 3) {
+      const day = Math.floor((now() - new Date(now().getFullYear(), 0, 0)) / DAY_MS);
+      eggCard.querySelector('span').textContent = EGG_TIPS[(day + EGG.tipN++) % EGG_TIPS.length];
+      EGG.letter = { t0: t, room: mb[0] }; return true;
+    } }
+  if (!overHouse) { const cl = eggClouds(t);
+    for (let i = cl.length - 1; i >= 0; i--) { const [cx, cy, w] = cl[i]; if (x >= cx && x <= cx + w && y >= cy - 5 * S && y <= cy + 5 * S) { EGG.rain.set(i, t + 5000); return true; } } }
+  return false;
+}
+function eggTrigger(name) {
+  const t = performance.now();
+  if (name === 'ufo') return eggStartUfo(t, true);
+  if (name === 'whale') { EGG.whale = eggNewWhale(t); return true; }
+  if (name === 'ghost') { EGG.ghost = { t0: t, dir: Math.random() < .5 ? 1 : -1 }; return true; }
+  if (name === 'party') { EGG.partyUntil = t + 60000; return true; }
+  if (name === 'golden') { const a = [...sprites.values()].filter(s => s.kind === 'agent' && !s.leaving && !s.golden && s.alpha > .5); if (!a.length) return false; scPick(a).golden = true; return true; }
+  if (name === 'highfive') return eggForceHi5(t);
+  return false;
+}
+
 // ---------- start ----------
 window.room = {
   setAgents: list => { demo = false; ctl.hidden = true; setAgents(list); },
@@ -3044,6 +3464,7 @@ window.room = {
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setFps: n => { fpsCap = n; },
   setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),
+  egg: name => eggTrigger(name),
 };
 if (PV && !PV.house) {
   document.getElementById('add').hidden = true;
