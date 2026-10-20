@@ -768,6 +768,15 @@ const shared = key => roomByKey.get('__' + key);
 // LAYOUT: 'towers' (stacks side by side), 'steps' (each next stack higher, to the right), 'islands' (projects float around the main tower).
 let LAYOUT = Q.get('layout') || PV?.layout || 'islands';
 let bridges = [];
+// Islands: six around the main tower, then rings further out, each island tied by its bridge to the one it stands beside.
+// [x in room widths, y in floors, the stack its bridge comes from]
+const ISLANDS = [[1.3, -2.0], [-1.3, -1.5], [1.3, -.15], [-1.3, .35], [2.55, -1.1], [-2.55, -.6]];
+const OUTER = [[3.8, -2.0, 4], [-3.8, -1.5, 5], [3.8, -.2, 4], [-3.8, .3, 5], [2.55, .8, 2], [-2.55, 1.3, 3]];
+function islandSlot(t) {
+  const n = t - 1; if (n < ISLANDS.length) return [...ISLANDS[n], 0];
+  const ring = Math.floor((n - ISLANDS.length) / OUTER.length), j = (n - ISLANDS.length) % OUTER.length, [a, b, near] = OUTER[j];
+  return [a + Math.sign(a) * 1.25 * ring, b, ring ? t - OUTER.length : near + 1];
+}
 function layout() {
   if (!rooms.length) return layoutEmpty();
   const stack = [];
@@ -784,7 +793,7 @@ function layout() {
   // where each stack's ground room stands, before centering
   const base = stack.map((s, t) => {
     if (LAYOUT === 'steps') return [t * (W + 70 * S), -t * .62 * F];
-    if (LAYOUT === 'islands') { if (t === 0) return [0, 0]; const slots = [[1.3, -2.0], [-1.3, -1.5], [1.3, -.15], [-1.3, .35], [2.55, -1.1], [-2.55, -.6]]; const [a, b] = slots[(t - 1) % slots.length]; return [a * W, b * F]; }
+    if (LAYOUT === 'islands') { if (t === 0) return [0, 0]; const [a, b] = islandSlot(t); return [a * W, b * F]; }
     return [t * (W + 40 * S), 0];
   });
   const place = () => stack.forEach((s, t) => { let wy = 0;
@@ -804,7 +813,7 @@ function layout() {
   bridgePairs = [];
   if (LAYOUT !== 'towers') stack.forEach((s, t) => {
     if (t === 0) return;
-    const from = LAYOUT === 'steps' ? stack[t - 1] : stack[0], to = s[0];
+    const from = LAYOUT === 'steps' ? stack[t - 1] : LAYOUT === 'islands' ? stack[islandSlot(t)[2]] : stack[0], to = s[0];
     const near = from.filter(r => !r.theme.open && !(r.key === '__bath' && yardOn())).reduce((a, b) => Math.abs(b.wy - to.wy) < Math.abs(a.wy - to.wy) ? b : a);
     bridgePairs.push(to.wx > near.wx ? [near, to] : [to, near]);
   });
