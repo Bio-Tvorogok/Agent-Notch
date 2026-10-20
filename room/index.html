@@ -22,6 +22,7 @@
   #ctl input{width:120px}
   #ctl .t{font:11px ui-monospace,Menlo,monospace;min-width:38px}
 </style>
+<style>.label{display:none!important} /* rooms carry painted signs instead */</style>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -698,6 +699,7 @@ const MINI = ['.BBBBBB.', '.BEBBEB.', '.BBBBBB.', '.BBBBBB.'];
 const VENDOR = { claude: ['#d97757', '#a8533a'], codex: ['#eef0f6', '#9aa2b8'], home: ['#e8b880', '#b0844e'] };
 function drawClawd(X, Y, sp, t) {
   const small = sp.small, rows = small ? MINI : BODY, w = rows[0].length, C = S; // one sprite cell is S pixels
+  if (drowsy(sp)) t *= .5; // a nearly full context makes it slow and sleepy
   const [body, dark] = VENDOR[sp.vendor] || VENDOR.claude;
   const st = sp.state, moving = sp.moving;
   const hop = st === 'waiting' && !moving ? Math.round(Math.abs(Math.sin(t / 260)) * 3) : (moving ? (Math.floor(t / 110) % 2) * C : 0);
@@ -726,6 +728,7 @@ function drawClawd(X, Y, sp, t) {
       else { g.fillStyle = lit(mixHex(bc, '#000000', .5)); g.fillRect(left + c * C, top + r * C + C - 1, C, 1); }
     }
   }
+  infoOverClawd(sp, left, top, rows, C, bc, sleeping, t);
   g.globalAlpha = 1;
   if (st === 'waiting') {
     const bw = 9 * S, bx = Math.round(X) - (bw >> 1), by = top - 12 * S + Math.round(Math.sin(t / 400) * S);
@@ -881,7 +884,7 @@ function bake(r, fn) {
 }
 const D = { t: 0, on: () => false, showering: false };
 function buildCache(r) {
-  const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY;
+  const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY + '|' + growthKey(r);
   if (r.cache && r.cache.key === key) return r.cache;
   const items = [], add = (depth, draw, dyn) => items.push({ depth, draw, dyn });
   if (roomAt(r.tower, r.floor + 1)) {
@@ -890,6 +893,7 @@ function buildCache(r) {
     add(NY + .9, () => { poly([iso(1.3, NY - 4, 0), iso(1.3, NY - 4, 4), iso(1.3, NY, WH), iso(1.3, NY, WH - 9), iso(1.3, NY - 3.3, 0)], lit('#8a5a36')); B(.2, NY - .2, 0, 1.1, .2, WH - 4, '#a06a3a'); });
   } else r.theme.corner(add);
   r.theme.items(add, D);
+  infoItems(r, add, D);
   for (const it of items) if (!it.dyn) it.baked = bake(r, it.draw);
   r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items };
   return r.cache;
@@ -993,7 +997,7 @@ function setAgents(list) {
   const seen = new Set();
   for (const a of list) {
     const room = ensureRoom('p:' + (a.project || '—'), a.project || '—');
-    seen.add(a.id);
+    seen.add(a.id); growthNote(a);
     let sp = sprites.get(a.id);
     if (!sp) sp = spawn(a.id, room, { kind: 'agent', vendor: a.vendor === 'codex' ? 'codex' : 'claude', small: !!a.parentId });
     const prev = sp.agent?.state;
@@ -1078,7 +1082,7 @@ function stepSprites(dt) {
     }
     if (n.jump) { sp.room = n.r; [sp.x, sp.y, sp.z] = n.p; sp.path.shift(); if (n.poof) sp.alpha = 0; continue; }
     const [tx, ty, tz] = n.p, dz = (tz - sp.z) / 14, dist = Math.hypot(tx - sp.x, ty - sp.y, dz);
-    const stepLen = dt / 1000 * (sp.small ? 2.3 : 1.9);
+    const stepLen = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1);
     if (dist <= stepLen) { sp.x = tx; sp.y = ty; sp.z = tz; sp.path.shift(); sp.moving = sp.path.length > 0; }
     else { const k = stepLen / dist; sp.x += (tx - sp.x) * k; sp.y += (ty - sp.y) * k; sp.z += (tz - sp.z) * k; sp.moving = true; }
   }
@@ -1194,7 +1198,237 @@ function drawRoom(r, t, d) {
   r.label.style.left = (lx * PXD / DPR + (under ? 0 : 14)) + 'px'; r.label.style.top = (ly * PXD / DPR) + 'px';
   r.label.style.transform = under ? 'translate(-50%,-50%)' : '';
   r.label.hidden = !!PV && !PV.house;
+  drawSign(r, t);
 }
+
+// ---------- info: context batteries, limit tanks, the piggy bank, rooms that grow, signs ----------
+// A 3x5 pixel font (a few letters are wider), uppercase Latin and Cyrillic, digits and a little punctuation.
+const PFONT = {
+  A: '.#./#.#/###/#.#/#.#', B: '##./#.#/##./#.#/##.', C: '.##/#../#../#../.##', D: '##./#.#/#.#/#.#/##.', E: '###/#../##./#../###',
+  F: '###/#../##./#../#..', G: '.##/#../#.#/#.#/.##', H: '#.#/#.#/###/#.#/#.#', I: '###/.#./.#./.#./###', J: '..#/..#/..#/#.#/.#.',
+  K: '#.#/#.#/##./#.#/#.#', L: '#../#../#../#../###', M: '#...#/##.##/#.#.#/#...#/#...#', N: '#..#/##.#/#.##/#..#/#..#',
+  O: '.#./#.#/#.#/#.#/.#.', P: '##./#.#/##./#../#..', Q: '.#./#.#/#.#/##./.##', R: '##./#.#/##./#.#/#.#', S: '.##/#../.#./..#/##.',
+  T: '###/.#./.#./.#./.#.', U: '#.#/#.#/#.#/#.#/###', V: '#.#/#.#/#.#/#.#/.#.', W: '#...#/#...#/#.#.#/##.##/#...#', X: '#.#/#.#/.#./#.#/#.#',
+  Y: '#.#/#.#/.#./.#./.#.', Z: '###/..#/.#./#../###',
+  Б: '###/#../##./#.#/##.', Г: '###/#../#../#../#..', Д: '.##./.#.#/.#.#/####/#..#', Ж: '#.#.#/#.#.#/.###./#.#.#/#.#.#', З: '##./..#/.#./..#/##.',
+  И: '#..#/#.##/##.#/#..#/#..#', Й: '#..#/#.##/##.#/#..#/#..#', Л: '.###/.#.#/.#.#/.#.#/#..#', П: '###/#.#/#.#/#.#/#.#', У: '#.#/#.#/.##/..#/##.',
+  Ф: '.###./#.#.#/#.#.#/.###./..#..', Ц: '#.#./#.#./#.#./####/...#', Ч: '#.#/#.#/.##/..#/..#', Ш: '#.#.#/#.#.#/#.#.#/#.#.#/#####',
+  Щ: '#.#.#/#.#.#/#.#.#/#####/....#', Ъ: '##../.#../.##./.#.#/.##.', Ы: '#...#/#...#/##..#/#.#.#/##..#', Ь: '#../#../##./#.#/##.',
+  Э: '##./..#/.##/..#/##.', Ю: '#..#./#.#.#/###.#/#.#.#/#..#.', Я: '.##/#.#/.##/#.#/#.#',
+  0: '###/#.#/#.#/#.#/###', 1: '.#./##./.#./.#./###', 2: '##./..#/.#./#../###', 3: '##./..#/.#./..#/##.', 4: '#.#/#.#/###/..#/..#',
+  5: '###/#../##./..#/##.', 6: '.##/#../###/#.#/###', 7: '###/..#/.#./.#./.#.', 8: '###/#.#/###/#.#/###', 9: '###/#.#/###/..#/##.',
+  ' ': '../../../../..', '-': '.../.../###/.../...', '—': '..../..../####/..../....', _: '.../.../.../.../###', '.': './././.#', ',': '././././#', ':': './#/./#/.',
+  '!': '#/#/#/./#', '?': '##./..#/.#./.../.#.', "'": '#/#/./././', '/': '..#/..#/.#./#../#..', '+': '.../.#./###/.#./...',
+  '(': '.#/#./#./#./.#', ')': '#./.#/.#/.#/#.', '%': '#.#/..#/.#./#../#.#', $: '.#./###/#../###/..#/###/.#.', '~': '..../.#.#/#.#./..../....',
+  '…': '...../...../...../...../#.#.#', '#': '.#.#/####/.#.#/####/.#.#', '&': '.#./#.#/.#./#.#/.##',
+};
+for (const [a, b] of [['А', 'A'], ['В', 'B'], ['Е', 'E'], ['К', 'K'], ['М', 'M'], ['Н', 'H'], ['О', 'O'], ['Р', 'P'], ['С', 'C'], ['Т', 'T'], ['Х', 'X'], ['Ё', 'Е']]) PFONT[a] = PFONT[b];
+const PFC = new Map(), TK = 3; // TK: canvas pixels per font pixel, so names read at the default zoom
+
+function pfGlyph(ch) {
+  let gl = PFC.get(ch); if (gl) return gl;
+  const src = PFONT[ch] || PFONT[ch.toUpperCase()] || PFONT['?'];
+  gl = src.split('/'); PFC.set(ch, gl); return gl;
+}
+const pfWidth = s => [...s].reduce((w, ch, i) => w + pfGlyph(ch)[0].length + (i ? 1 : 0), 0);
+// text at canvas pixels, k pixels per font pixel; uses rect() so baking sees it
+function pfDraw(s, x, y, color, k = S) {
+  g.fillStyle = color; let cx = Math.round(x);
+  for (const ch of s) { const gl = pfGlyph(ch);
+    const y0 = Math.round(y) - (gl.length > 5 ? k : 0); // a tall glyph like $ reaches one row above and below
+    gl.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === '#') rect(cx + c * k, y0 + r * k, k, k); });
+    cx += (gl[0].length + 1) * k; }
+}
+function pfFit(s, max) { s = String(s || '').toUpperCase().replace(/\s+/g, ' ').trim(); return [...s].length > max ? [...s].slice(0, max - 1).join('') + '…' : s; }
+
+const INFO = { usage: null, spend: null, coins: [], wiggle: 0, real: false };
+
+// --- context fill: a battery over each agent; nearly full makes it drowsy ---
+function ctxOf(sp) {
+  const a = sp.agent; if (!a) return null;
+  if (typeof a.context === 'number') return Math.max(0, Math.min(1, a.context));
+  if (demo) return ((hashStr(a.id) % 100) / 100 * .7 + (a.age || 0) * .012) % 1;
+  return null;
+}
+const drowsy = sp => ctxOf(sp) >= .9;
+function infoOverClawd(sp, left, top, rows, C, bc, sleeping, t) {
+  const f = ctxOf(sp); if (f === null || sp.state === 'fall') return;
+  if (f >= .9 && !sleeping) { // heavy eyelids
+    g.fillStyle = lit(mixHex(bc, '#000000', .35));
+    rows.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === 'E') g.fillRect(left + c * C, top + r * C, C, Math.ceil(C / 2)); }));
+  }
+  const rem = 1 - f, n = 4, cell = S, inner = n * cell + (n - 1), bw = inner + 2, bh = 2 * S + 2;
+  const x = left - bw - 1, y = top - bh - 3;
+  const col = f >= .9 ? '#e5534b' : f >= .7 ? '#f0c040' : '#58c860';
+  const blink = f >= .97 && Math.floor(t / 400) % 2;
+  g.fillStyle = lit(OUT); g.fillRect(x - 1, y - 1, bw + 2, bh + 2); g.fillRect(x + bw, y + 1, 2, bh - 2);
+  g.fillStyle = blink ? emi('#e5534b') : lit('#f4f0e8'); g.fillRect(x, y, bw, bh); g.fillRect(x + bw, y + 2, 1, bh - 4);
+  g.fillStyle = '#20182a'; g.fillRect(x + 1, y + 1, inner, bh - 2);
+  const on = Math.max(0, Math.min(n, Math.ceil(rem * n - .001)));
+  g.fillStyle = emi(col); for (let i = 0; i < on; i++) g.fillRect(x + 1 + i * (cell + 1), y + 1, cell, bh - 2);
+}
+
+// --- subscription limits: two fuel tanks on the roof, the level is what is left ---
+const VENDOR_CAP = { claude: '#d97757', codex: '#eef0f6' };
+function limitTank(x, y, vendor) {
+  const u = INFO.usage && INFO.usage[vendor], warn = (INFO.usage && INFO.usage.warning) || 80;
+  const used = u && isFinite(u.used) ? Math.max(0, Math.min(100, u.used)) : null, left = used === null ? 0 : 100 - used;
+  const tone = used === null ? '#8a8a96' : used >= warn ? '#e5534b' : used >= warn - 10 ? '#f0b030' : '#58c860';
+  const w = 1.1, d = .9, h = 22;
+  B(x + .15, y + .15, 0, w - .3, d - .3, 2.5, '#6a6a74');
+  B(x, y, 2.5, w, d, h, '#c8ced8');
+  B(x + .25, y + .2, h + 2.5, w - .5, d - .4, 1.6, VENDOR_CAP[vendor]);
+  FY(x, x + w, y + d + .002, h - 1.5, h + 1, VENDOR_CAP[vendor]);
+  FY(x + .3, x + .8, y + d + .003, 5, h - 3.5, '#1a1c24');
+  if (left > 0) FY(x + .34, x + .76, y + d + .004, 5.5, 5.5 + (h - 9.5) * left / 100, tone, true);
+  for (let z = 5.5 + (h - 9.5) / 4; z < h - 4; z += (h - 9.5) / 4) line(iso(x + .3, y + d + .005, z), iso(x + .4, y + d + .005, z), lit('#f4f0e8'));
+  if (used !== null && used >= warn && Math.floor(D.t / 500) % 2) pix(x + w - .1, y + d * .5, h + 5, '#ff4030', true, S, S);
+  // a plate with what is left, facing the viewer
+  const txt = used === null ? '—' : Math.round(left) + '%', tw = pfWidth(txt) * TK, [px, py] = iso(x + w / 2, y + d / 2, h + 9);
+  const bx = Math.round(px - tw / 2) - 3, by = Math.round(py) - 5 * TK - 3;
+  g.fillStyle = lit(OUT); rect(bx - 1, by - 1, tw + 8, 5 * TK + 8);
+  g.fillStyle = emi('#201a2a'); rect(bx, by, tw + 6, 5 * TK + 6);
+  g.fillStyle = emi(VENDOR_CAP[vendor]); rect(bx, by, tw + 6, 1);
+  pfDraw(txt, bx + 3, by + 3, emi(used !== null && used >= warn ? '#ff7060' : '#f4f0e8'), TK);
+}
+
+// --- spend today: a piggy bank in the kitchen, coins drop in when it grows ---
+function dropCoins(n) { const t = performance.now(); for (let i = 0; i < n; i++) INFO.coins.push(t + i * 260); }
+function moneyText(sp) {
+  if (!sp || !isFinite(sp.usd)) return '$—';
+  const v = sp.usd; return '$' + (v >= 1000 ? Math.round(v) : v >= 100 ? v.toFixed(1) : v.toFixed(2));
+}
+function piggyBank(x, y, t) {
+  B(x, y, 0, 1.0, .8, 6, '#a0603a'); FY(x + .1, x + .9, y + .801, 4.6, 5.2, '#7a4628');
+  B(x + .45, y + .05, 6, .1, .1, 15, '#5a4028', 0, 1); // the counter's stick, behind the pig
+  const wig = t < INFO.wiggle ? Math.round(Math.sin(t / 40)) * .5 : 0, z = 6 + Math.max(0, wig);
+  const pk = '#f2a0b4', pd = '#d87894';
+  for (const [lx, ly] of [[.2, .15], [.65, .15], [.2, .55], [.65, .55]]) B(x + lx, y + ly, z, .14, .14, 1.2, pd, 0, 1);
+  B(x + .1, y + .1, z + 1.2, .8, .6, 4.6, pk);                 // body
+  B(x + .85, y + .25, z + 2.2, .2, .3, 2, pd);                  // snout
+  pix(x + 1.05, y + .32, z + 3.6, '#7a3a50', 0, 1, 1); pix(x + 1.05, y + .46, z + 3.6, '#7a3a50', 0, 1, 1);
+  pix(x + .78, y + .7, z + 5, '#20141a', 0, S, S);              // eye
+  B(x + .6, y + .12, z + 5.8, .14, .1, 1, pd, 0, 1); B(x + .6, y + .56, z + 5.8, .14, .1, 1, pd, 0, 1); // ears
+  line(iso(x + .3, y + .35, z + 5.81), iso(x + .55, y + .35, z + 5.81), lit('#5a2a3a'));                  // coin slot
+  line(iso(x + .1, y + .4, z + 3.4), iso(x - .08, y + .45, z + 4.2), lit(pd));                            // tail
+  // coins falling into the slot
+  const [sx, sy] = iso(x + .42, y + .35, z + 5.8);
+  INFO.coins = INFO.coins.filter(t0 => t - t0 < 900);
+  for (const t0 of INFO.coins) { const k = (t - t0) / 900; if (k < 0) continue;
+    const cy = Math.round(sy - (1 - k * k) * 34 * S), cx = Math.round(sx) - S;
+    if (k > .96) INFO.wiggle = t + 260;
+    g.fillStyle = lit(OUT); g.fillRect(cx - 1, cy - 1, 2 * S + 2, 2 * S + 2);
+    g.fillStyle = emi('#f0c040'); g.fillRect(cx, cy, 2 * S, 2 * S); g.fillStyle = emi('#fff0a0'); g.fillRect(cx, cy, 1, 1); }
+  // the counter: today's spend on a little board above the pig
+  const txt = moneyText(INFO.spend), tw = pfWidth(txt) * TK, [px, py] = iso(x + .5, y + .1, 25);
+  const bx = Math.round(px - tw / 2) - 4, by = Math.round(py) - 5 * TK - 4;
+  g.fillStyle = lit(OUT); rect(bx - 1, by - 1, tw + 10, 5 * TK + 10);
+  g.fillStyle = lit('#2e3a34'); rect(bx, by, tw + 8, 5 * TK + 8);
+  g.fillStyle = lit('#7a5a3a'); rect(bx, by + 5 * TK + 7, tw + 8, 1); rect(bx, by, tw + 8, 1);
+  pfDraw(txt, bx + 4, by + 4, INFO.spend && INFO.spend.partial ? lit('#c8d0c8') : emi('#f0d070'), TK);
+}
+function setUsage(u) {
+  if (!u) return;
+  const was = INFO.spend && INFO.spend.usd, now = u.spend && u.spend.usd;
+  if (isFinite(was) && isFinite(now) && now > was + .004) dropCoins(Math.min(6, Math.max(1, Math.ceil((now - was) / .25))));
+  INFO.usage = u; if (u.spend) INFO.spend = u.spend;
+}
+function demoUsage() {
+  if (!demo || INFO.real) return;
+  const s = INFO.spend ? INFO.spend.usd + (Math.random() < .5 ? Math.random() * .6 : 0) : 3.4;
+  const k = (Date.now() / 60000) % 1;
+  setUsage({ claude: { used: Math.round(45 + 50 * k) }, codex: { used: 22 }, warning: 80, spend: { usd: Math.round(s * 100) / 100, partial: false } });
+}
+
+// --- rooms grow with the project: every new agent seen there counts, kept across launches ---
+const GROWTH_KEY = 'room.growth.v1', GROWTH_STEPS = [0, 2, 6, 15];
+let growth = {};
+try { growth = JSON.parse(localStorage.getItem(GROWTH_KEY) || '{}') || {}; } catch (e) { growth = {}; }
+let growthSave = 0;
+function growthNote(a) {
+  const p = a.project || '—', e = growth[p] || (growth[p] = { n: 0, ids: [] });
+  if (e.ids.includes(a.id)) return;
+  e.ids.push(a.id); if (e.ids.length > 150) e.ids.shift(); e.n++;
+  if (demo) return;
+  clearTimeout(growthSave); growthSave = setTimeout(() => { try { localStorage.setItem(GROWTH_KEY, JSON.stringify(growth)); } catch (e) {} }, 2000);
+}
+function growthLevel(r) {
+  if (r.theme.shared) return 0;
+  if (Q.has('grow')) return Math.max(0, Math.min(3, Number(Q.get('grow')) || 0));
+  const n = (growth[r.name] || {}).n || 0; let l = 0; GROWTH_STEPS.forEach((s, i) => { if (n >= s) l = i; }); return l;
+}
+const GROW_AT = { bedroom: { at: [8.7, 6.3], poster: ['R', 4.75, 5.65, 26, 38] }, server: { at: [8.5, 6.6], poster: ['R', 7.0, 8.2, 30, 42] },
+  library: { at: [1.45, 6.3] }, greenhouse: { at: [8.0, 6.8] }, arcade: { at: [8.6, 6.5], poster: ['R', 1.3, 2.5, 22, 36] } };
+function growthItems(r, add) {
+  const lvl = growthLevel(r), th = Object.keys(THEMES).find(k => THEMES[k] === r.theme), spot = GROW_AT[th] || { at: [8.5, 6.5] };
+  const [a, b] = spot.at;
+  // a plant that gets bigger
+  const ps = [.36, .46, .6, .72][lvl];
+  if (lvl < 3) add(a + .7 + b + .1 + ps, () => pot(a + .7, b + .1, ps, '#c87050', '#3e9a46', '#7ad070', 21 + lvl, 3 + lvl * 1.5));
+  else add(a + .7 + b + .7, () => tallPlant(a + .7, b + .1, '#c87050', 23));
+  // books pile up
+  const nb = [0, 3, 5, 8][lvl];
+  if (nb) add(a + b + .9, () => { for (let i = 0; i < nb; i++) { const j = ((i * 37) % 7) / 50; B(a + j, b + .05 - j, i * 1.3, .55, .4, 1.3, BOOKS[(i + 2) % BOOKS.length]); } });
+  // a poster on the wall
+  if (lvl >= 2 && spot.poster) add(.2, () => { const [wall, p0, p1, z0, z1] = spot.poster; framed(wall, p0, p1, z0, z1, '#f4f0e8', '#3a4a6a');
+    const F = (u, z) => wall === 'L' ? [.04, p1 - .2 - u * (p1 - p0 - .4), z] : [p0 + .2 + u * (p1 - p0 - .4), .04, z];
+    for (let i = 0; i < 5; i++) { const q0 = F(i / 5, z0 + 4 + [0, 3, 2, 6, 8][i]), q1 = F((i + 1) / 5, z0 + 4 + [3, 2, 6, 8, 11][i]); line(iso(...q0), iso(...q1), lit('#7ae08a')); }
+    const st = F(.85, z1 - 3.5); pix(st[0], st[1], st[2], '#f0d040', 0, S, S); });
+  // and a trophy
+  if (lvl >= 3) add(a + b + 1.4, () => {
+    B(a, b + .75, 0, .5, .5, 4.5, '#6a4a8a'); FY(a + .05, a + .45, b + 1.251, 1.5, 3, '#f0d040');
+    B(a + .15, b + .9, 4.5, .2, .2, .8, '#a07018'); B(a + .21, b + .96, 5.3, .08, .08, 1.4, '#d0a020', 0, 1);
+    B(a + .08, b + .83, 6.7, .34, .34, 3, '#f0c840'); pix(a + .04, b + .98, 9, '#f0c840', 0, 1, S * 2); pix(a + .44, b + .98, 8.6, '#f0c840', 0, 1, S * 2);
+    pix(a + .14, b + .9, 9.4, '#fff4c0', 0, 1, S); });
+}
+const growthKey = r => growthLevel(r);
+
+function infoItems(r, add, D) {
+  if (r.key === '__roof') { add(4.0, () => limitTank(2.7, .2, 'claude'), true); add(6.3, () => limitTank(5.0, .2, 'codex'), true); }
+  if (r.key === '__kitchen') add(12.2, () => piggyBank(8.5, 3.1, D.t), true);
+  if (!r.theme.shared) growthItems(r, add);
+}
+
+// --- signs: the room's name painted on wood, in the world instead of floating labels ---
+const signCache = new Map();
+function signImage(text, plaque) {
+  const key = (plaque ? 'p' : 's') + '|' + text + '|' + lightKey;
+  let c = signCache.get(key); if (c) return c;
+  if (signCache.size > 80) signCache.clear();
+  const tw = pfWidth(text) * TK, w = tw + 14, h = 5 * TK + 12;
+  c = document.createElement('canvas'); c.width = w + 2; c.height = h + 2;
+  const saved = g; g = c.getContext('2d');
+  const sl = (h, k = 1) => DARK > .3 ? emi(h, k * (1 - DARK * .3)) : lit(h, k); // a little lamp keeps the name readable at night
+  const wood = plaque ? '#5a3a26' : '#c8925a', edge = plaque ? '#d8b070' : '#e8b880', ink = plaque ? '#f4e2b0' : '#4a2a18';
+  g.fillStyle = sl(OUT); g.fillRect(0, 1, w + 2, h); g.fillRect(1, 0, w, h + 2);
+  g.fillStyle = sl(wood); g.fillRect(1, 1, w, h);
+  g.fillStyle = sl(edge); g.fillRect(2, 1, w - 2, 1);
+  g.fillStyle = sl(wood, .8); g.fillRect(2, h, w - 2, 1);
+  if (!plaque) { g.fillStyle = sl(wood, .88); for (let i = 0; i < w / 9; i++) g.fillRect(3 + ((i * 23) % (w - 8)), 4 + ((i * 7) % (h - 7)), 4, 1); }
+  else { g.fillStyle = sl(edge); g.fillRect(2, 2, w - 2, 1); g.fillRect(2, h - 1, w - 2, 1); }
+  g.fillStyle = sl('#2a1f2e'); g.fillRect(3, Math.round(h / 2), 1, 1); g.fillRect(w - 2, Math.round(h / 2), 1, 1);
+  pfDraw(text, 8, 7, sl(ink), TK);
+  g = saved; signCache.set(key, c); return c;
+}
+function signText(r) { return pfFit(r.theme.shared ? r.theme.name : r.name, 18); }
+function drawSign(r, t) {
+  if (PV && !PV.house) return;
+  const e = Math.min(1, Math.max(0, (t - r.born) / 900)), saved = R; R = r;
+  g.globalAlpha = Math.min(1, e * 1.6);
+  const img = signImage(signText(r), r.floor > 0);
+  if (r.floor === 0) { // a sign on a post on the grass at the island's front corner
+    const [px, py] = iso(r.NX + .55, r.NY + .55, -SLAB), X = Math.round(px), Y = Math.round(py), post = 9 * S;
+    g.fillStyle = lit(OUT); g.fillRect(X - S - 1, Y - post - 1, 2 * S + 2, post + 2);
+    g.fillStyle = lit('#8a5a36'); g.fillRect(X - S, Y - post, 2 * S, post);
+    g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(X - 3 * S, Y, 6 * S, 1);
+    g.drawImage(img, X - (img.width >> 1), Y - post - img.height + 3 * S);
+  } else { // a plaque on the front rim
+    const [px, py] = iso(r.NX * .78, r.NY, -SLAB / 2);
+    g.drawImage(img, Math.round(px - img.width / 2), Math.round(py - img.height / 2));
+  }
+  g.globalAlpha = 1; R = saved;
+}
+setInterval(demoUsage, 4000); demoUsage();
 
 // ---------- hover and click ----------
 let mouse = null, hovered = null;
@@ -1493,6 +1727,7 @@ window.room = {
   configure, focusRoom: name => { const r = roomByKey.get('p:' + name); if (r) focusRoom(r); },
   setWeather: w => { weather = w; },
   setActive: on => { active = on; wake(); },
+  setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setFps: n => { fpsCap = n; },
 };
 if (PV && !PV.house) {

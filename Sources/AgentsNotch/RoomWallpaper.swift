@@ -26,6 +26,7 @@ final class RoomWallpaper: NSObject {
     var extras: [CGDirectDisplayID: RoomExtraScreen] = [:]
     var settingsSubs: Set<AnyCancellable> = []
     private var pressed: (NSPoint, Double)?
+    private let info = RoomInfoFeed()
 
     init(store: Store) { self.store = store }
 
@@ -67,6 +68,7 @@ final class RoomWallpaper: NSObject {
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.push() }
             .store(in: &subs)
+        info.start(store: store, changed: { [weak self] in self?.push() }, send: { [weak self] js in self?.web?.evaluateJavaScript(js) })
         // A desktop-level window doesn't always follow to a new Space; bring it along when it got left behind.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
             .sink { [weak self] _ in
@@ -106,6 +108,7 @@ final class RoomWallpaper: NSObject {
         monitor = nil
         subs.removeAll()
         removeExtras()
+        info.stop()
         web?.configuration.userContentController.removeScriptMessageHandler(forName: "room")
         window?.orderOut(nil)
         window = nil
@@ -140,12 +143,14 @@ final class RoomWallpaper: NSObject {
 
     /// The agents as the page wants them; only changes are sent.
     private func push() {
+        info.track(store.shown)
         let rows: [[String: Any]] = store.shown.map { a in
             var r: [String: Any] = ["id": a.id, "title": a.title, "project": a.project, "vendor": a.vendor.rawValue, "state": Self.state(a.state)]
             if let v = a.activity { r["activity"] = v }
             if let v = a.parentId { r["parentId"] = v }
             if let v = a.shortModel { r["model"] = v }
             if let v = a.ask { r["ask"] = v }
+            if let v = info.contexts[a.id] { r["context"] = v }
             return r
         }
         guard let data = try? JSONSerialization.data(withJSONObject: rows, options: [.sortedKeys]),
@@ -255,6 +260,7 @@ extension RoomWallpaper: WKNavigationDelegate {
             sentFps = 0
             pushRoomConfig()
             push()
+            info.resend(store: store)
             syncPower()
         }
     }

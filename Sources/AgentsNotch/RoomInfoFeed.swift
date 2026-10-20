@@ -1,0 +1,105 @@
+import Combine
+import Foundation
+import NotchCore
+
+/// What the agents' house shows besides the agents: each agent's context fill, the subscription limits and today's spend.
+/// Limits and spend are reused from the app's UsageModel; the context fill is read here, from a bounded log tail
+/// cached by file stamp, so the wallpaper never re-reads a log that did not change.
+@MainActor
+final class RoomInfoFeed {
+    /// Context fill 0...1 by agent id, for the rows RoomWallpaper pushes.
+    private(set) var contexts: [String: Double] = [:]
+    private var agents: [String: Agent] = [:]
+    private let cache = FileReadCache<ContextUsage?>()
+    private let queue = DispatchQueue(label: "agents-notch.room-info", qos: .utility)
+    private var reading = false
+    private var timer: Timer?
+    private var subs: Set<AnyCancellable> = []
+    private var lastUsage = ""
+    private var send: (String) -> Void = { _ in }
+    private var changed: () -> Void = {}
+
+    func start(store: Store, changed: @escaping () -> Void, send: @escaping (String) -> Void) {
+        self.changed = changed
+        self.send = send
+        let usage = store.usage, settings = store.settings
+        usage.$limits.combineLatest(usage.$spend, usage.$spendComplete)
+            .debounce(for: .milliseconds(200), scheduler: RunLoop.main)
+            .sink { [weak self] limits, spend, complete in
+                self?.pushUsage(limits: limits, spend: spend, complete: complete, warning: settings.limits.warningPercent)
+            }
+            .store(in: &subs)
+        timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.readContexts() }
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        subs.removeAll()
+        agents = [:]
+        contexts = [:]
+        lastUsage = ""
+    }
+
+    /// The page reloaded: send everything again.
+    func resend(store: Store) {
+        lastUsage = ""
+        let usage = store.usage
+        pushUsage(limits: usage.limits, spend: usage.spend, complete: usage.spendComplete, warning: store.settings.limits.warningPercent)
+    }
+
+    /// Called with the rows the wallpaper shows; new or moved logs are read right away, the rest on the timer.
+    func track(_ shown: [Agent]) {
+        var next: [String: Agent] = [:]
+        for a in shown where a.logPath != nil { next[a.id] = a }
+        let fresh = next.contains { agents[$0.key]?.logPath != $0.value.logPath }
+        agents = next
+        contexts = contexts.filter { next[$0.key] != nil }
+        if fresh { readContexts() }
+    }
+
+    private func readContexts() {
+        guard !reading, !agents.isEmpty else { return }
+        reading = true
+        let list = Array(agents.values), cache = cache
+        queue.async { [weak self] in
+            cache.retain(paths: Set(list.compactMap(\.logPath)))
+            var values: [String: Double] = [:]
+            for a in list {
+                guard let path = a.logPath,
+                      let usage = cache.read(path: path, load: { ContextFill.read(path: path, vendor: a.vendor) }),
+                      usage.windowTokens > 0 else { continue }
+                values[a.id] = (UsageView.fraction(usage.percent) * 100).rounded() / 100
+            }
+            let result = values
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.reading = false
+                let kept = result.filter { self.agents[$0.key] != nil }
+                if kept != self.contexts { self.contexts = kept; self.changed() }
+            }
+        }
+    }
+
+    private func pushUsage(limits: [VendorLimits], spend: [ProjectSpend], complete: Bool, warning: Int) {
+        var u: [String: Any] = ["warning": warning]
+        for l in limits {
+            guard let used = UsageView.tightest(l) else { continue }
+            var v: [String: Any] = ["used": (used * 10).rounded() / 10]
+            if let w = l.windows.first(where: { $0.usedPercent == used }) {
+                v["window"] = w.label
+                if let r = w.resetsAt { v["resetsAt"] = Int(r.timeIntervalSince1970) }
+            }
+            u[l.vendor.rawValue] = v
+        }
+        let usd = spend.compactMap(\.usd).reduce(0, +)
+        u["spend"] = ["usd": (usd * 100).rounded() / 100,
+                      "partial": !complete || spend.contains { $0.isPartial || $0.usd == nil }]
+        guard let data = try? JSONSerialization.data(withJSONObject: u, options: [.sortedKeys]),
+              let json = String(data: data, encoding: .utf8), json != lastUsage else { return }
+        lastUsage = json
+        send("window.room && room.setUsage && room.setUsage(\(json)); true")
+    }
+}
