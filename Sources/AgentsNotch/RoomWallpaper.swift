@@ -15,6 +15,7 @@ final class RoomWallpaper: NSObject {
     private(set) var web: WKWebView?
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
+    private var pinchTap: CFMachPort?
     private var lastJSON = ""
     private var lastMove = 0.0
     private var hovering = false
@@ -91,7 +92,8 @@ final class RoomWallpaper: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in self?.fitScreen() }
             .store(in: &subs)
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .magnify, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
+        startPinchTap()
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
             let type = e.type
             // Esc on the desktop goes back to the overview; macOS only delivers keys here with Accessibility access
             if type == .keyDown {
@@ -99,10 +101,32 @@ final class RoomWallpaper: NSObject {
                 MainActor.assumeIsolated { self?.web?.evaluateJavaScript("room.resetView()") }
                 return
             }
-            let magnify = type == .magnify ? e.magnification : 0
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
-            MainActor.assumeIsolated { self?.mouse(type, magnify: magnify, scroll: scroll) }
+            MainActor.assumeIsolated { self?.mouse(type, scroll: scroll) }
         }
+    }
+
+    /// A global monitor is never sent trackpad pinches (they go to the app under the cursor, Finder on the desktop),
+    /// so they are read from a listen-only event tap on the session; it needs no extra permission.
+    private func startPinchTap() {
+        let callback: CGEventTapCallBack = { _, type, event, ref in
+            guard let ref else { return Unmanaged.passUnretained(event) }
+            let me = Unmanaged<RoomWallpaper>.fromOpaque(ref).takeUnretainedValue()
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                MainActor.assumeIsolated { if let tap = me.pinchTap { CGEvent.tapEnable(tap: tap, enable: true) } }
+            } else if let e = NSEvent(cgEvent: event), e.type == .magnify {
+                let m = e.magnification
+                MainActor.assumeIsolated { me.mouse(.magnify, magnify: m) }
+            }
+            return Unmanaged.passUnretained(event)
+        }
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
+                                          eventsOfInterest: CGEventMask(1) << CGEventMask(NSEvent.EventType.magnify.rawValue),
+                                          callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque())
+        else { NSLog("agents-notch: no event tap for trackpad pinches"); return }
+        CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        pinchTap = tap
     }
 
     func stop() {
@@ -112,6 +136,8 @@ final class RoomWallpaper: NSObject {
         sentFps = 0
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if let pinchTap { CGEvent.tapEnable(tap: pinchTap, enable: false); CFMachPortInvalidate(pinchTap) }
+        pinchTap = nil
         subs.removeAll()
         removeExtras()
         info.stop()
