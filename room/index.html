@@ -655,14 +655,12 @@ function shellA(r) {
   const th = r.theme, NX = R.NX, NY = R.NY;
   if (r.floor === 0) {
     const snow = weather === 'snow';
-    B(-1.2, -1.2, -SLAB - 14, NX + 2.4, NY + 2.4, 14, '#7a5a3a');
-    FY(-1.2, NX + 1.2, NY + 1.2 + .001, -SLAB - 14, -SLAB - 9, '#5a4028'); FX(-1.2, NY + 1.2, NX + 1.2 + .001, -SLAB - 14, -SLAB - 9, '#5a4028');
-    FL(-1.2, -1.2, NX + 1.2, NY + 1.2, snow ? '#eef2f8' : '#6aa84a', -SLAB);
+    const GY = NY + 2.0; // the ground reaches out in front, under the outside stairs
+    B(-1.2, -1.2, -SLAB - 14, NX + 2.4, GY + 1.2, 14, '#7a5a3a');
+    FY(-1.2, NX + 1.2, GY + .001, -SLAB - 14, -SLAB - 9, '#5a4028'); FX(-1.2, GY, NX + 1.2 + .001, -SLAB - 14, -SLAB - 9, '#5a4028');
+    FL(-1.2, -1.2, NX + 1.2, GY, snow ? '#eef2f8' : '#6aa84a', -SLAB);
     for (let i = 0; i < 30; i++) pix(-1 + (i * 3.7) % (NX + 2), NY + .2 + (i % 4) * .25, -SLAB, snow ? '#ffffff' : (i % 5 ? '#8ac860' : '#f0d040'));
     for (let i = 0; i < 24; i++) pix(NX + .2 + (i % 4) * .25, -1 + (i * 2.9) % (NY + 2), -SLAB, snow ? '#ffffff' : (i % 6 ? '#8ac860' : '#ff80a0'));
-  } else {
-    for (const lx of [.42, 1.08]) { const a = iso(lx, NY - .7, LADDER_Z), b = iso(lx, NY - .7, 0); g.fillStyle = lit('#7a4a2a'); rect(Math.round(a[0]), Math.round(b[1]), S, Math.round(a[1] - b[1])); }
-    for (let z = LADDER_Z + 4; z < 0; z += 5) { line(iso(.42, NY - .7, z), iso(1.08, NY - .7, z), lit('#a06a3a')); line(iso(.42, NY - .7, z - .5), iso(1.08, NY - .7, z - .5), lit('#7a4a2a')); }
   }
   B(0, 0, -SLAB, NX, NY, SLAB, '#6a4a4a');
   drawFloor(th);
@@ -690,7 +688,6 @@ function shellB(r) {
     FX(a - .15, b + .15, .02, 0, 42, '#e8dcc0'); FX(a, b, .03, 0, 40, '#c8a878'); FX(a + .15, b - .15, .04, 22, 36, '#d8bc8c'); FX(a + .15, b - .15, .04, 4, 18, '#d8bc8c');
     B(.04, b - .35, 18, .15, .25, 1, '#9aa0a8'); FL(.1, a, .9, b, '#8ac04a', .2); }
   th.decor();
-  if (r.floor > 0) { FL(.2, NY - 1.2, 1.3, NY - .2, '#3a2a2a'); B(1.3, NY - 1.2, 0, .08, 1.0, 6, '#a06a3a', 0, 1); B(.2, NY - 1.28, 0, 1.18, .08, 6, '#a06a3a', 0, 1); }
 }
 
 // ---------- Clawd ----------
@@ -818,7 +815,7 @@ function applyView() {
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; makeSkyline(); }
   cv.style.width = (cv.width * PXD / DPR) + 'px'; cv.style.height = (cv.height * PXD / DPR) + 'px';
   for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + r.wy - VIEW.at[1]); }
-  const edge = (r, side) => { const saved = R; R = { ox: r.ox, oy: r.oy, drop: 0 }; const p = side === 'right' ? iso(r.NX, r.NY * .55, -SLAB) : iso(r.NX * .45, r.NY, -SLAB); R = saved; return p; };
+  const edge = (r, side) => { const saved = R; R = { ox: r.ox, oy: r.oy, drop: 0 }; const p = side === 'right' ? iso(r.NX, r.NY * .55, -SLAB) : iso(r.NX * .78, r.NY, -SLAB); R = saved; return p; };
   bridges = bridgePairs.map(([l, r]) => [edge(l, 'right'), edge(r, 'left'), l, r]);
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
@@ -869,9 +866,9 @@ function drawBridge([a, b]) {
 // ---------- baking: static parts are drawn once into small images ----------
 const scratch = document.createElement('canvas'), sctx = scratch.getContext('2d');
 function bake(r, fn) {
-  const W = (r.NX + r.NY) * 8 * S + 160 * S, H = (r.NX + r.NY) * 4 * S + (WH + SLAB + 20) * S + (FLOOR_STEP + 40) * S;
+  const W = (r.NX + r.NY) * 8 * S + 160 * S, H = (r.NX + r.NY + 4) * 4 * S + (2 * FLOOR_STEP + 90) * S;
   if (scratch.width < W || scratch.height < H) { scratch.width = Math.max(scratch.width, W); scratch.height = Math.max(scratch.height, H); }
-  const ox = r.NY * 8 * S + 80 * S, oy = WH * S + 30 * S;
+  const ox = r.NY * 8 * S + 80 * S, oy = (FLOOR_STEP + 30) * S;
   sctx.clearRect(0, 0, scratch.width, scratch.height);
   const saved = [g, R]; g = sctx; R = { ox, oy, drop: 0, NX: r.NX, NY: r.NY };
   BB = [Infinity, Infinity, -Infinity, -Infinity];
@@ -887,15 +884,13 @@ function buildCache(r) {
   const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY + '|' + growthKey(r);
   if (r.cache && r.cache.key === key) return r.cache;
   const items = [], add = (depth, draw, dyn) => items.push({ depth, draw, dyn });
-  if (roomAt(r.tower, r.floor + 1)) {
-    const NY = r.NY;
-    for (let i = 0; i < 8; i++) { const y0 = NY - 4 + i * .475; add(.75 + y0 + .25, () => { B(.2, y0, i * 7.5 + 3.5, 1.1, .475, 4, '#c08a5a'); }); }
-    add(NY + .9, () => { poly([iso(1.3, NY - 4, 0), iso(1.3, NY - 4, 4), iso(1.3, NY, WH), iso(1.3, NY, WH - 9), iso(1.3, NY - 3.3, 0)], lit('#8a5a36')); B(.2, NY - .2, 0, 1.1, .2, WH - 4, '#a06a3a'); });
-  } else r.theme.corner(add);
+  r.theme.corner(add);
   r.theme.items(add, D);
   infoItems(r, add, D);
   for (const it of items) if (!it.dyn) it.baked = bake(r, it.draw);
-  r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items };
+  const above = roomAt(r.tower, r.floor + 1);
+  r.cache = { key, A: bake(r, () => shellA(r)), B: bake(r, () => shellB(r)), items,
+    escBack: above ? bake(r, () => escape(r, 'back')) : null, escFront: above ? bake(r, () => escape(r, 'front')) : null, escTop: !above && r.floor > 0 ? bake(r, () => escape(r, 'top')) : null };
   return r.cache;
 }
 function blit(b) { if (b) g.drawImage(b.img, R.ox + b.dx, R.oy + R.drop + b.dy); }
@@ -946,7 +941,7 @@ function roomPath(a, b) {
   return steps;
 }
 // where a bridge meets a room: the left room of a pair is left by its right-hand edge, the right room entered on its left
-const bridgeDoor = (pair, room) => room === pair[0] ? [room.NX - .35, room.NY * .55, 0] : [room.NX * .45, room.NY - .3, 0];
+const bridgeDoor = (pair, room) => room === pair[0] ? [room.NX - .35, room.NY * .55, 0] : [room.NX * .78, room.NY - .3, 0];
 function routeTo(sp, room, p) {
   const nodes = []; let cur = sp.room, from = [sp.x, sp.y];
   const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
@@ -959,8 +954,11 @@ function routeTo(sp, room, p) {
     if (via === 'stairs') {
       const up = next.floor > cur.floor, NY = cur.NY, NYn = next.NY;
       if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
-      if (up) nodes.push({ r: cur, p: [2.0, NY - 3.5, 0] }, { r: cur, p: [.75, NY - 3.8, 2] }, { r: cur, p: [.75, NY - .7, WH] }, { r: next, p: [.75, NYn - .7, LADDER_Z], jump: true }, { r: next, p: [.75, NYn - .7, 0] }, { r: next, p: [2.0, NYn - 1.4, 0] });
-      else nodes.push({ r: cur, p: [2.0, NY - 1.4, 0] }, { r: cur, p: [.75, NY - .7, 0] }, { r: cur, p: [.75, NY - .7, LADDER_Z] }, { r: next, p: [.75, NYn - .7, WH], jump: true }, { r: next, p: [.75, NYn - 3.8, 2] }, { r: next, p: [2.0, NYn - 3.5, 0] });
+      // out through the open front onto the landing, up (or down) two flights, in on the next floor
+      const up_ = (Y, k) => [[1.0, Y - .5, 0], [.7, Y + .7, 0], [1.4, Y + .4, 0], [ESC.x1, Y + .4, F2], [ESC.x1 + .6, Y + .7, F2], [ESC.x1, Y + 1.0, F2], [1.4, Y + 1.0, FLOOR_STEP]];
+      if (up) { up_(NY).forEach(q => nodes.push({ r: cur, p: q })); nodes.push({ r: next, p: [1.4, NYn + 1.0, 0], jump: true }, { r: next, p: [.7, NYn + .7, 0] }, { r: next, p: [1.0, NYn - .5, 0] }); }
+      else { const Yn = NYn; nodes.push({ r: cur, p: [1.0, NY - .5, 0] }, { r: cur, p: [.7, NY + .7, 0] }, { r: cur, p: [1.4, NY + 1.0, 0] }, { r: next, p: [1.4, Yn + 1.0, FLOOR_STEP], jump: true });
+        up_(Yn).reverse().slice(1).forEach(q => nodes.push({ r: next, p: q })); }
     } else {
       const out = bridgeDoor(via, cur), inn = bridgeDoor(via, next);
       if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
@@ -971,6 +969,49 @@ function routeTo(sp, room, p) {
   if (far(from, p)) nodes.push({ r: room, p: room.theme.hub });
   nodes.push({ r: room, p });
   sp.path = nodes;
+}
+// ---------- outside stairs: a switchback fire escape on the front-left corner of a stack ----------
+// Landings at every floor (flush with the floor, just outside the open front), a flight along the back lane
+// up to a half landing, then a flight along the front lane up to the next floor.
+const ESC = { x0: .1, x1: 3.3, w: 1.1 }; const F2 = FLOOR_STEP / 2;
+function escape(r, layer) {
+  const Y = r.NY, steps = 11, run = (ESC.x1 - 1.3) / steps, rise = F2 / steps, wood = '#b07a4a', dark = '#7a4a2a';
+  const landing = (x, z) => { B(x, Y + .1, z - 2.4, ESC.w, 1.2, 2.4, wood); for (let k = .3; k < ESC.w; k += .3) line(iso(x + k, Y + .1, z), iso(x + k, Y + 1.3, z), lit(dark)); };
+  const post = (x, y, z0, z1) => B(x - .06, y - .06, z0, .12, .12, z1 - z0, '#6a4228', 0, 1);
+  const rail = (a, b) => { line(a, b, lit('#4a2c18')); line([a[0], a[1] + 1], [b[0], b[1] + 1], lit('#8a5a36')); };
+  if (layer === 'back') {
+    landing(ESC.x0, 0);
+    for (let i = 0; i < steps; i++) B(1.3 + i * run, Y + .1, (i + 1) * rise - 1.6, run + .02, .6, 1.6, wood);
+    poly([iso(1.3, Y + .1, -2), iso(ESC.x1, Y + .1, F2 - 2), iso(ESC.x1, Y + .1, F2 - 5), iso(1.3, Y + .1, -5)], lit(dark)); // stringer
+    landing(ESC.x1, F2);
+    for (const x of [ESC.x0 + .05, ESC.x1 + ESC.w - .05]) post(x, Y + .15, x < 1 ? -2 : F2 - 8, x < 1 ? FLOOR_STEP : F2 + 12);
+  } else if (layer === 'front') {
+    for (let i = 0; i < steps; i++) B(ESC.x1 - (i + 1) * run, Y + .7, F2 + (i + 1) * rise - 1.6, run + .02, .6, 1.6, wood);
+    poly([iso(ESC.x1, Y + 1.3, F2 - 2), iso(1.3, Y + 1.3, FLOOR_STEP - 2), iso(1.3, Y + 1.3, FLOOR_STEP - 5), iso(ESC.x1, Y + 1.3, F2 - 5)], lit(dark));
+    for (const x of [ESC.x0 + .05, ESC.x1 + ESC.w - .05]) post(x, Y + 1.25, x < 1 ? -2 : F2 - 2, x < 1 ? 12 : F2 + 12);
+    rail(iso(ESC.x0 + .05, Y + 1.25, 12), iso(1.3, Y + 1.25, 12));                         // around the landing
+    rail(iso(ESC.x1, Y + 1.25, F2 + 12), iso(ESC.x1 + ESC.w - .05, Y + 1.25, F2 + 12));
+    rail(iso(ESC.x1 + ESC.w - .05, Y + 1.25, F2 + 12), iso(ESC.x1 + ESC.w - .05, Y + .15, F2 + 12));
+    rail(iso(ESC.x1, Y + 1.25, F2 + 12), iso(1.3, Y + 1.25, FLOOR_STEP + 12));               // along the front flight
+    for (let i = 1; i < steps; i += 3) { const x = ESC.x1 - i * run; post(x, Y + 1.25, F2 + i * rise - 1, F2 + i * rise + 12); }
+  } else { // the top floor: just its landing and a railing
+    landing(ESC.x0, 0);
+    post(ESC.x0 + .05, Y + 1.25, -2, 12); post(1.25, Y + 1.25, -2, 12);
+    rail(iso(ESC.x0 + .05, Y + 1.25, 12), iso(1.25, Y + 1.25, 12));
+  }
+}
+// drawn after every room of the stack, with the Clawds that are out on them, back to front
+function drawEscapes(t) {
+  for (const r of rooms) {
+    const c = r.cache; if (!c || !(c.escBack || c.escTop)) continue;
+    R = r;
+    const out = [...sprites.values()].filter(s => s.room === r && s.y > r.NY - .05);
+    const clawd = s => { const [X, Y] = iso(s.x, s.y, s.z); drawClawd(X, Y, s, t); };
+    blit(c.escBack || c.escTop);
+    out.filter(s => s.y < r.NY + .7).forEach(clawd);
+    blit(c.escFront);
+    out.filter(s => s.y >= r.NY + .7).forEach(clawd);
+  }
 }
 // a point on the deck of a bridge, as drawn by drawBridge
 function bridgePoint(pair, u) {
@@ -1169,7 +1210,7 @@ function drawRoom(r, t, d) {
   r.drop = Math.round(-Math.pow(1 - e, 3) * 70 * S);
   const cache = buildCache(r);
   R = r;
-  const here = [...sprites.values()].filter(s => s.room === r);
+  const here = [...sprites.values()].filter(s => s.room === r && s.y <= r.NY - .05);
   D.t = t;
   D.on = (cat, i) => here.some(s => s.kind === 'agent' && s.goal && s.goal.room === r && s.goal.cat === cat && s.goal.i === i && !s.path.length && s.state === 'working');
   D.showering = here.some(s => s.state === 'shower' && !s.path.length);
@@ -1510,6 +1551,7 @@ function frame(t) {
   drawBridgeWalkers(t);
   const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
   for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) drawRoom(r, t, d);
+  drawEscapes(t);
   drawFallers(t);
   updateTip(); updateControls(d);
 }
