@@ -2480,6 +2480,7 @@ function followTo(zoom, at) { CAM.glide = null; CAM.follow = { zoom, at: at.slic
 // Back to the overview: a button while zoomed in, and on its own after half a minute without touching the view.
 const homeBtn = document.getElementById('home');
 homeBtn.addEventListener('click', () => resetView());
+addEventListener('keydown', e => { if (e.key === 'Escape') resetView(); });
 function stepHome(t) {
   const zoomed = viewTarget().zoom > 1.01;
   homeBtn.classList.toggle('on', zoomed);
@@ -2552,9 +2553,11 @@ function focusRoom(r) {
 // a click on a room (not on a Clawd) flies to it; a click on the sky flies back out
 cv.addEventListener('click', () => {
   if (!mouse || SCENE === 'extra' || (hovered && hovered.agent)) return;
-  const r = roomNear(mouse[0], mouse[1]);
+  // zoomed in: only a click right on a room counts; anywhere else around it goes back to the overview
+  const zoomed = viewTarget().zoom > 1.01;
+  const r = zoomed ? roomUnder(mouse[0], mouse[1]) : roomNear(mouse[0], mouse[1]);
   if (r) focusRoom(r);
-  else if (viewTarget().zoom > 1) resetView();
+  else if (zoomed) resetView();
 });
 
 // ---------- the extra screens: islands floating in the same sky ----------

@@ -91,8 +91,14 @@ final class RoomWallpaper: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in self?.fitScreen() }
             .store(in: &subs)
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .magnify, .smartMagnify, .scrollWheel]) { [weak self] e in
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .magnify, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
             let type = e.type
+            // Esc on the desktop goes back to the overview; macOS only delivers keys here with Accessibility access
+            if type == .keyDown {
+                guard e.keyCode == 53, NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder" else { return }
+                MainActor.assumeIsolated { self?.web?.evaluateJavaScript("room.resetView()") }
+                return
+            }
             let magnify = type == .magnify ? e.magnification : 0
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
             MainActor.assumeIsolated { self?.mouse(type, magnify: magnify, scroll: scroll) }
