@@ -1421,49 +1421,460 @@ function stepSprites(dt) {
   }
 }
 
-// ---------- background: sky, sun, skyline, weather ----------
-let skyline = null, skyKey = '';
-function makeSkyline() { skyKey = ''; }
-function drawSkyline() {
-  const key = lightKey + cv.width + 'x' + cv.height;
-  if (skyKey !== key) {
-    skyKey = key; skyline = document.createElement('canvas'); skyline.width = cv.width; skyline.height = 70 * S;
-    const c = skyline.getContext('2d'), saved = g; g = c;
-    let x = -10, i = 0;
-    while (x < cv.width + 10) {
-      const w = (14 + (i * 37) % 22) * S, h = (18 + (i * 53) % 46) * S, y = skyline.height - h;
-      g.fillStyle = lit('#6a76a0', .9); g.fillRect(x, y, w, h); g.fillStyle = lit('#7a86b0', .9); g.fillRect(x, y, w, S);
-      for (let yy = y + 3 * S; yy < skyline.height - 3 * S; yy += 4 * S) for (let xx = x + 2 * S; xx < x + w - 2 * S; xx += 3 * S) {
-        const on = ((xx / S * 7 + yy / S * 13 + i) % 5) < 2;
-        g.fillStyle = DARK > .4 && on ? `rgba(255,214,120,${DARK * .9})` : lit('#8a96c0', .9); g.fillRect(xx, yy, S, 2 * S);
-      }
-      x += w + (2 + (i * 11) % 6) * S; i++;
-    }
-    g = saved;
-  }
-  g.drawImage(skyline, 0, cv.height - skyline.height);
+// ---------- background: sky, sun and moon, the backdrop, clouds, weather ----------
+// Backdrop contract: how to add one (BACKDROPS.city below is the reference).
+//   BACKDROPS.<id> = { name: 'Город', draw(t, d, P), ground(W, H) }        ground() is optional
+//   draw(t, d, P) paints everything between the sky and the islands onto `g`, in canvas pixels. Already there: the sky
+//     gradient with the sunrise/sunset bands, stars, sun, moon and shooting stars. Drawn over it afterwards: the generic
+//     clouds and rain/snow; after the rooms, the morning mist (drawMist).
+//   P = { px, py, W, H, ground, hr }:
+//     px, py: the cursor parallax offset (canvas px) of a layer at depth 1. Multiply by the layer's depth 0..1 and
+//       round: 0 is the islands' plane (does not move), 1 the far horizon (moves the most); the city uses
+//       far .9, mid .6, train .45, houses .3, street .15. Both ease to 0 when the pointer is unknown.
+//     W, H: the canvas size; ground: y of the horizon line (sun and moon sink behind it, so paint below it too);
+//     hr: the hour, fractional. t is performance.now(); d is now() (it follows the fast-forwarded clock).
+//   ground(W, H) returns that y if the backdrop wants another horizon than bdGround(H) (14 art px above the bottom).
+//   It may use lit()/emi()/haze()/mixHex()/AMB/DARK/SKY/weather/seasonNow()/scRnd()/sfDraw()/pxStamp(). Static layers
+//   go into offscreen canvases through bdLayer(name, key, w, h, paint), keyed by lightKey + size (+ weather/season when
+//   they show them); only the moving bits are drawn per frame. It runs every frame at up to 60 fps: keep it to a few
+//   drawImage calls and a handful of rects. Let layers bleed BD_M px past the left, right and bottom edges so that the
+//   parallax never opens a gap.
+window.BACKDROPS = window.BACKDROPS || {};
+let BACKDROP = (() => { let v = Q.get('backdrop'); if (!v) try { v = localStorage.getItem('room.backdrop'); } catch (e) {} return v || 'city'; })();
+function setBackdrop(id) { if (!BACKDROPS[id]) return false; BACKDROP = id; try { localStorage.setItem('room.backdrop', id); } catch (e) {} return true; }
+const BD_PX = 6 * S, BD_PY = 2 * S, BD_M = 8 * S;
+const bdGround = H => (Math.floor(H / S) - 14) * S;
+const BDC = new Map();
+function bdLayer(name, key, w, h, paint) { // an offscreen canvas painted once per key; `g` points at it while painting
+  let c = BDC.get(name);
+  if (c && c.key === key) return c.cv;
+  if (!c) { c = { cv: document.createElement('canvas'), key: '' }; BDC.set(name, c); }
+  w = Math.max(1, Math.ceil(w)); h = Math.max(1, Math.ceil(h));
+  if (c.cv.width !== w || c.cv.height !== h) { c.cv.width = w; c.cv.height = h; } else c.cv.getContext('2d').clearRect(0, 0, w, h);
+  c.key = key; const saved = g; g = c.cv.getContext('2d');
+  try { paint(g); } finally { g = saved; }
+  return c.cv;
 }
+function makeSkyline() { BDC.clear(); } // a resize drops every cached backdrop layer
+// a daylight colour, lit by the hour and then faded toward the horizon's colour by a (0..1): distance haze
+function haze(h, a, k = 1) { const c = rgb(h), s = rgb(SKY[1]); return css(c[0] * AMB[0] * k * (1 - a) + s[0] * a, c[1] * AMB[1] * k * (1 - a) + s[1] * a, c[2] * AMB[2] * k * (1 - a) + s[2] * a); }
+
+// the cursor parallax: eased toward the pointer, back to rest when it leaves
+const PAR = { x: 0, y: 0, last: 0 };
+function stepParallax(t) {
+  const dt = Math.min(100, Math.max(0, t - (PAR.last || t))); PAR.last = t;
+  const tx = mouse ? -scClamp(mouse[0] / cv.width * 2 - 1, -1, 1) * BD_PX : 0, ty = mouse ? -scClamp(mouse[1] / cv.height * 2 - 1, -1, 1) * BD_PY : 0;
+  const k = 1 - Math.exp(-dt / 380); PAR.x += (tx - PAR.x) * k; PAR.y += (ty - PAR.y) * k;
+  if (Math.abs(PAR.x) < .05 && !mouse) PAR.x = 0; if (Math.abs(PAR.y) < .05 && !mouse) PAR.y = 0;
+}
+
+// ----- the sky: gradient, then sunrise/sunset bands low over the horizon -----
+function sunGlow(hr) { // 0..1: how much sunrise or sunset there is right now
+  const b = (c, w) => Math.max(0, 1 - Math.abs(hr - c) / w), v = Math.max(b(6.2, 1.4), b(19.3, 1.5));
+  return v * v * (3 - 2 * v) * ({ rain: .3, snow: .4, clouds: .75 }[weather] ?? 1);
+}
+const BANDS = ['#ffe8a0', '#ffc878', '#ff9e6e', '#f27a84', '#c46a9e', '#7c5ca8'];
+const sunX = (k, W) => W * (.08 + .84 * k);
+function drawSky(P) {
+  const gr = g.createLinearGradient(0, 0, 0, P.H); gr.addColorStop(0, SKY[0]); gr.addColorStop(1, SKY[1]);
+  g.fillStyle = gr; g.fillRect(0, 0, P.W, P.H);
+  const w = sunGlow(P.hr); if (w < .02) return;
+  const evening = P.hr > 12, sx = sunX(evening ? 1 : 0, P.W), unit = Math.max(2, Math.round(P.H / 300)) * S;
+  const rg = g.createRadialGradient(sx, P.ground, 0, sx, P.ground, P.W * .55); // the side where the sun is burns brighter
+  rg.addColorStop(0, `rgba(255,160,100,${.75 * w})`); rg.addColorStop(1, 'rgba(255,170,110,0)'); g.fillStyle = rg; g.fillRect(0, 0, P.W, P.H);
+  let y = P.ground + 4 * S;
+  for (let i = 0; i < BANDS.length; i++) { // stepped bands, thicker as they climb
+    const h = (3 + i * 2) * unit; y -= h;
+    g.globalAlpha = w * (.8 - i * .1); g.fillStyle = BANDS[i]; g.fillRect(0, y, P.W, h);
+    g.globalAlpha = w * (.8 - i * .1) * .5; g.fillRect(0, y - S, P.W, S); // a one-pixel step softens the edge
+  }
+  g.globalAlpha = 1;
+}
+
+// ----- stars, the moon in its real phase, the sun on its arc, shooting stars -----
+let STARS = [], starKey = '';
+function drawStars(t, P) {
+  if (DARK < .45 || weather === 'rain' || weather === 'snow') return;
+  const key = P.W + 'x' + P.ground;
+  if (starKey !== key) { starKey = key; const r = cityRnd(77); STARS = [];
+    for (let i = 0; i < Math.round(P.W * P.ground / 9000); i++) { const b = r();
+      STARS.push({ x: r() * P.W, y: Math.pow(r(), 1.4) * P.ground * .85, b: .35 + b * .65, big: b > .93, sp: 1200 + r() * 2400, ph: r() * 7, c: r() < .2 ? '200,215,255' : r() < .15 ? '255,236,200' : '255,255,255' }); } }
+  const a0 = Math.min(1, (DARK - .45) * 2) * (weather === 'clouds' ? .5 : 1), ox = Math.round(P.px), oy = Math.round(P.py);
+  for (const s of STARS) {
+    const a = a0 * s.b * (.62 + .38 * Math.sin(t / s.sp + s.ph)); if (a < .05) continue;
+    const x = Math.round(s.x) + ox, y = Math.round(s.y) + oy; g.fillStyle = `rgba(${s.c},${Math.round(a * 20) / 20})`;
+    if (s.big) { g.fillRect(x, y, S, S); g.globalAlpha = .45; g.fillRect(x - S, y, S, S); g.fillRect(x + S, y, S, S); g.fillRect(x, y - S, S, S); g.fillRect(x, y + S, S, S); g.globalAlpha = 1; }
+    else g.fillRect(x, y, s.b > .7 ? S : 1, s.b > .7 ? S : 1);
+  }
+}
+function moonPhase(d) { // 0 new, .25 first quarter, .5 full, .75 last quarter; ?moon=0.5 to look at one
+  if (Q.has('moon')) return ((Number(Q.get('moon')) % 1) + 1) % 1;
+  const days = (d.getTime() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5; return ((days / 29.530588853) % 1 + 1) % 1;
+}
+const moonImgs = new Map();
+function moonImage(p) {
+  const q = Math.round(p * 48) % 48; let c = moonImgs.get(q); if (c) return c;
+  const R0 = 6, n = R0 * 2, cs = Math.cos(q / 48 * Math.PI * 2), waxing = q <= 24;
+  c = document.createElement('canvas'); c.width = c.height = n * S; const x = c.getContext('2d');
+  const CR = [[3, 4], [7, 3], [5, 7], [8, 8], [4, 9]]; // craters
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const nx = (i + .5 - R0) / R0, ny = (j + .5 - R0) / R0; if (nx * nx + ny * ny > 1) continue;
+    const hw = Math.sqrt(1 - ny * ny), on = waxing ? nx > hw * cs : nx < -hw * cs, edge = nx * nx + ny * ny > .72;
+    x.fillStyle = on ? (CR.some(([a, b]) => a === i && b === j) ? '#d4d2c4' : edge ? '#e6e4d2' : '#f6f4e4') : 'rgba(70,80,120,.5)';
+    x.fillRect(i * S, j * S, S, S);
+  }
+  moonImgs.set(q, c); return c;
+}
+const METEORS = { list: [], next: 0 };
+function shootingStar(t, P, force) {
+  const r = Math.random(); METEORS.list.push({ x: P.W * (.1 + Math.random() * .8), y: P.ground * (.05 + Math.random() * .35), dir: r < .5 ? -1 : 1, t0: t, life: 650 + Math.random() * 500, len: 9 + Math.round(Math.random() * 8), force });
+}
+function drawCelestial(t, d, P) {
+  drawStars(t, P);
+  const sky = (weather === 'clear' || weather === 'clouds') && SCENE !== 'extra'; // one sun: the extra screens leave it to the main one
+  const ox = Math.round(P.px), oy = Math.round(P.py), hr = P.hr, arc = k => P.ground + 5 * S - Math.sin(Math.PI * k) * (P.ground - P.H * .1);
+  if (sky) {
+    const km = (hr >= 12 ? hr - 19.5 : hr + 4.5) / 10.5; // the moon crosses the night sky
+    if (km > -.08 && km < 1.08) { const p = moonPhase(d), lum = 1 - Math.abs(p - .5) * 2, mx = Math.round(sunX(km, P.W)) + ox, my = Math.round(arc(km)) + oy;
+      if (lum > .04) { const gk = .22 * lum * Math.max(.3, DARK), gr = g.createRadialGradient(mx, my, 0, mx, my, 22 * S);
+        gr.addColorStop(0, `rgba(220,226,255,${gk})`); gr.addColorStop(1, 'rgba(220,226,255,0)'); g.fillStyle = gr; g.fillRect(mx - 22 * S, my - 22 * S, 44 * S, 44 * S); }
+      g.drawImage(moonImage(p), mx - 6 * S, my - 6 * S); }
+    const k = (hr - 6) / 13.5;
+    if (k > -.08 && k < 1.08) { const low = 1 - Math.min(1, Math.max(0, Math.sin(Math.PI * k)) * 3.2), x = Math.round(sunX(k, P.W)) + ox, y = Math.round(arc(k)) + oy;
+      const core = mixHex('#fff4c0', '#ff9a50', low), halo = rgb(mixHex('#fff0b4', '#ff8a50', low));
+      const sg = g.createRadialGradient(x, y, 0, x, y, (26 + low * 14) * S); sg.addColorStop(0, `rgba(${halo},${.55 + low * .2})`); sg.addColorStop(1, `rgba(${halo},0)`);
+      g.fillStyle = sg; g.fillRect(x - 40 * S, y - 40 * S, 80 * S, 80 * S);
+      g.fillStyle = core; g.fillRect(x - 4 * S, y - 5 * S, 8 * S, 10 * S); g.fillRect(x - 5 * S, y - 4 * S, 10 * S, 8 * S); g.fillRect(x - 3 * S, y - 6 * S, 6 * S, 12 * S); g.fillRect(x - 6 * S, y - 3 * S, 12 * S, 6 * S);
+      g.fillStyle = mixHex(core, '#ffffff', .5); g.fillRect(x - 3 * S, y - 4 * S, 3 * S, 2 * S); }
+  }
+  // shooting stars: a few an hour on clear nights; ?sky=busy makes them frequent
+  const busy = Q.get('sky') === 'busy';
+  if (!METEORS.next) METEORS.next = t + (busy ? 2000 : 60000 + Math.random() * 400000);
+  if (t > METEORS.next) { METEORS.next = t + (busy ? 2500 + Math.random() * 4000 : (5 + Math.random() * 16) * 60000); if (sky && DARK > .6) shootingStar(t, P); }
+  METEORS.list = METEORS.list.filter(m => {
+    const e = (t - m.t0) / m.life; if (e > 1) return false;
+    const hx = m.x + m.dir * e * 70 * S, hy = m.y + e * 35 * S, fade = e < .15 ? e / .15 : 1 - Math.pow((e - .15) / .85, 2);
+    for (let i = m.len; i >= 0; i--) { g.fillStyle = `rgba(255,${240 - i * 4},${220 - i * 6},${(fade * (1 - i / m.len)).toFixed(2)})`;
+      g.fillRect(Math.round((hx - m.dir * i * 2 * S) / S) * S + ox, Math.round((hy - i * S) / S) * S + oy, 2 * S, i < 5 ? S : 1); }
+    return true;
+  });
+}
+
+// ----- clouds over any backdrop: lit from below at sunrise and sunset -----
+function drawClouds(t, P) {
+  const n = { clear: 3, clouds: 9, rain: 10, snow: 7 }[weather] ?? 3, wet = weather === 'rain' || weather === 'snow';
+  const w = sunGlow(P.hr), body = lit(wet ? (weather === 'rain' ? '#8a8ea4' : '#d0d4e2') : '#f6f8fc'), shade = lit(wet ? (weather === 'rain' ? '#6c7088' : '#aab0c4') : '#d4dcec');
+  const warm = mixHex('#ffb27a', '#ff7a8a', P.hr > 12 ? .4 : .1), alpha = wet ? .86 - DARK * .25 : .82 - DARK * .4, ox = Math.round(P.px * .8), oy = Math.round(P.py * .8);
+  for (let i = 0; i < n; i++) {
+    const cw = (26 + (i * 17) % 30) * S, x = Math.round(((i * 131 * S + t * (.004 + (i % 3) * .002) * S) % (P.W + 80 * S)) - 60 * S) + ox;
+    const y = Math.round(8 * S + (i * 29 * S) % Math.max(20, Math.min(P.H * .3, P.ground * .45))) + oy;
+    g.globalAlpha = alpha;
+    g.fillStyle = body; g.fillRect(x, y, cw, 5 * S); g.fillRect(x + 5 * S, y - 3 * S, cw - 12 * S, 3 * S); g.fillRect(x + 9 * S, y - 5 * S, (cw * .35) | 0, 2 * S);
+    g.fillStyle = shade; g.fillRect(x + S, y + 4 * S, cw - 2 * S, S);
+    if (w > .05) { g.globalAlpha = alpha * w; g.fillStyle = warm; g.fillRect(x + S, y + 3 * S, cw - 2 * S, 2 * S); g.fillRect(x + 6 * S, y - S, cw - 14 * S, S);
+      g.globalAlpha = alpha * w * .5; g.fillStyle = '#ffe0b0'; g.fillRect(x + 9 * S, y - 5 * S, (cw * .35) | 0, S); }
+  }
+  g.globalAlpha = 1;
+}
+
 function drawBackground(t, d) {
-  const gr = g.createLinearGradient(0, 0, 0, cv.height); gr.addColorStop(0, SKY[0]); gr.addColorStop(1, SKY[1]);
-  g.fillStyle = gr; g.fillRect(0, 0, cv.width, cv.height);
-  const hr = d.getHours() + d.getMinutes() / 60;
-  if (DARK > .45) for (let i = 0; i < 90; i++) { const x = (i * 97.7) % cv.width, y = (i * 41.3) % (cv.height * .6);
-    g.fillStyle = `rgba(255,255,255,${(DARK - .45) * 1.6 * (.55 + .45 * Math.sin(t / 2000 + i * 1.3))})`; g.fillRect(Math.round(x), Math.round(y), S, S); }
-  const day = hr >= 6 && hr < 19.5, k = day ? (hr - 6) / 13.5 : ((hr + 4.5) % 24) / 10.5;
-  const sx = Math.round(cv.width * (.08 + .84 * k)), sy = Math.round(cv.height * (.42 - Math.sin(k * Math.PI) * .32));
-  if ((weather === 'clear' || weather === 'clouds') && SCENE !== 'extra') { // one sun: the extra screens leave it to the main one
-    if (day) { const sg = g.createRadialGradient(sx, sy, 0, sx, sy, 26 * S); sg.addColorStop(0, 'rgba(255,240,180,.55)'); sg.addColorStop(1, 'rgba(255,240,180,0)'); g.fillStyle = sg; g.fillRect(sx - 26 * S, sy - 26 * S, 52 * S, 52 * S);
-      g.fillStyle = '#fff4c0'; g.fillRect(sx - 4 * S, sy - 4 * S, 8 * S, 8 * S); g.fillRect(sx - 5 * S, sy - 3 * S, 10 * S, 6 * S); g.fillRect(sx - 3 * S, sy - 5 * S, 6 * S, 10 * S); }
-    else { g.fillStyle = '#eef0ff'; g.fillRect(sx - 3 * S, sy - 4 * S, 7 * S, 8 * S); g.fillRect(sx - 4 * S, sy - 3 * S, 9 * S, 6 * S); g.fillStyle = SKY[0]; g.fillRect(sx + S, sy - 4 * S, 4 * S, 6 * S); }
+  stepParallax(t);
+  const bd = BACKDROPS[BACKDROP] || BACKDROPS.city, W = cv.width, H = cv.height;
+  const P = { px: PAR.x, py: PAR.y, W, H, ground: bd.ground ? bd.ground(W, H) : bdGround(H), hr: d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600 };
+  drawSky(P);
+  drawCelestial(t, d, P);
+  bd.draw(t, d, P);
+  drawClouds(t, P);
+  precipitation(t, 0, 0, W, H, 1);
+}
+
+// ----- morning mist: 5 to 8 am, low over the ground, hiding the lower parts of the islands and the street -----
+function mistAmount(d) {
+  if (Q.has('fog')) return Number(Q.get('fog')) || 0;
+  const h = d.getHours() + d.getMinutes() / 60; if (h < 4.8 || h > 8.6) return 0;
+  const k = h < 6 ? (h - 4.8) / 1.2 : h < 7 ? 1 : 1 - (h - 7) / 1.6, day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
+  return k * k * (3 - 2 * k) * (.55 + .45 * scRnd(day, 3)) * ({ rain: .5, snow: .6 }[weather] ?? 1);
+}
+function drawMist(t, d) {
+  const f = mistAmount(d); if (f < .02) return;
+  const W = cv.width, H = cv.height, top = Math.round(H * .48), c = rgb(mixHex(SKY[1], '#eef0f6', .45)), col = `rgb(${c[0]},${c[1]},${c[2]})`, n = 8;
+  g.fillStyle = col;
+  for (let i = 0; i < n; i++) { const y0 = top + Math.round((H - top) * i / n), y1 = top + Math.round((H - top) * (i + 1) / n);
+    g.globalAlpha = f * .72 * Math.pow((i + 1) / n, 1.5); g.fillRect(0, y0, W, y1 - y0); }
+  for (let i = 0; i < 7; i++) { // slow wisps drifting through it
+    const w = (50 + (i * 37) % 60) * S, x = Math.round(((i * 173 * S + t * .003 * S * (1 + i % 3)) % (W + w)) - w), y = Math.round(top + (H - top) * (.06 + .12 * i));
+    g.globalAlpha = f * .32; g.fillRect(x, y, w, 2 * S); g.fillRect(x + 8 * S, y - S, w - 20 * S, S);
   }
-  const nClouds = { clear: 3, clouds: 9, rain: 10, snow: 7 }[weather];
-  g.fillStyle = weather === 'clear' || weather === 'clouds' ? `rgba(255,255,255,${.78 - DARK * .45})` : `rgba(${weather === 'rain' ? '120,125,145' : '200,205,220'},${.82 - DARK * .3})`;
-  for (let i = 0; i < nClouds; i++) {
-    const w = (26 + (i * 17) % 30) * S, x = Math.round(((i * 131 * S + t * (.004 + (i % 3) * .002) * S) % (cv.width + 80 * S)) - 60 * S), y = Math.round(8 * S + (i * 29 * S) % Math.max(20, cv.height * .35));
-    g.fillRect(x, y, w, 5 * S); g.fillRect(x + 5 * S, y - 3 * S, w - 12 * S, 3 * S); g.fillRect(x + 9 * S, y - 5 * S, (w * .35) | 0, 2 * S);
+  g.globalAlpha = 1;
+}
+
+// ----- the city: a far hazy skyline, mid towers with roofs and signs, an elevated train, a row of houses, the street -----
+const cityRnd = s => () => { s = (s + 0x6D2B79F5) | 0; let x = Math.imul(s ^ s >>> 15, 1 | s); x = x + Math.imul(x ^ x >>> 7, 61 | x) ^ x; return ((x ^ x >>> 14) >>> 0) / 4294967296; };
+const CITY = { plan: null, key: '', lanes: [[], []], nextCar: [0, 0], train: null, nextTrain: 0, sprites: new Map() };
+const MID_PAL = [['#b4765e', '#8e5a48', '#d8a088'], ['#8e94ac', '#6e7490', '#b4bad0'], ['#c9b08a', '#a48c6a', '#e6d2b0'], ['#7c8c98', '#5e6c78', '#a4b4c0'], ['#d2c6b4', '#aca08e', '#ece4d6'], ['#9a6a7a', '#7a4e5e', '#c094a2']];
+const NEAR_PAL = ['#e8c4a0', '#c8705a', '#7aa0c0', '#a8c890', '#f0dca0', '#d8a0b0', '#b0a8c8'];
+const ROOF_PAL = ['#7a4a40', '#4a5a7a', '#5a6a4a', '#8a5a3a', '#5a4a5a'];
+const NEON = [['КИНО', '#ff5a8a'], ['БАР', '#5ae0ff'], ['КАФЕ', '#ffd040'], ['24/7', '#a0ff70'], ['JAZZ', '#c080ff'], ['ОТЕЛЬ', '#ff8040'], ['PIZZA', '#ff5a5a']];
+const BOARDS = [['CLAWD', '#d97757', '#fff4e0'], ['CODEX', '#2a2f45', '#eef0f6'], ['ЧАЙ', '#58b070', '#ffffff'], ['NOTCH', '#4a80d8', '#ffffff']];
+const WIN_COLS = ['#ffd47a', '#ffe2a0', '#ffc66a', '#ffdc90'];
+const OUTC = '#2a2438';
+function winSched(r, shop) { // when a window is lit: hours past noon, so 25.5 is half past one at night
+  const k = r(), w = { mOn: 99, mOff: 0, fl: r() < .05 ? 1 + (r() * 40 | 0) : 0, col: r() < .07 ? '#a8d0ff' : WIN_COLS[r() * WIN_COLS.length | 0] };
+  if (shop) { w.on = 16.5 + r() * 2; w.off = 21 + r() * 2.5; w.col = '#ffe6b0'; w.fl = 0; }
+  else if (k < .08) { w.on = 99; w.off = 0; }
+  else if (k < .14) { w.on = 17 + r() * 2; w.off = 30.5; }
+  else { w.on = 16.8 + r() * 4.4; w.off = Math.max(w.on + .8, 21.3 + r() * 5.2); if (r() < .4) { w.mOn = 5.1 + r() * 1.5; w.mOff = w.mOn + .5 + r() * 1.4; } }
+  w.css = emi(w.col); return w;
+}
+function seasonLeaves(se, snowy) { // canopy colours by season
+  if (se === 'autumn') return ['#d8702e', '#f0b040', '#b85a2a'];
+  if (se === 'spring') return ['#f4a8c4', '#fff0f4', '#6aa850'];
+  if (se === 'winter') return snowy ? ['#eef2fa', '#c8d0de', '#6a5a4a'] : ['#7a6a58', '#9a8a74', '#5a4a3a'];
+  return ['#4e9a4a', '#7ac06a', '#3a7a3a'];
+}
+function cityPlan(P) {
+  const key = P.W + 'x' + P.H; if (CITY.key === key) return CITY.plan;
+  CITY.key = key; CITY.lanes = [[], []];
+  const r = cityRnd(2026), aw = Math.ceil((P.W + 2 * BD_M) / S), GA = P.ground / S, Hb = innerHeight * DPR / (VIEW.base || 3) / S, sc = scClamp(Hb / 300, .75, 1.5);
+  const far = [], mid = [], near = [], trees = [], lamps = [], neon = [], boards = [], ants = [];
+  for (let x = -2; x < aw + 2;) { const w = 8 + (r() * 16 | 0); far.push({ x, w, h: Math.round((26 + r() * 52) * sc), top: r() * 6 | 0, s: r() * 1e9 | 0 }); x += w + (r() < .5 ? 0 : 1 + (r() * 3 | 0)); }
+  let ni = 0, bi = 0;
+  for (let x = -3; x < aw + 3;) {
+    const w = 12 + (r() * 17 | 0), h = Math.round((20 + r() * 34) * sc), b = { x, w, h, pal: r() * MID_PAL.length | 0, glass: r() < .14, roof: ['flat', 'tower', 'antenna', 'garden', 'step', 'pitch', 'board', 'flat'][r() * 8 | 0], wins: [] };
+    if (b.roof === 'board' && w < 18) b.roof = 'antenna';
+    if (b.roof === 'board') { b.board = BOARDS[bi++ % BOARDS.length]; }
+    mid.push(b); x += w + (r() < .35 ? 0 : 1 + (r() * 3 | 0));
   }
-  drawSkyline();
-  precipitation(t, 0, 0, cv.width, cv.height, 1);
+  const ws = r;
+  for (const b of mid) { // windows, signs, antenna lights
+    const wx0 = b.x + 2, wx1 = b.x + b.w - 3, top = b.h - (b.roof === 'step' ? 9 : 3);
+    if (b.glass) { for (let y = 15; y + 2 < top; y += 4) for (let x = wx0; x + 2 <= wx1 + 1; x += 3) b.wins.push({ x, y, w: 2, h: 2, ...winSched(ws) }); }
+    else for (let y = 14; y + 3 < top; y += 5) for (let x = wx0; x + 2 <= wx1 + 1; x += 4) b.wins.push({ x, y, w: 2, h: 3, ...winSched(ws) });
+    if (!b.glass && ni < NEON.length * 2 && r() < .4) { const [txt, col] = NEON[(ni * 3 + (r() * 2 | 0)) % NEON.length], tw = sfWidth(txt);
+      if (tw + 4 <= b.w - 2 && b.h > 22) { b.neon = { txt, col, x: b.x + Math.round((b.w - tw - 4) / 2), y: Math.round(b.h * (.45 + r() * .3)), w: tw + 4, h: 10 }; neon.push(b.neon); ni++;
+        b.wins = b.wins.filter(w => w.y + w.h < b.neon.y - b.neon.h - 1 || w.y > b.neon.y + 1); } }
+    if (b.roof === 'antenna') { b.mast = 7 + (r() * 9 | 0); b.mastX = b.x + 3 + (r() * (b.w - 6) | 0); ants.push({ x: b.mastX, y: b.h + b.mast, ph: r() * 3 }); }
+    if (b.roof === 'tower') b.towerX = b.x + 2 + (r() * Math.max(1, b.w - 10) | 0);
+    if (b.board) boards.push(b);
+  }
+  for (let x = -3; x < aw + 3;) {
+    if (r() < .22) { trees.push({ x: x + 4, h: 6 + (r() * 4 | 0), s: r() * 9 }); x += 9; continue; }
+    const w = 14 + (r() * 11 | 0), shop = r() < .35, h = (shop ? 13 : 11) + (r() * 8 | 0), d = { x, w, h, shop, col: NEAR_PAL[r() * NEAR_PAL.length | 0], roofC: ROOF_PAL[r() * ROOF_PAL.length | 0], pitch: r() < .6, chim: r() < .5, wins: [], awn: ['#e05a4a', '#4a80d8', '#58b070', '#f0a030'][r() * 4 | 0] };
+    for (let y = shop ? 9 : 4; y + 4 <= h - 2; y += 6) for (let wx = x + 2; wx + 3 <= x + w - 2; wx += 5) if (!(y < 8 && Math.abs(wx + 1.5 - (x + w / 2)) < 2.5)) d.wins.push({ x: wx, y, w: 3, h: 4, ...winSched(ws), frame: 1 });
+    if (shop) d.wins.push({ x: x + 2, y: 1, w: Math.max(4, w - 9), h: 4, ...winSched(ws, true) });
+    near.push(d); x += w + (r() < .5 ? 0 : 1);
+  }
+  for (let x = 10 + (r() * 20 | 0); x < aw; x += 44 + (r() * 16 | 0)) lamps.push(x);
+  const farTop = Math.max(...far.map(b => b.h)) + 8, midTop = Math.max(...mid.map(b => b.h + (b.mast || 0) + (b.roof === 'tower' ? 14 : 12))) + 2, nearTop = Math.max(...near.map(d => d.h + (d.pitch ? Math.ceil(d.w / 2) + 3 : 4)), ...trees.map(t => t.h + 8)) + 2;
+  const deck = Math.round(26 * Math.min(1.2, sc)), pillars = []; for (let x = 6 + (r() * 30 | 0); x < aw; x += 46) pillars.push(x);
+  CITY.plan = { aw, GA, far, mid, near, trees, lamps, neon, boards, ants, farTop, midTop, nearTop, deck, pillars, sc };
+  return CITY.plan;
+}
+// paints one rectangle in art pixels of the layer being painted
+const cF = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x * S, y * S, w * S, h * S); };
+function paintFar(C, T, snowy) {
+  const a = weather === 'rain' || weather === 'snow' ? .72 : .58, body = haze('#7a84a8', a), rim = haze('#9aa4c4', a), dark = haze('#6a7298', a);
+  const winA = Math.max(0, DARK - .3) * 1.3, wc = `rgba(255,214,140,${Math.min(.85, winA)})`, sn = haze('#f4f8ff', a * .7);
+  for (const b of C.far) {
+    const y = T - b.h; cF(body, b.x, y, b.w, b.h + 4); cF(rim, b.x, y, b.w, 1); cF(dark, b.x + b.w - 2, y + 1, 2, b.h + 3);
+    const mid = b.x + (b.w >> 1);
+    if (b.top === 1) { cF(body, mid - 1, y - 6, 2, 6); cF(body, mid, y - 11, 1, 5); }
+    else if (b.top === 2) { cF(body, b.x + 2, y - 4, b.w - 4, 4); cF(body, b.x + 4, y - 7, Math.max(1, b.w - 8), 3); }
+    else if (b.top === 3) { for (let i = 0; i < 4; i++) cF(body, mid - 3 + (i >> 1), y - 1 - i, 6 - (i >> 1) * 2 + 1, 1); }
+    else if (b.top === 4) cF(body, b.x + 2, y - 8, 1, 8);
+    if (snowy) cF(sn, b.x, y - 1, b.w, 1);
+    if (winA > 0) { g.fillStyle = wc; const rr = cityRnd(b.s); for (let yy = y + 3; yy < T - 1; yy += 3) for (let xx = b.x + 1; xx < b.x + b.w - 1; xx += 2) if (rr() < .22) g.fillRect(xx * S, yy * S, S, S); }
+  }
+}
+function paintMid(C, T, snowy, se) {
+  const a = weather === 'rain' || weather === 'snow' ? .34 : .22, out = haze(OUTC, a), glass = haze('#4e5e80', a), glint = haze('#9cb4d4', a), sn = haze('#f4f8ff', a * .6), snS = haze('#cdd6e6', a * .6);
+  const cap = (x, y, w) => { if (snowy) { cF(sn, x, y - 1, w, 1); cF(snS, x, y, w, 1); } };
+  const leaves = seasonLeaves(se, snowy).map(c => haze(c, a));
+  for (const b of C.mid) {
+    const [wall, shade, trim] = MID_PAL[b.pal].map(c => haze(c, a)), y = T - b.h, x = b.x;
+    cF(out, x - 1, y - 1, b.w + 2, b.h + 5); cF(wall, x, y, b.w, b.h + 4); cF(shade, x + b.w - 3, y, 3, b.h + 4);
+    if (b.glass) { cF(glass, x + 1, y + 2, b.w - 4, b.h + 2); for (let yy = y + 4; yy < T; yy += 4) cF(wall, x + 1, yy, b.w - 4, 1); cF(glint, x + 2, y + 3, 1, Math.min(10, b.h - 4)); }
+    else for (const w of b.wins) { cF(glass, w.x, T - w.y - w.h, w.w, w.h); cF(glint, w.x, T - w.y - w.h, 1, 1); }
+    cF(trim, x - 1, y, b.w + 2, 1); // cornice
+    if (b.roof === 'step') { const sx = x + 3, sw = b.w - 6; cF(out, sx - 1, y - 7, sw + 2, 7); cF(wall, sx, y - 6, sw, 6); cF(shade, sx + sw - 2, y - 6, 2, 6); cF(trim, sx - 1, y - 6, sw + 2, 1); cap(sx - 1, y - 6, sw + 2); }
+    cap(x - 1, y, b.w + 2);
+    if (b.roof === 'tower') { const tx = b.towerX, wood = haze('#9a6a44', a), band = haze('#6e4a30', a), cone = haze('#5a4a48', a);
+      cF(out, tx, y - 4, 1, 4); cF(out, tx + 5, y - 4, 1, 4); cF(out, tx, y - 2, 6, 1);
+      cF(out, tx - 1, y - 11, 8, 8); cF(wood, tx, y - 10, 6, 6); cF(band, tx, y - 8, 6, 1); cF(band, tx, y - 6, 6, 1); cF(haze('#7a5236', a), tx + 4, y - 10, 2, 6);
+      for (let i = 0; i < 4; i++) cF(cone, tx + 3 - i - (i === 3), y - 14 + i, 2 + i * 2 + (i === 3) * 2, 1);
+      if (snowy) { cF(sn, tx + 2, y - 15, 2, 1); cF(sn, tx + 1, y - 14, 4, 1); } }
+    if (b.roof === 'antenna') { cF(out, b.mastX, y - b.mast, 1, b.mast); cF(out, b.mastX - 2, y - b.mast + 3, 5, 1); cF(out, b.mastX - 1, y - b.mast + 6, 3, 1); }
+    if (b.roof === 'garden') { const box = haze('#7a5a3a', a);
+      cF(out, x + 1, y - 2, b.w - 2, 2); cF(box, x + 2, y - 2, b.w - 4, 1);
+      for (let bx = x + 2; bx + 3 <= x + b.w - 2; bx += 4) { cF(leaves[2], bx, y - 4, 3, 2); cF(leaves[0], bx, y - 5, 3, 2); cF(leaves[1], bx + 1, y - 5, 1, 1); }
+      if (snowy) for (let bx = x + 2; bx + 3 <= x + b.w - 2; bx += 4) cF(sn, bx, y - 6, 3, 1); }
+    if (b.roof === 'flat' && b.w > 14) { const hut = haze('#8a8a94', a); cF(out, x + b.w - 8, y - 5, 5, 5); cF(hut, x + b.w - 7, y - 4, 3, 4); cap(x + b.w - 8, y - 5, 5);
+      cF(out, x + 2, y - 2, 4, 2); cF(haze('#b0b4bc', a), x + 3, y - 2, 2, 1); }
+    if (b.roof === 'pitch') { const rc = haze('#5a5068', a); for (let i = 0; i < 6 && b.w - 2 - i * 4 > 1; i++) { cF(out, x - 1 + i * 2, y - 1 - i, b.w + 2 - i * 4, 1); cF(rc, x + i * 2, y - 1 - i, b.w - i * 4, 1); }
+      if (snowy) for (let i = 0; i < 6 && b.w - 2 - i * 4 > 1; i++) cF(sn, x + i * 2, y - 2 - i, 2, 1), cF(sn, x + b.w - 2 - i * 2, y - 2 - i, 2, 1); }
+    if (b.board) { const [txt, bg, fg] = b.board, tw = sfWidth(txt), bw = tw + 6, bx = x + Math.round((b.w - bw) / 2), by = y - 13;
+      cF(out, bx + 2, by + 9, 1, 4); cF(out, bx + bw - 3, by + 9, 1, 4); cF(out, bx - 1, by - 1, bw + 2, 11); cF(haze(bg, a), bx, by, bw, 9);
+      sfDraw(txt, (bx + 3) * S, (by + 2) * S, haze(fg, a), S);
+      cap(bx - 1, by - 1, bw + 2); b.boardAt = [bx, by, bw]; }
+    if (b.neon) { const n = b.neon; cF(out, n.x - 1, T - n.y - 1, n.w + 2, n.h - 1); cF(haze('#3a3048', a), n.x, T - n.y, n.w, n.h - 3);
+      sfDraw(n.txt, (n.x + 2) * S, (T - n.y + 1) * S, haze(mixHex(n.col, '#c8c8d0', .55), a), S); }
+  }
+}
+function paintRail(C, T, snowy) {
+  const a = .14, out = haze(OUTC, a), deck = haze('#a8a2ae', a), under = haze('#6e6878', a), pil = haze('#948ea0', a), pilS = haze('#7a7486', a), rail = haze('#4a4452', a);
+  const y = T - C.deck;
+  for (const x of C.pillars) { cF(out, x - 1, y + 3, 6, C.deck + 2); cF(pil, x, y + 3, 4, C.deck + 2); cF(pilS, x + 3, y + 3, 1, C.deck + 2); cF(out, x - 2, y + 3, 8, 2); cF(pil, x - 1, y + 3, 6, 1); }
+  cF(out, 0, y - 1, C.aw, 6); cF(deck, 0, y, C.aw, 3); cF(under, 0, y + 3, C.aw, 1); cF(rail, 0, y - 1, C.aw, 1);
+  for (let x = 1; x < C.aw; x += 6) cF(rail, x, y - 3, 1, 2);
+  cF(rail, 0, y - 3, C.aw, 1);
+  if (snowy) cF(haze('#f4f8ff', a), 0, y - 4, C.aw, 1);
+}
+function paintNear(C, T, snowy, se) {
+  const a = .06, out = haze(OUTC, a), sn = haze('#f4f8ff', a), frame = haze('#f4efe6', a), glass = haze('#506080', a), glint = haze('#a8c0dc', a), door = haze('#6a4430', a);
+  const leaves = seasonLeaves(se, snowy).map(c => haze(c, a)), trunk = haze('#6a4a2a', a);
+  for (const tr of C.trees) { const x = tr.x, top = T - tr.h;
+    cF(out, x - 1, top, 3, tr.h + 4); cF(trunk, x, top, 1, tr.h + 4);
+    if (se === 'winter') { cF(trunk, x - 2, top - 2, 1, 3); cF(trunk, x + 2, top - 3, 1, 4); cF(trunk, x - 1, top - 4, 1, 3); if (snowy) { cF(sn, x - 2, top - 3, 1, 1); cF(sn, x + 2, top - 4, 1, 1); cF(sn, x - 1, top - 5, 1, 1); } }
+    else { cF(out, x - 4, top - 6, 9, 7); cF(out, x - 3, top - 8, 7, 10); cF(leaves[2], x - 3, top - 5, 7, 5); cF(leaves[0], x - 2, top - 7, 5, 7); cF(leaves[1], x - 1, top - 6, 2, 2); cF(leaves[1], x + 1, top - 3, 1, 1); } }
+  for (const d of C.near) {
+    const x = d.x, y = T - d.h, wall = haze(d.col, a), shade = haze(mixHex(d.col, '#000000', .2), a), roof = haze(d.roofC, a), roofL = haze(mixHex(d.roofC, '#ffffff', .2), a);
+    cF(out, x - 1, y - 1, d.w + 2, d.h + 5); cF(wall, x, y, d.w, d.h + 4); cF(shade, x + d.w - 2, y, 2, d.h + 4);
+    if (d.pitch) { const rows = Math.ceil(d.w / 2) + 1;
+      for (let i = 0; i < rows; i++) { const rw = d.w + 2 - i * 2; if (rw < 2) break; cF(out, x - 2 + i, y - 1 - i, rw + 2, 1); cF(i % 2 ? roof : roofL, x - 1 + i, y - 1 - i, rw, 1); if (snowy && rw > 2) { cF(sn, x - 1 + i, y - 2 - i, 1, 1); cF(sn, x + rw - 2 + i, y - 2 - i, 1, 1); } }
+      if (snowy) cF(sn, x + (d.w >> 1) - 1, y - rows - 1, 2, 1);
+      if (d.chim) { cF(out, x + d.w - 6, y - 7, 4, 6); cF(haze('#9a5a48', a), x + d.w - 5, y - 6, 2, 5); if (snowy) cF(sn, x + d.w - 6, y - 8, 4, 1); } }
+    else { cF(out, x - 2, y - 2, d.w + 4, 3); cF(roof, x - 1, y - 1, d.w + 2, 1); if (snowy) cF(sn, x - 2, y - 3, d.w + 4, 1); }
+    for (const w of d.wins) { const wy = T - w.y - w.h;
+      if (w.frame) { cF(frame, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(glass, w.x, wy, w.w, w.h); cF(glint, w.x, wy, 1, 1); cF(frame, w.x + 1, wy, 1, w.h); if (snowy) cF(sn, w.x - 1, wy + w.h + 1, w.w + 2, 1); }
+      else { cF(out, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(glass, w.x, wy, w.w, w.h); cF(glint, w.x + 1, wy, w.w - 2, 1); } }
+    const dx = d.shop ? x + d.w - 6 : x + (d.w >> 1) - 1; cF(out, dx - 1, T - 7, 4, 7); cF(door, dx, T - 6, 2, 6); cF(haze('#e8c060', a), dx + 1, T - 3, 1, 1);
+    if (d.shop) { const aw2 = d.w - 2, ay = T - 8; cF(out, x, ay - 1, aw2 + 1, 4); for (let i = 0; i < aw2; i++) cF(haze(i % 4 < 2 ? d.awn : '#f6f0e4', a), x + 1 + i, ay, 1, 2);
+      for (let i = 0; i < aw2; i += 2) cF(haze(d.awn, a), x + 1 + i, ay + 2, 1, 1); if (snowy) cF(sn, x, ay - 1, aw2 + 1, 1); }
+  }
+}
+function paintRoad(C, T, snowy, se) {
+  const wet = weather === 'rain', walk = lit(snowy ? '#e8eef8' : '#c2b8ae'), joint = lit(snowy ? '#cdd6e6' : '#a49a90'), curb = lit('#8a8484'), road = lit(wet ? '#3a3a48' : '#4c4c58'), dash = lit('#e8dca0'), out = lit(OUTC);
+  const rows = Math.ceil(BD_M / S) + 14, W = C.aw;
+  cF(walk, 0, T, W, 3); for (let x = 0; x < W; x += 6) cF(joint, x, T + 1, 1, 2);
+  cF(curb, 0, T + 3, W, 1); cF(road, 0, T + 4, W, 9); cF(curb, 0, T + 13, W, 1); cF(walk, 0, T + 14, W, rows);
+  if (snowy) { cF(lit('#eef2fa'), 0, T + 4, W, 1); cF(lit('#dfe6f0'), 0, T + 12, W, 1); for (let x = 0; x < W; x += 3) { cF(lit('#d0d8e4'), x, T + 5, 2, 1); cF(lit('#d0d8e4'), x + 1, T + 11, 2, 1); } }
+  else for (let x = 0; x < W; x += 8) cF(dash, x, T + 8, 4, 1);
+  if (wet) { const r = cityRnd(5), sheen = haze('#8890b0', .3); for (let i = 0; i < W / 6; i++) cF(sheen, r() * W | 0, T + 5 + (r() * 7 | 0), 2 + (r() * 5 | 0), 1); }
+  if (se === 'autumn' && !snowy) { const r = cityRnd(9); for (let i = 0; i < W / 5; i++) cF(lit(['#d8702e', '#f0b040', '#b85a2a'][i % 3]), r() * W | 0, T + (r() * 3 | 0), 1, 1); }
+  for (const x of C.lamps) { cF(out, x - 1, T - 14, 3, 15); cF(lit('#3a3a48'), x, T - 13, 1, 14); cF(out, x - 1, T - 15, 5, 3); cF(lit('#3a3a48'), x, T - 14, 3, 1); cF(lit('#d8d4c0'), x + 1, T - 13, 2, 1); if (snowy) cF(lit('#f4f8ff'), x - 1, T - 16, 4, 1); }
+}
+// which windows are lit this minute; the overlay is repainted only when that set changes (a few times a minute at night)
+function winsLit(list, h, hm) {
+  if (list.hm === hm) return list.sig; list.hm = hm;
+  const e = h < 12 ? h + 24 : h; let sig = 0;
+  list.forEach((w, i) => {
+    let on = (e >= w.on && e < w.off) || (h >= w.mOn && h < w.mOff);
+    if (on && w.fl && (hm + w.fl * 7) % 47 < 5) on = false; // someone stepped out for a few minutes
+    w.lit = on; if (on) sig = (Math.imul(sig, 31) + i + 1) | 0;
+  });
+  return list.sig = sig + ':' + list.filter(w => w.lit).length;
+}
+function paintWins(list) {
+  for (const w of list) {
+    if (!w.lit) continue;
+    g.fillStyle = w.css; g.fillRect(w.lx, w.ly, w.w * S, w.h * S);
+    if (w.frame) { g.fillStyle = 'rgba(60,40,40,.55)'; g.fillRect(w.lx + S, w.ly, S, w.h * S); }
+  }
+}
+const CAR = ['...bbbbb....', '..bgggbggb..', 'rbbbbbbbbbbh', 'bbbbbbbbbbbb', '.kk.....kk..'];
+const BUS = ['bbbbbbbbbbbbbbbbbbb.', 'bggbggbggbggbggbgggb', 'bggbggbggbggbggbgggb', 'bbbbbbbbbbbbbbbbbbbh', 'rbbbbbbbbbbbbbbbbbbb', 'bbbbbbbbbbbbbbbbbbbb', '..kk..........kk....'];
+const CAR_COLS = ['#e05a4a', '#4a80d8', '#f0c040', '#f4f0e8', '#58b070', '#2a2f45', '#a060c8'];
+const TRAIN = ['.bbbbbbbbbbbbbbbbbbbbbbbbbb.', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'bggbbggbggbbggbggbbggbggbbgg', 'bggbbggbggbbggbggbbggbggbbgg', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'ssssssssssssssssssssssssssss', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbb', '..kk..kk............kk..kk..'];
+function citySprite(kind, col, flip) {
+  const night = DARK > .45, key = kind + col + flip + lightKey + night;
+  let c = CITY.sprites.get(key); if (c) return c;
+  if (CITY.sprites.size > 60) CITY.sprites.clear();
+  const rows = kind === 'bus' ? BUS : kind === 'train' ? TRAIN : CAR, warm = emi('#ffe0a0');
+  c = document.createElement('canvas'); c.width = rows[0].length * S + 2; c.height = rows.length * S + 2;
+  const saved = g; g = c.getContext('2d');
+  pxStamp(1, 1, rows, { b: lit(col), g: kind !== 'car' && night ? warm : lit('#9cb8d4'), h: night ? emi('#fff8d0') : lit('#e8e4c8'), r: night ? emi('#ff3a3a') : lit('#b03030'), k: lit('#22222a'), s: lit('#d97757') }, flip, S);
+  g = saved; CITY.sprites.set(key, c); return c;
+}
+function cityTraffic(t, C, P, ox, oy, T0) { // cars and buses on two lanes, lights on at night
+  const busy = Q.get('sky') === 'busy', night = DARK > .35, W = P.W + 2 * BD_M;
+  for (let l = 0; l < 2; l++) {
+    const lane = CITY.lanes[l], dir = l ? -1 : 1, v = (l ? .028 : .024) * S * (busy ? 1.6 : 1);
+    if (t > CITY.nextCar[l]) { CITY.nextCar[l] = t + (busy ? 1200 : 2500) + Math.random() * (busy ? 2500 : 9000);
+      const kind = Math.random() < .14 ? 'bus' : 'car', len = (kind === 'bus' ? 20 : 12) * S, x0 = dir > 0 ? -len - 4 * S : W + 4 * S, lastC = lane[lane.length - 1];
+      if (!lastC || Math.abs(lastC.x - x0) > lastC.len + len + 6 * S) lane.push({ x: x0, len, kind, col: kind === 'bus' ? scPick(['#e8b030', '#d0503a', '#4a90c8']) : scPick(CAR_COLS), t: t }); }
+    for (let i = 0; i < lane.length; i++) { const c = lane[i], dt = Math.min(100, t - c.t); c.t = t; c.x += dir * v * dt;
+      const ahead = lane[i - 1]; if (ahead && Math.abs(ahead.x - c.x) < ahead.len + 6 * S) c.x -= dir * v * dt; } // keep a car's length back
+    CITY.lanes[l] = lane.filter(c => dir > 0 ? c.x < W + 8 * S : c.x > -c.len - 8 * S);
+    for (const c of CITY.lanes[l]) {
+      const img = citySprite(c.kind, c.col, dir < 0), x = Math.round(c.x / S) * S + ox, base = T0 + (l ? 12 : 7) * S + oy, y = base - img.height + 1;
+      g.drawImage(img, x - 1, y);
+      if (night) { const hx = dir > 0 ? x + c.len : x, a = Math.min(1, (DARK - .35) * 2.5); // headlight beams, and on a wet road their reflections
+        g.fillStyle = `rgba(255,236,170,${.22 * a})`; for (let k = 0; k < 4; k++) g.fillRect(dir > 0 ? hx + k * 4 * S : hx - (k + 1) * 4 * S, base - (c.kind === 'bus' ? 5 : 3) * S - k, 4 * S, S + k * 2);
+        if (weather === 'rain') { g.fillStyle = `rgba(255,236,170,${.3 * a})`; g.fillRect(hx - (dir > 0 ? S : 0), base + S, S, 3 * S); g.fillStyle = `rgba(255,70,70,${.3 * a})`; g.fillRect(dir > 0 ? x : x + c.len - S, base + S, S, 3 * S); } }
+    }
+  }
+}
+BACKDROPS.city = {
+  name: 'Город',
+  draw(t, d, P) {
+    const C = cityPlan(P), se = seasonNow(), snowy = weather === 'snow' || se === 'winter', key = lightKey + '|' + P.W + 'x' + P.H + '|' + weather + '|' + se;
+    const lw = C.aw * S, gy = P.ground, X = dep => Math.round(-BD_M + P.px * dep), Y = dep => Math.round(P.py * dep), B = 4;
+    const night = Math.max(0, Math.min(1, (DARK - .08) * 3)), hm = Math.floor(P.hr * 60), wkey = P.W + 'x' + P.H + '|';
+    // far
+    g.drawImage(bdLayer('city.far', key, lw, (C.farTop + B) * S, () => paintFar(C, C.farTop, snowy)), X(.9), gy - C.farTop * S + Y(.9));
+    // mid, its windows, signs and lights
+    const mx = X(.6), my = gy - C.midTop * S + Y(.6);
+    g.drawImage(bdLayer('city.mid', key, lw, (C.midTop + B) * S, () => paintMid(C, C.midTop, snowy, se)), mx, my);
+    if (night > 0) {
+      const wins = C.midWins || (C.midWins = C.mid.flatMap(b => b.wins).map(w => (w.lx = w.x * S, w.ly = (C.midTop - w.y - w.h) * S, w)));
+      g.globalAlpha = night; g.drawImage(bdLayer('city.midWin', wkey + winsLit(wins, P.hr, hm), lw, (C.midTop + B) * S, () => paintWins(wins)), mx, my);
+      for (const b of C.boards) if (b.boardAt) { const [bx, by, bw] = b.boardAt; g.globalAlpha = night * .35; g.fillStyle = '#fff0c8'; g.fillRect(mx + bx * S, my + by * S, bw * S, 9 * S);
+        g.globalAlpha = night; g.fillStyle = emi('#fff4d0'); g.fillRect(mx + (bx + 2) * S, my + (by - 2) * S, S, S); g.fillRect(mx + (bx + bw - 3) * S, my + (by - 2) * S, S, S); }
+      for (const n of C.neon) { const img = neonImage(n), off = n === C.neon[1] && (t % 23000) < 420 && Math.floor(t / 70) % 2; // one sign stutters now and then
+        if (!off) { g.globalAlpha = night; g.drawImage(img, mx + (n.x - 3) * S, my + (C.midTop - n.y - 3) * S); } }
+      g.globalAlpha = 1;
+      for (const an of C.ants) if ((t / 1000 + an.ph) % 2.6 < .9) { const x = mx + an.x * S, y = my + (C.midTop - an.y - 1) * S; // slow red beacons
+        g.fillStyle = `rgba(255,60,50,${.25 * night})`; g.fillRect(x - S, y - S, 3 * S, 3 * S); g.fillStyle = emi('#ff4030'); g.fillRect(x, y, S, S); }
+    }
+    g.globalAlpha = 1;
+    // the elevated railway and now and then a train
+    const rx = X(.45), ry = gy - (C.deck + 6) * S + Y(.45);
+    g.drawImage(bdLayer('city.rail', key, lw, (C.deck + 6 + B) * S, () => paintRail(C, C.deck + 6, snowy)), rx, ry);
+    const busy = Q.get('sky') === 'busy';
+    if (!CITY.nextTrain) CITY.nextTrain = t + (busy ? 1500 : 20000 + Math.random() * 40000);
+    if (!CITY.train && t > CITY.nextTrain) { const dir = Math.random() < .5 ? 1 : -1, len = 4 * 29 * S; CITY.train = { dir, x: dir > 0 ? -len : lw, len, t, col: '#e8e6ee' }; }
+    if (CITY.train) { const tr = CITY.train, dt = Math.min(100, t - tr.t); tr.t = t; tr.x += tr.dir * .085 * S * dt;
+      const img = citySprite('train', tr.col, tr.dir < 0), y = ry + 6 * S - img.height + 1;
+      for (let i = 0; i < 4; i++) g.drawImage(img, rx + Math.round((tr.x + i * 29 * S) / S) * S, y);
+      if (tr.dir > 0 ? tr.x > lw : tr.x < -tr.len) { CITY.train = null; CITY.nextTrain = t + (busy ? 6000 : 70000 + Math.random() * 110000); } }
+    // the row of houses and trees
+    const nx = X(.3), ny = gy - C.nearTop * S + Y(.3);
+    g.drawImage(bdLayer('city.near', key, lw, (C.nearTop + B) * S, () => paintNear(C, C.nearTop, snowy, se)), nx, ny);
+    if (night > 0) { const wins = C.nearWins || (C.nearWins = C.near.flatMap(h => h.wins).map(w => (w.lx = w.x * S, w.ly = (C.nearTop - w.y - w.h) * S, w)));
+      g.globalAlpha = night; g.drawImage(bdLayer('city.nearWin', wkey + winsLit(wins, P.hr, hm), lw, (C.nearTop + B) * S, () => paintWins(wins)), nx, ny); g.globalAlpha = 1; }
+    // the street: lamps, cars
+    const sx = X(.15), sy = gy - 16 * S + Y(.15);
+    g.drawImage(bdLayer('city.road', key, lw, (16 + 14) * S + BD_M * 2, () => paintRoad(C, 16, snowy, se)), sx, sy);
+    if (DARK > .3) { const a = Math.min(1, (DARK - .3) * 3), img = lampGlow();
+      for (const x of C.lamps) { g.globalAlpha = a; g.drawImage(img, sx + (x + 2) * S - 18 * S, sy + 3 * S - 4 * S); g.fillStyle = emi('#fff4c8'); g.fillRect(sx + (x + 1) * S, sy + 3 * S, 2 * S, S); }
+      g.globalAlpha = 1; }
+    cityTraffic(t, C, P, sx, sy, 16 * S);
+  },
+};
+const neonImgs = new Map();
+function neonImage(n) {
+  let c = neonImgs.get(n.txt); if (c) return c;
+  c = document.createElement('canvas'); c.width = (n.w + 6) * S; c.height = (n.h + 6) * S;
+  const x = c.getContext('2d'), saved = g; g = x;
+  x.shadowColor = n.col; x.shadowBlur = 4 * S; sfDraw(n.txt, 5 * S, 4 * S, emi(n.col), S); x.shadowBlur = 0; sfDraw(n.txt, 5 * S, 4 * S, emi(mixHex(n.col, '#ffffff', .45)), S);
+  g = saved; neonImgs.set(n.txt, c); return c;
+}
+let lampImg = null;
+function lampGlow() {
+  if (lampImg) return lampImg;
+  lampImg = document.createElement('canvas'); lampImg.width = 36 * S; lampImg.height = 30 * S; const x = lampImg.getContext('2d');
+  const gr = x.createRadialGradient(18 * S, 4 * S, 0, 18 * S, 4 * S, 18 * S); gr.addColorStop(0, 'rgba(255,220,140,.45)'); gr.addColorStop(1, 'rgba(255,220,140,0)');
+  x.fillStyle = gr; x.fillRect(0, 0, 36 * S, 30 * S); return lampImg;
 }
 // a hop off the edge, a short drop, then a parachute that sways down past the bottom of the screen
 function drawFallers(t) {
@@ -2383,6 +2794,7 @@ function frame(t) {
   drawEscapes(t);
   drawFallers(t);
   drawSceneOverlays(t);
+  drawMist(t, d);
   updateTip(); updateControls(d);
 }
 
@@ -2631,6 +3043,7 @@ window.room = {
   setActive: on => { active = on; wake(); },
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setFps: n => { fpsCap = n; },
+  setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),
 };
 if (PV && !PV.house) {
   document.getElementById('add').hidden = true;
