@@ -658,16 +658,19 @@ function drawFloor(th) {
 // The shell is baked in two layers around the windows: A (ground, floor, walls) and B (rims, decor, door).
 function shellA(r) {
   const th = r.theme, NX = R.NX, NY = R.NY;
+  const isl = isIsland(r);
   if (r.floor === 0 && !yardGround(r)) {
     const snow = weather === 'snow';
-    const GY = NY + 2.0; // the ground reaches out in front, under the outside stairs
-    B(-1.2, -1.2, -SLAB - 14, NX + 2.4, GY + 1.2, 14, '#7a5a3a');
-    FY(-1.2, NX + 1.2, GY + .001, -SLAB - 14, -SLAB - 9, '#5a4028'); FX(-1.2, GY, NX + 1.2 + .001, -SLAB - 14, -SLAB - 9, '#5a4028');
-    FL(-1.2, -1.2, NX + 1.2, GY, snow ? '#eef2f8' : '#6aa84a', -SLAB);
-    for (let i = 0; i < 30; i++) pix(-1 + (i * 3.7) % (NX + 2), NY + .2 + (i % 4) * .25, -SLAB, snow ? '#ffffff' : (i % 5 ? '#8ac860' : '#f0d040'));
-    for (let i = 0; i < 24; i++) pix(NX + .2 + (i % 4) * .25, -1 + (i * 2.9) % (NY + 2), -SLAB, snow ? '#ffffff' : (i % 6 ? '#8ac860' : '#ff80a0'));
+    const GY = NY + 2.0, GX = NX + (isl ? 2 : 1.2); // the ground reaches out in front (under the outside stairs) and on the right
+    B(-1.2, -1.2, -SLAB - 14, GX + 1.2, GY + 1.2, 14, '#7a5a3a');
+    FY(-1.2, GX, GY + .001, -SLAB - 14, -SLAB - 9, '#5a4028'); FX(-1.2, GY, GX + .001, -SLAB - 14, -SLAB - 9, '#5a4028');
+    FL(-1.2, -1.2, GX, GY, snow ? '#eef2f8' : '#6aa84a', -SLAB);
+    for (let i = 0; i < 30; i++) pix(-1 + (i * 3.7) % (GX + 1), NY + .2 + (i % 4) * .25, -SLAB, snow ? '#ffffff' : (i % 5 ? '#8ac860' : '#f0d040'));
+    for (let i = 0; i < 24; i++) pix(NX + .2 + (i % 4) * (GX - NX - .3) / 3, -1 + (i * 2.9) % (NY + 2), -SLAB, snow ? '#ffffff' : (i % 6 ? '#8ac860' : '#ff80a0'));
   }
   B(0, 0, -SLAB, NX, NY, SLAB, '#6a4a4a');
+  if (isl) { const e = entries(r); // a wooden step down from each open edge, where the Clawds go out
+    B(e.F.I[0] - .4, NY, -SLAB, .8, .5, SLAB / 2, '#b07a4a'); B(NX, e.R.I[1] - .4, -SLAB, .5, .8, SLAB / 2, '#b07a4a'); }
   drawFloor(th);
   if (!th.open && th.pattern !== 'glass') drawWalls(th);
   if (th.pattern === 'glass') { poly([iso(0, 0, 0), iso(0, NY, 0), iso(0, NY, WH), iso(0, 0, WH)], lit('#dfe8e2')); poly([iso(0, 0, 0), iso(NX, 0, 0), iso(NX, 0, WH), iso(0, 0, WH)], lit('#dfe8e2')); }
@@ -770,18 +773,8 @@ function ensureRoom(key, name, themeId) {
 const shared = key => roomByKey.get('__' + key);
 
 // Tower 0 holds the bathroom, the kitchen and the first project; the roof sits on top of it.
-// LAYOUT: 'towers' (stacks side by side), 'steps' (each next stack higher, to the right), 'islands' (projects float around the main tower).
+// LAYOUT: 'towers' (stacks side by side), 'steps' (each next stack higher, to the right), 'islands' (projects on islands around the main tower).
 let LAYOUT = Q.get('layout') || PV?.layout || 'islands';
-let bridges = [];
-// Islands: six around the main tower, then rings further out, each island tied by its bridge to the one it stands beside.
-// [x in room widths, y in floors, the stack its bridge comes from]
-const ISLANDS = [[1.3, -2.0], [-1.3, -1.5], [1.3, -.15], [-1.3, .35], [2.55, -1.1], [-2.55, -.6]];
-const OUTER = [[3.8, -2.0, 4], [-3.8, -1.5, 5], [3.8, -.2, 4], [-3.8, .3, 5], [2.55, .8, 2], [-2.55, 1.3, 3]];
-function islandSlot(t) {
-  const n = t - 1; if (n < ISLANDS.length) return [...ISLANDS[n], 0];
-  const ring = Math.floor((n - ISLANDS.length) / OUTER.length), j = (n - ISLANDS.length) % OUTER.length, [a, b, near] = OUTER[j];
-  return [a + Math.sign(a) * 1.25 * ring, b, ring ? t - OUTER.length : near + 1];
-}
 function layout() {
   if (!rooms.length) return layoutEmpty();
   const stack = [];
@@ -794,11 +787,19 @@ function layout() {
   });
   const roof = shared('roof');
   if (roof && stack[0]) { const top = stack[0][stack[0].length - 1]; roof.tower = 0; roof.floor = stack[0].length; roof.NX = top.NX; roof.NY = top.NY; stack[0].push(roof); }
+  for (const r of rooms) { r.tx = 0; r.ty = 0; }
+  // islands: every project island stands on the ground beside the tower, at the bathroom's height, tied by bridges
+  links = LAYOUT === 'islands' && yardOn() ? islandPlan(stack.slice(1).map(s => s[0])) : [];
+  for (const sp of sprites.values()) if (sp.onBridge) { // a walker halfway across keeps going on the same bridge, rebuilt
+    const o = sp.onBridge.pair, L = links.find(l => l.a === o.a && l.b === o.b);
+    if (L) { sp.onBridge.pair = L; if (sp.path[0]?.bridge) sp.path[0].bridge = L; }
+    else { const to = sp.path[1]?.r || sp.homeRoom; sp.onBridge = null; sp.room = to; [sp.x, sp.y] = to.theme.hub; sp.z = 0; sp.path = []; if (sp.goal) setGoal(sp, sp.goal); }
+  }
   const W = 18 * 8 * S, F = FLOOR_STEP * S;
   // where each stack's ground room stands, before centering
   const base = stack.map((s, t) => {
     if (LAYOUT === 'steps') return [t * (W + 70 * S), -t * .62 * F];
-    if (LAYOUT === 'islands') { if (t === 0) return [0, 0]; const [a, b] = islandSlot(t); return [a * W, b * F]; }
+    if (LAYOUT === 'islands') { const r = s[0]; return [(r.tx - r.ty) * 8 * S, (r.tx + r.ty) * 4 * S]; }
     return [t * (W + 40 * S), 0];
   });
   const place = () => stack.forEach((s, t) => { let wy = 0;
@@ -806,7 +807,11 @@ function layout() {
   place();
   for (const r of rooms) { r.wx = r.ox; r.wy = r.oy; } // world position, before the view is applied
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const r of rooms) { x0 = Math.min(x0, r.ox - (r.NY + 1.5) * 8 * S); x1 = Math.max(x1, r.ox + (r.NX + 1.5) * 8 * S + 60 * S); y0 = Math.min(y0, r.oy - (WH + 12) * S); y1 = Math.max(y1, r.oy + (r.NX + r.NY + 2.4) * 4 * S + (SLAB + 16) * S); }
+  for (const r of rooms) {
+    const isl = isIsland(r), gx = isl ? 3.2 : 1.5, gy = isl ? 3.4 : 1.5; // an island's grass reaches past the room's open edges
+    x0 = Math.min(x0, r.ox - (r.NY + gy) * 8 * S); x1 = Math.max(x1, r.ox + (r.NX + gx) * 8 * S + (r.tower === 0 ? 60 * S : 0));
+    y0 = Math.min(y0, r.oy - (WH + 12) * S); y1 = Math.max(y1, r.oy + (r.NX + r.NY + (isl ? 4 : 2.4)) * 4 * S + (SLAB + 16) * S);
+  }
   if (yardOn()) { const b = shared('bath'); y1 = Math.max(y1, b.oy + (YD.x1 + b.NY + 2) * 4 * S + (SLAB + 18) * S); x1 = Math.max(x1, b.ox + (YD.x1 - YD.y0 + 1.5) * 8 * S); }
   DPR = devicePixelRatio || 1;
   const fit = Math.min(innerWidth * DPR * (PV && !PV.house ? .94 : .96) / (x1 - x0), (innerHeight - INSETS.top - INSETS.bottom) * DPR * (PV && !PV.house ? .9 : .94) / (y1 - y0));
@@ -814,23 +819,53 @@ function layout() {
   VIEW.base = fit >= 3 ? Math.floor(fit * 4) / 4 : Math.max(1, Math.floor(fit * 2) / 2);
   VIEW.home = [(x0 + x1) / 2, (y0 + y1) / 2];
   if (VIEW.zoom === 1) VIEW.at = VIEW.home.slice();
-  // rope bridges between stacks that don't share stairs; their ends are placed with the view
-  bridgePairs = [];
-  if (LAYOUT !== 'towers') stack.forEach((s, t) => {
-    if (t === 0) return;
-    const from = LAYOUT === 'steps' ? stack[t - 1] : LAYOUT === 'islands' ? stack[islandSlot(t)[2]] : stack[0], to = s[0];
-    const near = from.filter(r => !r.theme.open && !(r.key === '__bath' && yardOn())).reduce((a, b) => Math.abs(b.wy - to.wy) < Math.abs(a.wy - to.wy) ? b : a);
-    bridgePairs.push(to.wx > near.wx ? [near, to] : [to, near]);
-  });
-  assignPorches();
   applyView();
   rooms.forEach(r => r.cache = null);
+}
+// a project's own island (not the tower's ground floor): it has grass to walk on and steps down from its open edges
+const isIsland = r => !!r && r !== YARD && r.floor === 0 && r.tower > 0 && LAYOUT === 'islands' && yardOn();
+
+// ---------- the village: islands around the yard, tied by short flat bridges ----------
+// All in the bathroom's tile coordinates (the yard's too), at grass height. The first island stands to the right of
+// the yard, across the gate in its side fence; the second to the left, past the foot of the stairs. After that the islands take turns: each side
+// grows a row, every island tied to the one before it, stepping back or forward so the row stays level on screen.
+// An island's ports are where a bridge lands on its grass: on the front strip (L at its left end, F on its front edge)
+// or on the right strip (Rt on its right edge, Bk at its back end). Clawds walk out of the room through the open front
+// (or the open right side) onto the grass, along the strip and over the bridge.
+const BR_GAP = 3, ROW_V = 0;
+let links = [];
+function islandPlan(list) {
+  const out = [], ends = {};
+  const mk = (a, pa, qa, b, pb, qb, axis) => {
+    const A = [qa[0] + a.tx, qa[1] + a.ty], Bp = [qb[0] + b.tx, qb[1] + b.ty], k = axis === 'x' ? 0 : 1;
+    const L = { a, b, pa: { kind: pa, q: qa }, pb: { kind: pb, q: qb }, axis, A, B: Bp, len: Math.abs(Bp[k] - A[k]) };
+    L.hi = Bp[k] > A[k] ? b : a; // the end further along the axis is in front: the bridge is drawn just before it
+    return L;
+  };
+  list.forEach((r, i) => {
+    const NX = r.NX, NY = r.NY, side = i % 2 ? 'L' : 'R', p = ends[side];
+    let L;
+    if (!p && side === 'R') { r.tx = YD.x1 + BR_GAP + 1.2; r.ty = 3.6 - (NY + 1); L = mk(YARD, 'Yr', [YD.x1, 3.6], r, 'L', [-1.2, NY + 1], 'x'); }
+    else if (!p) { r.tx = -1.2 - BR_GAP - (NX + 2); r.ty = 7.5 - .6; L = mk(YARD, 'Yl', [-1.2, 7.5], r, 'Rt', [NX + 2, .6], 'x'); }
+    else {
+      const v = p.tx + p.ty, closer = (a, b) => Math.abs(v + a - ROW_V) <= Math.abs(v + b - ROW_V);
+      if (side === 'R' && closer(-3.3, 7.8)) { // back: from its right strip's back end to the next one's front
+        r.tx = p.tx + p.NX + 1.4 - .5; r.ty = p.ty - 1.2 - BR_GAP - (NY + 2); L = mk(p, 'Bk', [p.NX + 1.4, -1.2], r, 'F', [.5, NY + 2], 'y'); }
+      else if (side === 'R') { // right: from its right edge to the next one's front strip
+        r.tx = p.tx + p.NX + 2 + BR_GAP + 1.2; r.ty = p.ty + .6 - (NY + 1); L = mk(p, 'Rt', [p.NX + 2, .6], r, 'L', [-1.2, NY + 1], 'x'); }
+      else if (closer(3.3, -7.8)) { // forward: from its front edge to the next one's right strip
+        r.tx = p.tx + .5 - (NX + 1.4); r.ty = p.ty + p.NY + 2 + BR_GAP + 1.2; L = mk(p, 'F', [.5, p.NY + 2], r, 'Bk', [NX + 1.4, -1.2], 'y'); }
+      else { // left: from its front strip's left end to the next one's right edge
+        r.tx = p.tx - 1.2 - BR_GAP - (NX + 2); r.ty = p.ty + p.NY + 1 - .6; L = mk(p, 'L', [-1.2, p.NY + 1], r, 'Rt', [NX + 2, .6], 'x'); }
+    }
+    ends[side] = r; out.push(L);
+  });
+  return out;
 }
 
 // ---------- the view: pinch to zoom in on a room, scroll to move, double tap to go back ----------
 // Zooming makes the art pixels bigger rather than stretching a picture, so it stays crisp.
 const VIEW = { base: 3, zoom: 1, at: [0, 0], home: [0, 0] };
-let bridgePairs = [];
 function applyView() {
   PXD = VIEW.base * VIEW.zoom;
   const w = Math.ceil(innerWidth * DPR / PXD), h = Math.ceil(innerHeight * DPR / PXD);
@@ -838,7 +873,6 @@ function applyView() {
   cv.style.width = (cv.width * PXD / DPR) + 'px'; cv.style.height = (cv.height * PXD / DPR) + 'px';
   const lift = Math.round((INSETS.top - INSETS.bottom) / 2 * DPR / PXD); // centred between the menu bar and the Dock
   for (const r of rooms) { r.ox = Math.round(cv.width / 2 + r.wx - VIEW.at[0]); r.oy = Math.round(cv.height / 2 + lift + r.wy - VIEW.at[1]); }
-  bridges = bridgePairs.map(p => [porchEnd(p[0], p), porchEnd(p[1], p), p[0], p[1]]);
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
@@ -862,28 +896,64 @@ function resetView() { glideTo(1, VIEW.home); }
 addEventListener('wheel', e => { e.preventDefault(); if (e.ctrlKey) zoomAt(Math.exp(-e.deltaY * .01), e.clientX, e.clientY); else panBy(-e.deltaX, -e.deltaY); }, { passive: false });
 cv.addEventListener('dblclick', resetView);
 
-function drawBridge([a, b]) {
-  const len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(3, Math.round(len / (5 * S)));
-  const ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len, hw = 7 * S, rail = 13 * S;
-  const px = 0, py = 1; // the deck spreads across the screen's vertical, like a plank seen from above
-  const at = u => [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u + Math.sin(u * Math.PI) * 12 * S];
-  const side = (u, k, lift) => { const [x, y] = at(u); return [x + px * hw * k, y + py * hw * k * .5 - lift]; };
-  // back rope and posts first, then the deck, then the front rope
-  const rope = (k) => { for (let i = 0; i < n; i++) { line(side(i / n, k, rail), side((i + 1) / n, k, rail), lit('#6a4a2a')); line(side(i / n, k, rail - 1), side((i + 1) / n, k, rail - 1), lit('#8a6a42')); } };
-  const posts = (k) => { for (let i = 0; i <= n; i += 3) { const p = side(i / n, k, 0), q = side(i / n, k, rail); g.fillStyle = lit(OUT); g.fillRect(Math.round(p[0]) - 1, Math.round(q[1]) - 1, S + 2, Math.round(p[1] - q[1]) + 2); g.fillStyle = lit('#8a6040'); g.fillRect(Math.round(p[0]), Math.round(q[1]), S, Math.round(p[1] - q[1])); } };
-  posts(-1); rope(-1);
+// A bridge is a flat plank walkway at grass height, from the edge of one island's grass to the edge of another's,
+// drawn in the bathroom's tile coordinates: a deck of planks on two beams, posts with a sagging rope on both sides,
+// a lantern on a post at each end. The Clawds crossing it walk between the ropes.
+const DECK = .45;
+const linkAt = (L, u) => [L.A[0] + (L.B[0] - L.A[0]) * u, L.A[1] + (L.B[1] - L.A[1]) * u];
+const linkW = sp => (sp.seed - .5) * .36; // a little to one side or the other, so two Clawds don't overlap
+function worldFrame() { const b = roomByKey.get('__bath'); return b ? { ox: b.ox, oy: b.oy, drop: 0 } : null; }
+// a point on the deck in screen pixels, u running from the bridge's end a to its end b
+function bridgePoint(L, u, w = 0) {
+  const f = worldFrame(); if (!f) return null;
+  const saved = R; R = f; const [x, y] = linkAt(L, u), p = L.axis === 'x' ? iso(x, y + w, -SLAB) : iso(x + w, y, -SLAB); R = saved;
+  return [p[0], p[1], L.len];
+}
+function drawLink(L, t) {
+  const f = worldFrame(); if (!f) return;
+  const born = Math.max(L.a.born || 0, L.b.born || 0), e = Math.min(1, Math.max(0, (t - born - 700) / 500)); // after a new island has landed
+  if (e <= 0) return;
+  const saved = R; R = f; g.globalAlpha = e;
+  const k = L.axis === 'x' ? 0 : 1, s0 = Math.min(L.A[k], L.B[k]), s1 = Math.max(L.A[k], L.B[k]), c = L.A[1 - k], z = -SLAB;
+  const P = (s, w) => k ? [c + w, s] : [s, c + w]; // along the bridge and across it; w > 0 is the side nearer the viewer
+  const at = (s, w, zz) => { const [x, y] = P(s, w); return iso(x, y, zz); };
+  const box = (sa, wa, sb, wb, z0, h, col, em, nl) => { const [ax, ay] = P(sa, wa), [bx, by] = P(sb, wb); B(Math.min(ax, bx), Math.min(ay, by), z0, Math.abs(bx - ax), Math.abs(by - ay), h, col, em, nl); };
+  // the deck, its planks across the walkway
+  box(s0, -DECK, s1, DECK, z - 1.6, 1.6, '#8a5a36');
+  const n = Math.max(3, Math.round((s1 - s0) / .3)), st = (s1 - s0) / n;
   for (let i = 0; i < n; i++) {
-    const u0 = (i + .1) / n, u1 = (i + .9) / n;
-    const q = [side(u0, -1, 0), side(u1, -1, 0), side(u1, 1, 0), side(u0, 1, 0)];
-    polyOutline(q, lit(OUT)); poly(q.map(p => [p[0], p[1] + S]), lit('#7a4a2a'));
-    poly(q, lit(i % 3 === 0 ? '#b07a4a' : i % 3 === 1 ? '#c48c58' : '#ba8250'));
-    line(q[3], q[2], lit('#d8a470'));
+    const a = s0 + i * st;
+    poly([at(a, -DECK, z), at(a + st, -DECK, z), at(a + st, DECK, z), at(a, DECK, z)], lit(['#c48c58', '#b88250', '#cc965e'][(i * 2 + (i >> 2)) % 3]));
+    if (i) line(at(a, -DECK, z), at(a, DECK, z), lit('#7a4a2a'));
+    if (i % 2) { const [nx, ny] = at(a + st / 2, DECK - .1, z); g.fillStyle = lit('#6a4228'); rect(Math.round(nx), Math.round(ny), 1, 1); }
   }
-  posts(1); rope(1);
-  for (const [p, k] of [[a, 1], [b, 1]]) { // end posts
-    for (const kk of [-1, 1]) { const x = Math.round(p[0] + px * hw * kk), y = Math.round(p[1] + py * hw * kk * .5);
-      g.fillStyle = lit(OUT); g.fillRect(x - 1, y - rail - 2 * S - 1, 2 * S + 2, rail + 2 * S + 2); g.fillStyle = lit('#7a5232'); g.fillRect(x, y - rail - 2 * S, 2 * S, rail + 2 * S); } // the porches carry the lanterns
-  }
+  // posts every few planks, a rope between them that sags a little
+  const m = Math.max(1, Math.round((s1 - s0 - .3) / 1.0)), posts = [];
+  for (let i = 0; i <= m; i++) posts.push(s0 + .15 + (s1 - s0 - .3) * i / m);
+  const rail = side => {
+    const w = side * (DECK - .07);
+    for (const ps of posts) box(ps - .05, w - .05, ps + .05, w + .05, z, 7, '#6a4228', 0, 1);
+    for (let i = 0; i + 1 < posts.length; i++) for (let j = 0; j < 6; j++) {
+      const a = posts[i], b = posts[i + 1], sg = u => 6.6 - Math.sin(u * Math.PI) * 1.6, u0 = j / 6, u1 = (j + 1) / 6;
+      const p0 = at(a + (b - a) * u0, w, z + sg(u0)), p1 = at(a + (b - a) * u1, w, z + sg(u1));
+      line(p0, p1, lit('#5a3a22')); line([p0[0], p0[1] + 1], [p1[0], p1[1] + 1], lit('#a07a4a'));
+    }
+  };
+  const lantern = ps => { const w = -(DECK - .07);
+    box(ps - .06, w - .06, ps + .06, w + .06, z, 17, '#5a3a24', 0, 1);
+    box(ps - .15, w - .15, ps + .15, w + .15, z + 17, 3.2, '#ffd27a', DARK > .3);
+    box(ps - .19, w - .19, ps + .19, w + .19, z + 20.2, .9, '#3a2c24'); };
+  rail(-1); lantern(s0 + .15); lantern(s1 - .15);
+  // the Clawds on it, back to front
+  const on = [...sprites.values()].filter(sp => sp.onBridge && sp.onBridge.pair === L);
+  on.map(sp => [sp, bridgePoint(L, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u, linkW(sp))]).filter(q => q[1])
+    .sort((a, b) => a[1][1] - b[1][1]).forEach(([sp, q]) => { g.globalAlpha = e; drawClawd(q[0], q[1], sp, t); });
+  g.globalAlpha = e;
+  rail(1);
+  if (DARK > .3) { g.save(); g.globalCompositeOperation = 'lighter';
+    for (const ps of [s0 + .15, s1 - .15]) { const [x, y] = at(ps, -(DECK - .07), z + 18.6); glow(x, y, 20 * S, '#ffc870', (.1 + .25 * DARK) * e); }
+    g.restore(); }
+  g.globalAlpha = 1; R = saved;
 }
 
 // ---------- baking: static parts are drawn once into small images ----------
@@ -962,14 +1032,15 @@ function pickSpot(sp, room, cat) {
   return { room, cat, i: extra ? -1 : i, p };
 }
 function setGoal(sp, goal) { sp.goal = goal; routeTo(sp, goal.room, goal.p); }
-// Rooms connect by stairs inside a stack and by rope bridges between stacks; the shortest chain of them wins.
+// Rooms connect by stairs inside a stack, the bathroom by the foot of its stairs with the yard, the yard and the islands
+// by bridges; the shortest chain of them wins.
 function roomPath(a, b) {
   const prev = new Map([[a, null]]), queue = [a];
   while (queue.length) {
     const r = queue.shift(); if (r === b) break;
     const next = [];
     for (const d of [-1, 1]) { const n = roomAt(r.tower, r.floor + d); if (n) next.push([n, 'stairs']); }
-    for (const pair of bridgePairs) if (pair[0] === r || pair[1] === r) next.push([pair[0] === r ? pair[1] : pair[0], pair]);
+    for (const L of links) if (L.a === r || L.b === r) next.push([L.a === r ? L.b : L.a, L]);
     if (r === YARD) { if (shared('bath')) next.push([shared('bath'), 'yard']); } else if (r.key === '__bath' && yardOn()) next.push([YARD, 'yard']);
     for (const [n, via] of next) if (!prev.has(n)) { prev.set(n, [r, via]); queue.push(n); }
   }
@@ -977,10 +1048,10 @@ function roomPath(a, b) {
   const steps = []; for (let r = b; prev.get(r); r = prev.get(r)[0]) steps.unshift([r, prev.get(r)[1]]);
   return steps;
 }
+const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
 function routeTo(sp, room, p) {
-  const nodes = []; let cur = sp.room, from = [sp.x, sp.y];
-  const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
-  if (sp.onBridge) { let i = 1; while (sp.path[i + 1]?.porch) i++; nodes.push(...sp.path.slice(0, i + 1)); cur = sp.path[i].r; from = sp.path[i].p; } // finish crossing first, in through the door
+  const nodes = []; let cur = sp.room, from = [sp.x, sp.y, sp.z];
+  if (sp.onBridge) { nodes.push(sp.path[0], sp.path[1]); cur = sp.path[1].r; from = sp.path[1].p; } // finish crossing first
   else if (sp.path.length && sp.path[0].p && sp.path[0].p[2] !== 0 && sp.path[0].r === cur && !sp.path[0].jump) { nodes.push(sp.path[0]); from = sp.path[0].p; }
   else if (sp.z > .5) nodes.push({ r: cur, p: [Math.min(sp.x + .2, cur.NX - .4), Math.min(sp.y + .7, cur.NY - .4), 0] });
   const steps = cur === room ? [] : roomPath(cur, room);
@@ -988,18 +1059,89 @@ function routeTo(sp, room, p) {
   else for (const [next, via] of steps) {
     if (via === 'stairs') {
       const up = next.floor > cur.floor, NY = cur.NY, NYn = next.NY;
-      if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
+      if (far(from, cur.theme.hub) && far(from, [1.0, NY - .5])) nodes.push({ r: cur, p: cur.theme.hub });
       // out through the open front onto the landing, up (or down) two flights, in on the next floor
       const up_ = (Y, k) => [[1.0, Y - .5, 0], [.7, Y + .7, 0], [1.4, Y + .4, 0], [ESC.x1, Y + .4, F2], [ESC.x1 + .6, Y + .7, F2], [ESC.x1, Y + 1.0, F2], [1.4, Y + 1.0, FLOOR_STEP]];
       if (up) { up_(NY).forEach(q => nodes.push({ r: cur, p: q })); nodes.push({ r: next, p: [1.4, NYn + 1.0, 0], jump: true }, { r: next, p: [.7, NYn + .7, 0] }, { r: next, p: [1.0, NYn - .5, 0] }); }
       else { const Yn = NYn; nodes.push({ r: cur, p: [1.0, NY - .5, 0] }, { r: cur, p: [.7, NY + .7, 0] }, { r: cur, p: [1.4, NY + 1.0, 0] }, { r: next, p: [1.4, Yn + 1.0, FLOOR_STEP], jump: true });
         up_(Yn).reverse().slice(1).forEach(q => nodes.push({ r: next, p: q })); }
-    } else doorRoute(nodes, cur, next, via, from, far);
+    } else if (via === 'yard') yardLink(nodes, cur, next, from);
+    else crossLink(nodes, cur, next, via, from);
     from = nodes[nodes.length - 1].p; cur = next;
   }
-  if (far(from, p)) nodes.push({ r: room, p: room.theme.hub });
+  if (room === YARD) yardWalk(nodes, from, p);
+  else {
+    if (isIsland(room) && !inBox(room, from)) from = walkIn(nodes, room, from);
+    if (far(from, p)) nodes.push({ r: room, p: room.theme.hub });
+  }
   nodes.push({ r: room, p });
   sp.path = nodes;
+}
+
+// ---------- walking on the ground: island grass, the yard's paths, the bridges ----------
+// A Clawd leaves its room through the open front (y = NY) or the open right side (x = NX), where the furniture
+// leaves room, steps down onto the island's grass and walks along the strip in front or the strip on the right.
+const ENTRY_AT = { front: { library: 5.6 }, right: { server: 4.25, library: 3.8 } };
+function entries(r) {
+  const th = THEME_KEY.get(r.theme), fx = ENTRY_AT.front[th] ?? r.NX * .6, ry = ENTRY_AT.right[th] ?? r.NY * .45;
+  return { F: { I: [fx, r.NY - .45, 0], S: [fx, r.NY + .3, -SLAB / 2] }, R: { I: [r.NX - .45, ry, 0], S: [r.NX + .3, ry, -SLAB / 2] } };
+}
+const inBox = (r, p) => p[0] > -.05 && p[0] < r.NX + .05 && p[1] > -.05 && p[1] < r.NY + .05;
+const laneOf = (r, p) => p[1] > r.NY + .05 ? 'F' : 'R';
+// along the grass between two points off the room: onto the middle of the strip, round the front-right corner if need be
+function grassWalk(nodes, r, a, b) {
+  const la = laneOf(r, a), lb = laneOf(r, b), z = -SLAB, onto = (p, l) => l === 'F' ? [p[0], r.NY + 1, z] : [r.NX + 1, p[1], z];
+  nodes.push({ r, p: onto(a, la) });
+  if (la !== lb) nodes.push({ r, p: [r.NX + 1.5, r.NY + 1.5, z] });
+  nodes.push({ r, p: onto(b, lb) });
+}
+// from wherever the Clawd is in or around room r out to the point q on its grass
+function walkOut(nodes, r, q, from) {
+  let at = from;
+  if (inBox(r, from)) {
+    const e = entries(r)[laneOf(r, q)];
+    if (far(from, r.theme.hub) && far(from, e.I)) nodes.push({ r, p: r.theme.hub });
+    nodes.push({ r, p: e.I }, { r, p: e.S }); at = e.S;
+  }
+  grassWalk(nodes, r, at, q); nodes.push({ r, p: [q[0], q[1], -SLAB] });
+}
+// from the grass back in through the nearer open edge
+function walkIn(nodes, r, from) {
+  const e = entries(r)[laneOf(r, from)];
+  grassWalk(nodes, r, from, e.S); nodes.push({ r, p: e.S }, { r, p: e.I });
+  return e.I;
+}
+// the yard's paths: a little tree of waypoints from the hub by the lamp, along the stepping stones and the dirt path,
+// to the foot of the stairs and to every bridge
+const YW = [[8.9, 6.3], [8.6, 7.0], [2.6, 7.0], [1.8, 7.05], [1.0, 7.5], [8.9, 3.7], [13.4, 3.6]], YUP = [-1, 0, 1, 2, 3, 0, 5];
+const YGATE = { foot: 3, Yl: 4, Yr: 6 };
+function yardNear(p) {
+  const i = YW.findIndex(w => Math.hypot(w[0] - p[0], w[1] - p[1]) < .35); if (i >= 0) return i;
+  return p[0] < 3.2 ? (p[1] > 7.25 ? 4 : 3) : p[1] < 4.6 && p[0] > 8.2 ? 5 : 0;
+}
+function yardWalk(nodes, from, to) {
+  const chain = i => { const l = []; for (; i >= 0; i = YUP[i]) l.push(i); return l; };
+  const A = chain(yardNear(from)), Bc = chain(yardNear(to)), top = A.find(i => Bc.includes(i));
+  for (const i of [...A.slice(0, A.indexOf(top) + 1), ...Bc.slice(0, Bc.indexOf(top)).reverse()]) nodes.push({ r: YARD, p: [YW[i][0], YW[i][1], 0] });
+}
+// the bathroom and the yard: out of the open front onto the stairs' landing, down its step to the path, and back
+function yardLink(nodes, cur, next, from) {
+  const b = cur === YARD ? next : cur, NY = b.NY, wayIn = [[1.0, NY - .5, 0], [.7, NY + .7, 0], [1.375, NY + 1, -SLAB / 2]];
+  if (cur !== YARD) {
+    if (far(from, b.theme.hub) && far(from, wayIn[0])) nodes.push({ r: b, p: b.theme.hub });
+    wayIn.forEach(p => nodes.push({ r: b, p }));
+    nodes.push({ r: YARD, p: [1.375, NY + 1, SLAB / 2], jump: true }, { r: YARD, p: [...YW[YGATE.foot], 0] });
+  } else {
+    yardWalk(nodes, from, YW[YGATE.foot]);
+    nodes.push({ r: YARD, p: [1.375, NY + 1, SLAB / 2] }, { r: b, p: wayIn[2], jump: true }, { r: b, p: wayIn[1] }, { r: b, p: wayIn[0] });
+  }
+}
+// over a bridge: to its end on this side, across, onto the grass on the other side
+function crossLink(nodes, cur, next, L, from) {
+  const fw = L.a === cur, pc = fw ? L.pa : L.pb, pn = fw ? L.pb : L.pa;
+  if (cur === YARD) { yardWalk(nodes, from, YW[YGATE[pc.kind]]); nodes.push({ r: YARD, p: [pc.q[0], pc.q[1], 0] }); }
+  else walkOut(nodes, cur, pc.q, from);
+  nodes.push({ bridge: L, forward: fw }, { r: next, p: [pn.q[0], pn.q[1], next === YARD ? 0 : -SLAB], jump: true });
 }
 // ---------- outside stairs: a switchback fire escape on the front-left corner of a stack ----------
 // Landings at every floor (flush with the floor, just outside the open front), a flight along the back lane
@@ -1032,7 +1174,8 @@ function escape(r, layer) {
   }
 }
 // drawn after every room of the stack, with the Clawds that are out on them, back to front
-const onStairs = (s, r) => s.y > r.NY - .05 && s.x < ESC.x1 + ESC.w + .2; // out front, but not on a porch
+const onStairs = (s, r) => (r.floor > 0 || !!roomAt(r.tower, 1)) && s.y > r.NY - .05 && s.x < ESC.x1 + ESC.w + .2; // out front, by the stairs
+const atFoot = s => s.room === YARD && s.x < 2.6; // on the path by the foot of the stairs: drawn after them
 function drawEscapes(t) {
   for (const r of rooms) {
     const c = r.cache; if (!c || !(c.escBack || c.escTop)) continue;
@@ -1043,133 +1186,22 @@ function drawEscapes(t) {
     out.filter(s => s.y < r.NY + .7).forEach(clawd);
     blit(c.escFront);
     out.filter(s => s.y >= r.NY + .7).forEach(clawd);
+    if (r.key === '__bath') [...sprites.values()].filter(atFoot).sort((a, b) => a.x + a.y - b.x - b.y).forEach(s => { const [X, Y] = scAt(YARD, s.x, s.y, s.z); drawClawd(X, Y, s, t); });
   }
-}
-// a point on the deck of a bridge, as drawn by drawBridge
-function bridgePoint(pair, u) {
-  const br = bridges.find(b => b[2] === pair[0] && b[3] === pair[1]); if (!br) return null;
-  const [a, b] = br;
-  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u + Math.sin(u * Math.PI) * 12 * S, Math.hypot(b[0] - a[0], b[1] - a[1])];
-}
-function drawBridgeWalkers(t) {
-  for (const sp of sprites.values()) {
-    const ob = sp.onBridge; if (!ob) continue;
-    const q = bridgePoint(ob.pair, ob.forward ? ob.u : 1 - ob.u); if (!q) continue;
-    drawClawd(q[0], q[1], sp, t);
-  }
-}
-
-// ---------- porches: a door and a little deck at both ends of every bridge ----------
-// A bridge leaves a room through a door on its open front edge: x = NX for its right side, y = NY for its left one.
-// The porch reaches PD tiles out at floor level, the bridge hangs from its outer edge.
-const PD = 1.8;
-const DOOR_AT = { right: { server: 4.25, library: 3.8 }, left: { library: 5.6, bath: 5.5 } }; // where a theme's furniture leaves room for a door
-function assignPorches() {
-  for (const p of bridgePairs) p.ends = [null, null];
-  for (const r of rooms) for (const k of [0, 1]) {
-    const mine = bridgePairs.filter(p => p[k] === r); if (!mine.length) continue;
-    const side = k ? 'left' : 'right', N = k ? r.NX : r.NY;
-    const base = DOOR_AT[side][THEME_KEY.get(r.theme)] ?? (k ? r.NX * .6 : r.NY * .45);
-    mine.sort((a, b) => k ? b[0].wy - a[0].wy : a[1].wy - b[1].wy); // the higher island takes the door further back, so bridges don't cross
-    // on the left the lowest island takes the door nearest the front corner, clear of the stairs on the other end
-    mine.forEach((p, i) => { p.ends[k] = { side, c: scClamp(k ? base + (mine.length - 1 - i) * 1.6 : base + i * 1.8, 1, N - 1) }; });
-  }
-}
-const porchOf = (pair, room) => pair.ends && pair.ends[pair[0] === room ? 0 : 1];
-function porchEnd(room, pair) { // the outer edge of the porch in screen pixels: where the bridge is tied
-  const e = porchOf(pair, room) || { side: room === pair[0] ? 'right' : 'left', c: room === pair[0] ? room.NY * .45 : room.NX * .6 };
-  const saved = R; R = { ox: room.ox, oy: room.oy, drop: 0 };
-  const p = e.side === 'right' ? iso(room.NX + PD, e.c, 0) : iso(e.c, room.NY + PD, 0);
-  R = saved; return p;
-}
-// the walk from inside the room, through the door, out to the porch's edge (or down the yard stoop's steps)
-function porchPath(r, e) {
-  const W = e.stoop ? [[-.6, 0], [0, 0], [.85, 0], [1.18, -2], [1.52, -4], [1.9, -SLAB]] : [[-.6, 0], [0, 0], [PD, 0]];
-  return W.map(([u, z]) => e.side === 'right' ? [r.NX + u, e.c, z] : [e.c, r.NY + u, z]);
-}
-// routeTo's step between two rooms that are not on the same stairs: over a bridge, or out into the yard
-function doorRoute(nodes, cur, next, via, from, far) {
-  if (far(from, cur.theme.hub)) nodes.push({ r: cur, p: cur.theme.hub });
-  if (via === 'yard') {
-    const w = porchPath(next === YARD ? cur : next, YARD_DOOR), f = w[w.length - 1];
-    if (next === YARD) { w.forEach(p => nodes.push({ r: cur, p })); nodes.push({ r: next, p: [f[0], f[1], 0], jump: true }); }
-    else { nodes.push({ r: cur, p: [f[0], f[1], 0] }, { r: next, p: f, jump: true }); w.slice(0, -1).reverse().forEach(p => nodes.push({ r: next, p, porch: true })); }
-    return;
-  }
-  const out = porchPath(cur, porchOf(via, cur)), inn = porchPath(next, porchOf(via, next)).reverse();
-  out.forEach(p => nodes.push({ r: cur, p }));
-  nodes.push({ bridge: via, forward: via[0] === cur }, { r: next, p: inn[0], jump: true });
-  inn.slice(1).forEach(p => nodes.push({ r: next, p, porch: true }));
 }
 function houseKey(r) {
-  let k = bridgePairs.map(p => (p.ends || []).map((e, i) => p[i] === r && e ? e.side[0] + e.c : '').join('')).join('');
-  if (r.key === '__bath' && yardOn()) k += 'Y' + seasonNow();
-  return k;
+  if (r.key === '__bath' && yardOn()) return 'Y' + seasonNow() + links.filter(L => L.a === YARD).map(L => L.pa.kind).join('');
+  return isIsland(r) ? 'I' : '';
 }
-// porches and the yard join the room's items, so Clawds on them sort with the rest
-function houseItems(r, add, D) {
-  for (const pair of bridgePairs) { const k = pair[0] === r ? 0 : pair[1] === r ? 1 : -1; if (k >= 0 && pair.ends?.[k]) porchItems(r, pair.ends[k], add, pair, k); }
-  if (r.key === '__bath' && yardOn()) { porchItems(r, YARD_DOOR, add, null, 0); yardItems(r, add, D); }
-}
-function porchItems(r, e, add, pair, k) {
-  const base = e.side === 'right' ? r.NX + e.c : e.c + r.NY, len = e.stoop ? 1 : PD;
-  add(base + .3, () => porchDraw(r, e, 'back'));
-  add(base + .9, () => porchDraw(r, e, 'post'));
-  add(base + len + .85, () => porchDraw(r, e, 'front'));
-  add(base + len + .9, () => { if (DARK <= .3) return; // the lantern's glow
-    const [x, y] = e.side === 'right' ? iso(R.NX + len - .14, e.c - .68, 24) : iso(e.c - .68, R.NY + len - .14, 24);
-    g.save(); g.globalCompositeOperation = 'lighter'; glow(x, y, 20 * S, '#ffc870', .1 + .25 * DARK); g.restore(); }, true);
-  // bridges are drawn before the rooms, so a room's own island would hide the end of a bridge that runs in front of it:
-  // that end is drawn again over the room, clipped to the room's outline, just before the porch
-  if (pair) add(base + .2, () => {
-    const br = bridges.find(b => b[2] === pair[0] && b[3] === pair[1]); if (!br) return;
-    const m = r.floor === 0 ? 1.2 : 0, mf = r.floor === 0 ? 2 : 0, bot = r.floor === 0 ? -SLAB - 14 : -SLAB, top = r.theme.open ? 26 : WH;
-    const pts = [iso(-m, -m, top), iso(r.NX + m, -m, top), iso(r.NX + m, -m, bot), iso(r.NX + m, r.NY + mf, bot), iso(-m, r.NY + mf, bot), iso(-m, r.NY + mf, top)];
-    g.save(); g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(Math.round(p[0]), Math.round(p[1])) : g.moveTo(Math.round(p[0]), Math.round(p[1]))); g.closePath(); g.clip();
-    drawBridge(br);
-    for (const sp of sprites.values()) { const ob = sp.onBridge; if (!ob || ob.pair !== pair) continue; const q = bridgePoint(pair, ob.forward ? ob.u : 1 - ob.u); if (q) drawClawd(q[0], q[1], sp, D.t); }
-    g.restore(); }, true);
-  // a Clawd just stepping onto the bridge or off it is drawn again over the porch
-  if (pair) add(base + PD + .6, () => { for (const sp of sprites.values()) { const ob = sp.onBridge; if (!ob || ob.pair !== pair) continue;
-    const ue = ob.forward ? ob.u : 1 - ob.u; if (k ? ue < .86 : ue > .14) continue;
-    const q = bridgePoint(pair, ue); if (q) drawClawd(q[0], q[1], sp, D.t); } }, true);
-}
-// u runs out from the room's edge, v along it (negative is the back side)
-function porchDraw(r, e, part) {
-  const NX = R.NX, NY = R.NY, c = e.c, right = e.side === 'right', len = e.stoop ? 1 : PD;
-  const XY = (u, v) => right ? [NX + u, c + v] : [c + v, NY + u];
-  const P = (u, v, z) => { const [x, y] = XY(u, v); return iso(x, y, z); };
-  const box = (u0, v0, u1, v1, z, h, col, em, nl) => { const [ax, ay] = XY(u0, v0), [bx, by] = XY(u1, v1); B(Math.min(ax, bx), Math.min(ay, by), z, Math.abs(bx - ax), Math.abs(by - ay), h, col, em, nl); };
-  const face = (u0, u1, v, z0, z1, col) => right ? FY(NX + u0, NX + u1, c + v, z0, z1, col) : FX(NY + u0, NY + u1, c + v, z0, z1, col);
-  const wood = '#b07a4a', rail = '#8a5a36', trim = r.theme.trim || '#e8dcc0';
-  if (part === 'back') {
-    if (e.stoop) { box(0, -.75, len, .75, -SLAB, SLAB, wood); box(len, -.6, len + .35, .6, -SLAB, 4, wood); box(len + .35, -.6, len + .7, .6, -SLAB, 2, wood); }
-    else {
-      if (r.floor === 0) for (const v of [-.7, .58]) box(len - .2, v, len - .08, v + .12, -SLAB, SLAB - 2, '#6a4228', 0, 1); // posts down to the grass
-      else for (const v of [-.6, .5]) { line(P(len - .25, v, -2), P(0, v, -SLAB), lit('#5a3420')); line(P(len - .25, v + .1, -2), P(0, v + .1, -SLAB), lit(rail)); } // braces under the slab
-      box(0, -.75, len, .75, -2, 2, wood);
-    }
-    for (let u = .3; u < len - .05; u += .3) line(P(u, -.75, 0), P(u, .75, 0), lit('#8a5a36'));
-    poly([P(.1, -.42, .02), P(.6, -.42, .02), P(.6, .42, .02), P(.1, .42, .02)], lit('#c05050')); // doormat
-    box(.1, -.74, .22, -.62, 0, 10, rail, 0, 1); box(0, -.75, len, -.65, 9, 1.2, rail);
-    box(len - .2, -.74, len - .08, -.62, 0, 22, '#6a4228', 0, 1); // the lantern post
-    box(len - .32, -.86, len + .04, -.5, 22, 4, '#ffd27a', DARK > .3); box(len - .38, -.92, len + .1, -.44, 26, .9, '#3a2c24');
-    box(-.16, -.7, 0, -.54, 0, 40, trim); // the door frame's back post, the door swung open onto the porch
-    face(.02, .9, -.56, .5, 36, '#a8744a'); face(.12, .8, -.555, 20, 33, '#bc8a5a'); face(.12, .8, -.555, 4, 17, '#bc8a5a');
-    line(P(.9, -.56, .5), P(.9, -.56, 36), lit(OUT)); line(P(.02, -.56, 36), P(.9, -.56, 36), lit(OUT));
-    const [kx, ky] = P(.78, -.55, 18); g.fillStyle = lit('#f0d070'); rect(Math.round(kx), Math.round(ky), S, S);
-  } else if (part === 'post') {
-    box(-.16, .54, 0, .7, 0, 40, trim); box(-.16, -.7, 0, .7, 40, 2.4, trim);
-  } else {
-    box(.1, .62, .22, .74, 0, 10, rail, 0, 1); box(len - .2, .62, len - .08, .74, 0, 10, rail, 0, 1); box(0, .65, len, .75, 9, 1.2, rail);
-  }
-}
+// the yard joins the bathroom's items, so Clawds in it sort with the rest
+function houseItems(r, add, D) { if (r.key === '__bath' && yardOn()) yardItems(r, add, D); }
+const gateUsed = kind => links.some(L => L.a === YARD && L.pa.kind === kind);
 
 // ---------- the yard: the tower's island grows to the front-right of the bathroom ----------
 // It is a walkable place of its own (YARD), drawn with the bathroom and in the bathroom's tile coordinates,
-// its z = 0 is the grass. Clawds reach it through a door in the bath's right edge and down the stoop.
+// its z = 0 is the grass. Clawds reach it from the bathroom by the stairs' landing and its step, and from the islands
+// over the bridges at the gate in its side fence and past the foot of the stairs.
 const YD = { x1: 14.0, y0: 1.0 }; // the ground beyond the bath's old island: out to x1, from y0 to the front
-const YARD_DOOR = { side: 'right', c: 3.0, stoop: true };
 const POND = { x: 12.0, y: 5.0, rx: 1.0, ry: .8 };
 const YARD_THEME = {
   name: 'Двор', shared: true, open: true, windows: [], clock: null, hub: [8.9, 6.3, 0], lights: () => [], decor() {}, items() {}, corner() {},
@@ -1178,7 +1210,7 @@ const YARD_THEME = {
     look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[9.9, 5.6, 0], [11.4, 3.8, 0]],
     mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]], cowork: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [8.1, 3.9, 0], [11.4, 3.8, 0]] },
 };
-const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, seed: 11, born: 0, swinger: null,
+const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, tx: 0, ty: 0, seed: 11, born: 0, swinger: null,
   get ox() { const b = roomByKey.get('__bath'); return b ? b.ox : 0; },
   get oy() { const b = roomByKey.get('__bath'); return b ? b.oy + SLAB * S : 0; },
   get drop() { const b = roomByKey.get('__bath'); return b ? b.drop : 0; } };
@@ -1198,12 +1230,14 @@ function yardGround(r) {
   if (se === 'winter' && !snow) for (let i = 0; i < 46; i++) { const x = 7.2 + scRnd(i, 21) * (YD.x1 - 7.4), y = YD.y0 + .1 + scRnd(i, 22) * (GY - YD.y0 - .2), [px, py] = iso(x, y, G);
     g.fillStyle = lit('#f4f8ff'); rect(Math.round(px) - 2, Math.round(py), 3 + (i % 3) * 2, 2); g.fillStyle = lit('#d8e2f0'); rect(Math.round(px) - 2, Math.round(py) + 2, 3 + (i % 3) * 2, 1); }
   if (se === 'autumn') for (let i = 0; i < 7; i++) pix(12.9 + (scRnd(i, 8) - .5) * 1.8, 2.5 + (scRnd(i, 9) - .3) * 1.2, G, '#c82828', 0, S, S); // fallen apples
-  // a dirt path with stepping stones from the foot of the stairs, through the gate, to the stoop
+  // a dirt path with stepping stones from the foot of the stairs, through the gate, to the back of the yard
   const dirt = snow ? '#ddd6cc' : '#b8946a';
   FL(1.15, 6.65, 8.55, 7.35, dirt, G); FL(8.55, 3.45, 9.25, 7.35, dirt, G);
+  if (gateUsed('Yl')) FL(-1.2, 7.1, 1.3, 7.9, dirt, G);   // and past the stairs to the bridge on the left
   const stone = (x, y) => { const pts = [iso(x - .2, y, G), iso(x, y - .16, G), iso(x + .2, y, G), iso(x, y + .16, G)]; polyOutline(pts, lit('#8a8272')); poly(pts, lit(snow ? '#e8e8ec' : '#c8c0b0')); };
   for (let x = 1.45; x < 8.6; x += .55) stone(x + (scRnd(x * 7, 3) - .5) * .12, 7.0 + (scRnd(x * 7, 4) - .5) * .16);
   for (let y = 3.75; y < 6.6; y += .55) stone(8.9 + (scRnd(y * 7, 5) - .5) * .16, y);
+  if (gateUsed('Yr')) for (let x = 9.5; x < 13.8; x += .55) stone(x, 3.62 + (scRnd(x * 7, 6) - .5) * .14); // on to the side gate's bridge
   B(1.2, 6.75, G, .35, .55, 3, '#b07a4a'); // a step down from the stairs' landing
   return true;
 }
@@ -1243,7 +1277,8 @@ function yardItems(r, add, D) {
     for (let k = 0; k < m; k++) { const a = [x0 + (x1 - x0) * k / m, y0 + (y1 - y0) * k / m], b = [x0 + (x1 - x0) * (k + 1) / m, y0 + (y1 - y0) * (k + 1) / m];
       fence(a[0], a[1], b[0], b[1], front ? Math.max(a[0], b[0]) + Math.max(a[1], b[1]) + .6 : Math.min(a[0], b[0]) + Math.min(a[1], b[1]) - .3); } };
   run(7.0, 1.1, 13.9, 1.1, false); run(3.0, 6.1, 3.0, 6.45, false); run(3.0, 7.45, 3.0, 7.85, false);
-  run(3.0, 7.85, 13.9, 7.85, true); run(13.9, 1.1, 13.9, 7.85, true);
+  run(3.0, 7.85, 13.9, 7.85, true);
+  if (gateUsed('Yr')) { run(13.9, 1.1, 13.9, 3.05, true); run(13.9, 4.15, 13.9, 7.85, true); } else run(13.9, 1.1, 13.9, 7.85, true);
   add(3.0 + 6.45 + .2, () => { // the gate: two posts, the leaf swung in
     B(2.94, 6.39, G, .12, .12, 8, '#d8c8b0'); B(2.94, 7.39, G, .12, .12, 8, '#d8c8b0'); pix(3.0, 6.45, G + 8, '#f0e6d4', 0, S, S); pix(3.0, 7.45, G + 8, '#f0e6d4', 0, S, S);
     for (let i = 0; i < 5; i++) B(3.08 + i * .13, 6.4, G + .6, .08, .08, 5.4, '#f0e6d4', 0, 1);
@@ -1427,15 +1462,14 @@ function stepSprites(dt) {
     sp.seated = false;
     if (n.bridge) {
       if (!sp.onBridge) { sp.onBridge = { pair: n.bridge, forward: n.forward, u: 0 }; sp.room = null; }
-      const q = bridgePoint(n.bridge, 0), len = q ? q[2] : 1;
-      sp.onBridge.u += dt / 1000 * 30 * S / len; sp.moving = true;
+      sp.onBridge.u += dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) / Math.max(.5, n.bridge.len); sp.moving = true;
       if (sp.onBridge.u >= 1) { sp.onBridge = null; sp.path.shift(); }
       continue;
     }
     if (n.jump) { sp.room = n.r; [sp.x, sp.y, sp.z] = n.p; sp.path.shift(); if (n.poof) sp.alpha = 0; continue; }
     const [tx, ty, tz] = n.p, dz = (tz - sp.z) / 14, dist = Math.hypot(tx - sp.x, ty - sp.y, dz);
     const stepLen = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1);
-    if (dist <= stepLen) { sp.x = tx; sp.y = ty; sp.z = tz; sp.path.shift(); sp.moving = sp.path.length > 0; }
+    if (dist <= stepLen || dist === 0) { sp.x = tx; sp.y = ty; sp.z = tz; sp.path.shift(); sp.moving = sp.path.length > 0; }
     else { const k = stepLen / dist; sp.x += (tx - sp.x) * k; sp.y += (ty - sp.y) * k; sp.z += (tz - sp.z) * k; sp.moving = true; }
   }
 }
@@ -1946,7 +1980,7 @@ const scPick = list => list[Math.floor(Math.random() * list.length)];
 const THEME_KEY = new Map(Object.entries(THEMES).map(([k, v]) => [v, k]));
 function scAt(room, x, y, z) { const s = R; R = room; const p = iso(x, y, z); R = s; return p; }
 function scPos(sp) {
-  if (sp.onBridge) { const q = bridgePoint(sp.onBridge.pair, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u); return q && [q[0], q[1]]; }
+  if (sp.onBridge) { const q = bridgePoint(sp.onBridge.pair, sp.onBridge.forward ? sp.onBridge.u : 1 - sp.onBridge.u, linkW(sp)); return q && [q[0], q[1]]; }
   return sp.room ? scAt(sp.room, sp.x, sp.y, sp.z) : null;
 }
 const scArrived = sp => !sp.path.length && !sp.onBridge && !!sp.goal && sp.room === sp.goal.room;
@@ -2429,7 +2463,7 @@ function drawRoom(r, t, d) {
   r.drop = Math.round(-Math.pow(1 - e, 3) * 70 * S);
   const cache = buildCache(r);
   R = r;
-  const here = [...sprites.values()].filter(s => s.room === r ? !onStairs(s, r) : s.room === YARD && r.key === '__bath');
+  const here = [...sprites.values()].filter(s => s.room === r ? !onStairs(s, r) : s.room === YARD && r.key === '__bath' && !atFoot(s));
   D.t = t;
   D.on = (cat, i) => here.some(s => s.kind === 'agent' && s.goal && s.goal.room === r && s.goal.cat === cat && s.goal.i === i && !s.path.length && s.state === 'working');
   D.showering = here.some(s => s.state === 'shower' && !s.path.length);
@@ -2446,6 +2480,7 @@ function drawRoom(r, t, d) {
   }
   const list = cache.items.map(it => ({ depth: it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
   for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = s.room === r ? iso(s.x, s.y, s.z) : scAt(s.room, s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
+  if (r.floor === 0) list.push({ depth: r.NX + r.NY + 1.6, draw: () => drawSign(r, t) }); // the post on the grass at the front corner
   list.sort((a, b) => a.depth - b.depth);
   const base = g.globalAlpha;
   for (const it of list) { it.draw(); g.globalAlpha = base; }
@@ -2458,7 +2493,7 @@ function drawRoom(r, t, d) {
   r.label.style.left = (lx * PXD / DPR + (under ? 0 : 14)) + 'px'; r.label.style.top = (ly * PXD / DPR) + 'px';
   r.label.style.transform = under ? 'translate(-50%,-50%)' : '';
   r.label.hidden = !!PV && !PV.house;
-  drawSign(r, t);
+  if (r.floor > 0) drawSign(r, t);
 }
 
 // ---------- info: context batteries, limit tanks, the piggy bank, rooms that grow, signs ----------
@@ -2804,7 +2839,7 @@ function loop(t) {
 }
 function wake() { if (active && !looping) { looping = true; last = performance.now(); requestAnimationFrame(loop); } }
 function frame(t) {
-  const dt = Math.min(100, t - last); last = t;
+  const dt = Math.max(0, Math.min(100, t - last)); last = t; // the first rAF stamp can be a little before wake()
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
@@ -2817,10 +2852,14 @@ function frame(t) {
   updateResidents(t); updateErrands(t); stepSprites(dt);
   updateScenes(t, d);
   eggStep(t);
-  for (const br of bridges) drawBridge(br);
-  drawBridgeWalkers(t);
+  // back to front by stack; a bridge lies on the ground between two islands, so it goes just before the one in front
   const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
-  for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) drawRoom(r, t, d);
+  const before = new Map();
+  for (const L of links) { const r = L.hi === YARD ? shared('bath') : L.hi; if (!before.has(r)) before.set(r, []); before.get(r).push(L); }
+  for (const r of [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor)) {
+    for (const L of before.get(r) || []) drawLink(L, t);
+    drawRoom(r, t, d);
+  }
   drawEscapes(t);
   drawFallers(t);
   drawSceneOverlays(t);
@@ -2960,9 +2999,9 @@ function stepCamera(t, dt) {
 function roomOutline(r, world, island) {
   const ox = world ? r.wx : r.ox, oy = world ? r.wy : r.oy + r.drop;
   const P = (x, y, z) => [ox + (x - y) * 8 * S, oy + (x + y) * 4 * S - z * S];
-  const top = r.theme.open ? 26 : WH, m = island && r.floor === 0 ? 1.2 : 0, bot = island && r.floor === 0 ? -SLAB - 14 : -SLAB;
+  const top = r.theme.open ? 26 : WH, m = island && r.floor === 0 ? 1.2 : 0, bot = island && r.floor === 0 ? -SLAB - 14 : -SLAB, mr = island && isIsland(r) ? 2 : m;
   const gy = island && r.floor === 0 ? r.NY + 2 : r.NY + m; // the grass reaches out in front, under the stairs
-  return [P(-m, -m, top), P(r.NX + m, -m, top), P(r.NX + m, -m, bot), P(r.NX + m, gy, bot), P(-m, gy, bot), P(-m, gy, top)];
+  return [P(-m, -m, top), P(r.NX + mr, -m, top), P(r.NX + mr, -m, bot), P(r.NX + mr, gy, bot), P(-m, gy, bot), P(-m, gy, top)];
 }
 function inside(pts, x, y) {
   let hit = false;
@@ -3022,7 +3061,7 @@ const ISLETS = [
 function layoutEmpty() {
   DPR = devicePixelRatio || 1;
   VIEW.base = Math.max(1, Math.round(innerHeight * DPR / 170) / 4);
-  VIEW.zoom = 1; VIEW.home = [0, 0]; VIEW.at = [0, 0]; bridgePairs = [];
+  VIEW.zoom = 1; VIEW.home = [0, 0]; VIEW.at = [0, 0]; links = [];
   applyView();
 }
 function tree(x, y, size, seed) { B(x - .12, y - .12, 0, .24, .24, size * 1.6, '#6a4a2a'); leaves(x, y, size * 1.6, size, '#3e9a46', '#7ad070', seed); }
@@ -3258,7 +3297,7 @@ function eggLook(sp, t) {
   if (sp.hi5 && t < sp.hi5.until) set().arms = 0;
   if (EGG.hol.fools && sp.moving) { // eyes on the side it came from: it walks backwards
     let dir = 0;
-    if (sp.onBridge) { const br = bridges.find(b => b[2] === sp.onBridge.pair[0] && b[3] === sp.onBridge.pair[1]); if (br) dir = Math.sign(br[1][0] - br[0][0]) * (sp.onBridge.forward ? 1 : -1); }
+    if (sp.onBridge) { const L = sp.onBridge.pair; if (L?.A && L?.B) dir = Math.sign((L.B[0] - L.B[1]) - (L.A[0] - L.A[1])) * (sp.onBridge.forward ? 1 : -1); }
     else { const n = sp.path[0]; if (n && n.p && n.r === sp.room) dir = Math.sign((n.p[0] - sp.x) - (n.p[1] - sp.y)); }
     if (dir) set().eye = -dir;
   }
@@ -3338,8 +3377,6 @@ function eggItems(r, add) {
           g.fillStyle = (f % 7 === 0) ? emi(DISCO[(f + rot) % DISCO.length]) : emi(sh, .8 + .2 * AMB[0] - (x + y > 2 ? .2 : 0)); rect(bx + x, by + y, 1, 1); } }
     }, true);
   }
-  for (const pair of bridgePairs) { const k = pair[0] === r ? 0 : pair[1] === r ? 1 : -1; if (k >= 0 && pair.ends?.[k]) eggPorch(r, pair.ends[k], add); }
-  if (r.key === '__bath' && yardOn()) eggPorch(r, YARD_DOOR, add);
 }
 
 // ----- overlays after the rooms: hearts, high-five stars, the UFO and its beam, the ghost, the letter -----
