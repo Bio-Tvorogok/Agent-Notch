@@ -12,7 +12,7 @@ import WebKit
 final class RoomWallpaper: NSObject {
     private let store: Store
     private var window: NSWindow?
-    private var web: WKWebView?
+    private(set) var web: WKWebView?
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
     private var lastJSON = ""
@@ -22,6 +22,10 @@ final class RoomWallpaper: NSObject {
     private var powerTimer: Timer?
     private var sentActive: Bool?
     private var sentFps = 0
+    /// The other screens' windows (see RoomScreens.swift) and where a click started.
+    var extras: [CGDirectDisplayID: RoomExtraScreen] = [:]
+    var settingsSubs: Set<AnyCancellable> = []
+    private var pressed: (NSPoint, Double)?
 
     init(store: Store) { self.store = store }
 
@@ -57,6 +61,7 @@ final class RoomWallpaper: NSObject {
         w.orderFrontRegardless()
         window = w
         self.web = web
+        observeRoomSettings()
 
         store.$agents.combineLatest(store.$hooks)
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
@@ -84,7 +89,7 @@ final class RoomWallpaper: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in self?.fitScreen() }
             .store(in: &subs)
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseUp, .magnify, .smartMagnify, .scrollWheel]) { [weak self] e in
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .magnify, .smartMagnify, .scrollWheel]) { [weak self] e in
             let type = e.type
             let magnify = type == .magnify ? e.magnification : 0
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
@@ -100,6 +105,7 @@ final class RoomWallpaper: NSObject {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         subs.removeAll()
+        removeExtras()
         web?.configuration.userContentController.removeScriptMessageHandler(forName: "room")
         window?.orderOut(nil)
         window = nil
@@ -108,13 +114,16 @@ final class RoomWallpaper: NSObject {
         lastJSON = ""
     }
 
-    private func syncPower() {
+    func syncPower() {
         guard let w = window, let web else { return }
         let visible = w.occlusionState.contains(.visible)
         if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
-        let fps = ProcessInfo.processInfo.isLowPowerModeEnabled ? 20 : Self.onBattery ? 30 : 60
+        let fps = Self.fps
         if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
+        extras.values.forEach { $0.sync(fps: fps) }
     }
+
+    static var fps: Int { AppSettings.shared.room.fps(lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, onBattery: onBattery) }
 
     private static var onBattery: Bool {
         guard let type = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as String? else { return false }
@@ -124,6 +133,7 @@ final class RoomWallpaper: NSObject {
     private func fitScreen() {
         guard let w = window, let screen = NSScreen.screens.first else { return }
         w.setFrame(screen.frame, display: true)
+        syncScreens()
     }
 
     // MARK: agents
@@ -176,8 +186,14 @@ final class RoomWallpaper: NSObject {
         let bare = w.frame.contains(p) && desktopIsBare(at: p)
         let x = p.x - w.frame.minX, y = w.frame.maxY - p.y
         switch type {
+        case .leftMouseDown:
+            pressed = (p, CACurrentMediaTime())
+            return
         case .leftMouseUp:
-            if bare { web.evaluateJavaScript("room.click(\(x), \(y))") }
+            // a click, not the end of a drag across the desktop
+            let click = pressed.map { hypot($0.0.x - p.x, $0.0.y - p.y) < 6 && CACurrentMediaTime() - $0.1 < 0.6 } ?? true
+            pressed = nil
+            if bare, click { web.evaluateJavaScript("room.click(\(x), \(y))") }
             return
         case .magnify:
             if bare { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") }
@@ -237,6 +253,7 @@ extension RoomWallpaper: WKNavigationDelegate {
             lastJSON = ""
             sentActive = nil
             sentFps = 0
+            pushRoomConfig()
             push()
             syncPower()
         }

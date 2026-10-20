@@ -750,7 +750,7 @@ const hashStr = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeA
 let projectCount = 0;
 function ensureRoom(key, name, themeId) {
   if (roomByKey.has(key)) return roomByKey.get(key);
-  const theme = THEMES[themeId || PROJECT_THEMES[projectCount++ % PROJECT_THEMES.length]];
+  const theme = THEMES[themeId || projectTheme(name)];
   const r = { key, name, theme, NX: theme.size[0], NY: theme.size[1], seed: hashStr(key) % 97, born: performance.now(), drop: 0, ox: 0, oy: 0, cache: null };
   r.label = document.createElement('div'); r.label.className = 'label'; r.label.textContent = theme.shared ? theme.name : name; document.body.appendChild(r.label);
   rooms.push(r); roomByKey.set(key, r); layout();
@@ -760,9 +760,10 @@ const shared = key => roomByKey.get('__' + key);
 
 // Tower 0 holds the bathroom, the kitchen and the first project; the roof sits on top of it.
 // LAYOUT: 'towers' (stacks side by side), 'steps' (each next stack higher, to the right), 'islands' (projects float around the main tower).
-const LAYOUT = Q.get('layout') || PV?.layout || 'islands';
+let LAYOUT = Q.get('layout') || PV?.layout || 'islands';
 let bridges = [];
 function layout() {
+  if (!rooms.length) return layoutEmpty();
   const stack = [];
   const order = [...rooms.filter(r => r.key === '__bath' || r.key === '__kitchen'), ...rooms.filter(r => !r.theme.shared)];
   order.forEach((r, i) => {
@@ -817,21 +818,21 @@ function applyView() {
   const edge = (r, side) => { const saved = R; R = { ox: r.ox, oy: r.oy, drop: 0 }; const p = side === 'right' ? iso(r.NX, r.NY * .55, -SLAB) : iso(r.NX * .45, r.NY, -SLAB); R = saved; return p; };
   bridges = bridgePairs.map(([l, r]) => [edge(l, 'right'), edge(r, 'left'), l, r]);
 }
-// x, y in CSS pixels of the page
+// x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
-  const before = [VIEW.at[0] + x * DPR / PXD - cv.width / 2, VIEW.at[1] + y * DPR / PXD - cv.height / 2];
-  VIEW.zoom = Math.min(6, Math.max(1, VIEW.zoom * factor));
-  if (VIEW.zoom <= 1.001) { VIEW.zoom = 1; VIEW.at = VIEW.home.slice(); applyView(); return; }
-  const P = VIEW.base * VIEW.zoom, w = Math.ceil(innerWidth * DPR / P), h = Math.ceil(innerHeight * DPR / P);
-  VIEW.at = [before[0] - (x * DPR / P - w / 2), before[1] - (y * DPR / P - h / 2)];
-  applyView();
+  const T = viewTarget(), z = Math.min(6, Math.max(1, T.zoom * factor));
+  if (z <= 1.001) { followTo(1, VIEW.home); return; }
+  const P = VIEW.base * T.zoom, P2 = VIEW.base * z;
+  const w = [T.at[0] + x * DPR / P - Math.ceil(innerWidth * DPR / P) / 2, T.at[1] + y * DPR / P - Math.ceil(innerHeight * DPR / P) / 2];
+  followTo(z, [w[0] - (x * DPR / P2 - Math.ceil(innerWidth * DPR / P2) / 2), w[1] - (y * DPR / P2 - Math.ceil(innerHeight * DPR / P2) / 2)]);
 }
 function panBy(dx, dy) {
-  if (VIEW.zoom === 1) return;
-  VIEW.at = [VIEW.at[0] - dx * DPR / PXD, VIEW.at[1] - dy * DPR / PXD];
-  applyView();
+  const T = viewTarget();
+  if (T.zoom === 1) return;
+  const P = VIEW.base * T.zoom;
+  followTo(T.zoom, [T.at[0] - dx * DPR / P, T.at[1] - dy * DPR / P]);
 }
-function resetView() { VIEW.zoom = 1; VIEW.at = VIEW.home.slice(); applyView(); }
+function resetView() { glideTo(1, VIEW.home); }
 // in a browser: a trackpad pinch arrives as ctrl+wheel
 addEventListener('wheel', e => { e.preventDefault(); if (e.ctrlKey) zoomAt(Math.exp(-e.deltaY * .01), e.clientX, e.clientY); else panBy(-e.deltaX, -e.deltaY); }, { passive: false });
 cv.addEventListener('dblclick', resetView);
@@ -1113,7 +1114,7 @@ function drawBackground(t, d) {
     g.fillStyle = `rgba(255,255,255,${(DARK - .45) * 1.6 * (.55 + .45 * Math.sin(t / 2000 + i * 1.3))})`; g.fillRect(Math.round(x), Math.round(y), S, S); }
   const day = hr >= 6 && hr < 19.5, k = day ? (hr - 6) / 13.5 : ((hr + 4.5) % 24) / 10.5;
   const sx = Math.round(cv.width * (.08 + .84 * k)), sy = Math.round(cv.height * (.42 - Math.sin(k * Math.PI) * .32));
-  if (weather === 'clear' || weather === 'clouds') {
+  if ((weather === 'clear' || weather === 'clouds') && SCENE !== 'extra') { // one sun: the extra screens leave it to the main one
     if (day) { const sg = g.createRadialGradient(sx, sy, 0, sx, sy, 26 * S); sg.addColorStop(0, 'rgba(255,240,180,.55)'); sg.addColorStop(1, 'rgba(255,240,180,0)'); g.fillStyle = sg; g.fillRect(sx - 26 * S, sy - 26 * S, 52 * S, 52 * S);
       g.fillStyle = '#fff4c0'; g.fillRect(sx - 4 * S, sy - 4 * S, 8 * S, 8 * S); g.fillRect(sx - 5 * S, sy - 3 * S, 10 * S, 6 * S); g.fillRect(sx - 3 * S, sy - 5 * S, 6 * S, 10 * S); }
     else { g.fillStyle = '#eef0ff'; g.fillRect(sx - 3 * S, sy - 4 * S, 7 * S, 8 * S); g.fillRect(sx - 4 * S, sy - 3 * S, 9 * S, 6 * S); g.fillStyle = SKY[0]; g.fillRect(sx + S, sy - 4 * S, 4 * S, 6 * S); }
@@ -1266,7 +1267,9 @@ function frame(t) {
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
   g = main;
+  stepCamera(t, dt);
   drawBackground(t, d);
+  if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
   updateResidents(t); updateErrands(t); stepSprites(dt);
   for (const br of bridges) drawBridge(br);
@@ -1330,6 +1333,153 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyN') document.getElementById('add').click();
 });
 
+// ---------- house settings: layout, a theme per project, the frame rate ----------
+// ?scene=extra is a monitor next to the main one: the same sky and city with a few islands floating in it.
+const SCENE = Q.get('scene') || 'house';
+if (SCENE === 'extra') demo = false;
+let THEME_CHOICE = {}; // project name -> theme id, from the app's settings
+// FNV-1a over UTF-16 code units, then mixed; the app computes the same to name the automatic theme.
+const nameHash = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } h ^= h >>> 16; h = Math.imul(h, 0x45d9f3b) >>> 0; return (h ^ h >>> 16) >>> 0; };
+// A project's automatic theme comes from its name, so it keeps its room however many projects come and go.
+function projectTheme(name) {
+  const c = THEME_CHOICE[name];
+  return THEMES[c] && !THEMES[c].shared ? c : PROJECT_THEMES[nameHash(String(name)) % PROJECT_THEMES.length];
+}
+// room.configure({layout, themes: {project: theme}, fps}): rebuilds what changed, without reloading.
+function configure(o) {
+  o = o || {};
+  if (o.fps > 0) fpsCap = o.fps;
+  let relayout = false;
+  if (o.layout && o.layout !== LAYOUT && ['islands', 'steps', 'towers'].includes(o.layout)) { LAYOUT = o.layout; relayout = true; }
+  if (o.themes) {
+    THEME_CHOICE = { ...o.themes };
+    for (const r of rooms) {
+      if (r.theme.shared || !r.key.startsWith('p:')) continue;
+      const th = THEMES[projectTheme(r.name)];
+      if (th === r.theme) continue;
+      r.theme = th; r.NX = th.size[0]; r.NY = th.size[1]; r.cache = null; relayout = true;
+      for (const sp of sprites.values()) if (sp.goal && sp.goal.room === r && sp.goal.cat !== 'idle') { sp.path = []; setGoal(sp, pickSpot(sp, r, sp.goal.cat)); }
+    }
+  }
+  if (!relayout) return;
+  layout();
+  // stacks and bridges may have moved: walkers on the way start over from where they are
+  for (const sp of sprites.values()) {
+    if (sp.fall || sp.exit) continue;
+    if (sp.onBridge) { const to = sp.goal?.room || sp.homeRoom; sp.onBridge = null; sp.room = to; [sp.x, sp.y] = to.theme.hub; sp.z = 0; }
+    if (sp.path.length && sp.goal && sp.room) { sp.path = []; setGoal(sp, sp.goal); }
+  }
+}
+
+// ---------- the camera: glides to a clicked room, eases after a pinch or a scroll ----------
+const CAM = { glide: null, follow: null };
+const viewTarget = () => CAM.glide ? CAM.glide.to : CAM.follow || { zoom: VIEW.zoom, at: VIEW.at };
+function glideTo(zoom, at, ms = 420) {
+  CAM.follow = null;
+  CAM.glide = { from: { zoom: VIEW.zoom, at: VIEW.at.slice() }, to: { zoom, at: at.slice() }, t0: performance.now(), ms };
+  wake();
+}
+function followTo(zoom, at) { CAM.glide = null; CAM.follow = { zoom, at: at.slice() }; wake(); }
+function stepCamera(t, dt) {
+  const lz = Math.log;
+  if (CAM.glide) {
+    const G = CAM.glide, u = Math.min(1, Math.max(0, (t - G.t0) / G.ms)), e = u < .5 ? 4 * u * u * u : 1 - Math.pow(2 - 2 * u, 3) / 2;
+    VIEW.zoom = Math.exp(lz(G.from.zoom) + (lz(G.to.zoom) - lz(G.from.zoom)) * e);
+    VIEW.at = [G.from.at[0] + (G.to.at[0] - G.from.at[0]) * e, G.from.at[1] + (G.to.at[1] - G.from.at[1]) * e];
+    if (u >= 1) { CAM.glide = null; VIEW.zoom = G.to.zoom; VIEW.at = G.to.zoom === 1 ? VIEW.home.slice() : G.to.at.slice(); }
+  } else if (CAM.follow) {
+    const F = CAM.follow, k = 1 - Math.exp(-Math.max(1, dt) / 60);
+    VIEW.zoom = Math.exp(lz(VIEW.zoom) + (lz(F.zoom) - lz(VIEW.zoom)) * k);
+    VIEW.at = [VIEW.at[0] + (F.at[0] - VIEW.at[0]) * k, VIEW.at[1] + (F.at[1] - VIEW.at[1]) * k];
+    if (Math.abs(lz(F.zoom / VIEW.zoom)) < .002 && Math.hypot(F.at[0] - VIEW.at[0], F.at[1] - VIEW.at[1]) < .3) {
+      CAM.follow = null; VIEW.zoom = F.zoom; VIEW.at = F.zoom === 1 ? VIEW.home.slice() : F.at.slice();
+    }
+  } else return;
+  applyView();
+}
+// a room's outline in screen (art) pixels, or in world pixels with world = true; ground rooms take their island along
+function roomOutline(r, world, island) {
+  const ox = world ? r.wx : r.ox, oy = world ? r.wy : r.oy + r.drop;
+  const P = (x, y, z) => [ox + (x - y) * 8 * S, oy + (x + y) * 4 * S - z * S];
+  const top = r.theme.open ? 26 : WH, m = island && r.floor === 0 ? 1.2 : 0, bot = island && r.floor === 0 ? -SLAB - 14 : -SLAB;
+  return [P(-m, -m, top), P(r.NX + m, -m, top), P(r.NX + m, -m, bot), P(r.NX + m, r.NY + m, bot), P(-m, r.NY + m, bot), P(-m, r.NY + m, top)];
+}
+function inside(pts, x, y) {
+  let hit = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) hit = !hit;
+  }
+  return hit;
+}
+function roomUnder(x, y) {
+  const groundY = t2 => Math.max(...rooms.filter(r => r.tower === t2 && r.floor === 0).map(r => r.oy), -1e9);
+  const order = [...rooms].sort((a, b) => groundY(a.tower) - groundY(b.tower) || a.tower - b.tower || a.floor - b.floor);
+  for (let i = order.length - 1; i >= 0; i--) if (inside(roomOutline(order[i], false, true), x, y)) return order[i];
+  return null;
+}
+// the room fills about 70% of the screen's height, in whole quarter steps of device pixels so it stays crisp
+function focusRoom(r) {
+  const pts = roomOutline(r, true, false), xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  let z = Math.min(.7 * innerHeight * DPR / (y1 - y0), .9 * innerWidth * DPR / (x1 - x0)) / VIEW.base;
+  z = Math.min(6, Math.max(1.25, Math.round(z * VIEW.base * 4) / 4 / VIEW.base));
+  glideTo(z, [(x0 + x1) / 2, (y0 + y1) / 2]);
+}
+// a click on a room (not on a Clawd) flies to it; a click on the sky flies back out
+cv.addEventListener('click', () => {
+  if (!mouse || SCENE === 'extra' || (hovered && hovered.agent)) return;
+  const r = roomUnder(mouse[0], mouse[1]);
+  if (r) focusRoom(r);
+  else if (viewTarget().zoom > 1) resetView();
+});
+
+// ---------- the extra screens: islands floating in the same sky ----------
+const ISLETS = [
+  { fx: .2, fy: .52, NX: 6, NY: 5, kind: 'grove' },
+  { fx: .53, fy: .3, NX: 5, NY: 4, kind: 'pond' },
+  { fx: .8, fy: .6, NX: 5, NY: 5, kind: 'camp', lamp: [3.2, .8, 23] },
+];
+function layoutEmpty() {
+  DPR = devicePixelRatio || 1;
+  VIEW.base = Math.max(1, Math.round(innerHeight * DPR / 170) / 4);
+  VIEW.zoom = 1; VIEW.home = [0, 0]; VIEW.at = [0, 0]; bridgePairs = [];
+  applyView();
+}
+function tree(x, y, size, seed) { B(x - .12, y - .12, 0, .24, .24, size * 1.6, '#6a4a2a'); leaves(x, y, size * 1.6, size, '#3e9a46', '#7ad070', seed); }
+function isletDraw(it) {
+  const { NX, NY } = it, snow = weather === 'snow';
+  B(1.1, 1.1, -30, NX - 2.2, NY - 2.2, 10, '#4e3824');
+  B(.5, .5, -20, NX - 1, NY - 1, 10, '#5e4430');
+  B(-.2, -.2, -10, NX + .4, NY + .4, 10, '#7a5a3a');
+  FL(-.2, -.2, NX + .2, NY + .2, snow ? '#eef2f8' : '#6aa84a', 0);
+  for (let i = 0; i < NX * NY; i++) pix((i * 1.37) % NX, (i * .91) % NY, 0, snow ? '#ffffff' : (i % 4 ? '#8ac860' : ['#f0d040', '#ff80a0'][i % 2]));
+  if (it.kind === 'grove') {
+    tree(1.2, 1.0, 5, 1); tree(3.4, 1.2, 4, 4); leaves(2.2, 2.6, 0, 2, '#3e9a46', '#7ad070', 7);
+    B(3.6, 2.6, 0, .25, .25, 1.6, '#f4f0e8'); B(3.45, 2.45, 1.6, .55, .55, 1, '#e05a4a'); tree(1.4, 3.1, 3, 9);
+  } else if (it.kind === 'pond') {
+    FL(.7, .6, NX - .6, NY - .6, '#3a78b0', .05); FL(.9, .8, NX - .8, NY - .8, snow ? '#d8e8f4' : '#5aa8e0', .06);
+    if (!snow) { pix(2.0, 1.5, 1, '#f0d040', 0, 2 * S, S); pix(2.3, 1.5, 2, '#f0d040'); }
+    for (const y of [.5, .8, 1.1]) B(.25, y, 0, .08, .08, 4 + y * 3, '#4a8a3a', 0, 1);
+    tree(3.5, .6, 3, 2);
+  } else {
+    B(.6, .7, 0, 1.6, .5, 2.4, '#a0603a'); B(.6, .7, 2.4, 1.6, .15, 3, '#8a4e30');
+    B(3.1, .7, 0, .2, .2, 22, '#5a5a62', 0, 1); B(2.95, .55, 22, .5, .5, 3, '#ffe2a0', DARK > .3);
+    B(1.0, 2.4, 0, 1.4, 1.2, 4, '#e86a5a'); B(1.1, 2.5, 4, 1.2, 1.0, 2, '#f08a70'); B(1.6, 2.9, 6, .2, .2, 2, '#f4f0e8');
+    tree(3.2, 3.0, 3, 5);
+  }
+}
+function drawIslets(t) {
+  const key = lightKey + '|' + weather;
+  ISLETS.forEach((it, i) => {
+    if (it.key !== key) { it.key = key; it.img = bake(it, () => isletDraw(it)); }
+    const X = Math.round(cv.width * it.fx), Y = Math.round(cv.height * it.fy + Math.sin(t / 2600 + i * 2.1) * 2 * S);
+    if (it.img) g.drawImage(it.img.img, X + it.img.dx, Y + it.img.dy);
+    if (it.lamp && DARK > .3) { const [x, y, z] = it.lamp; g.save(); g.globalCompositeOperation = 'lighter';
+      glow(X + (x - y) * 8 * S, Y + (x + y) * 4 * S - z * S, 30 * S, '#ffc870', .1 + .25 * DARK); g.restore(); }
+  });
+}
+
 // ---------- start ----------
 window.room = {
   setAgents: list => { demo = false; ctl.hidden = true; setAgents(list); },
@@ -1340,6 +1490,7 @@ window.room = {
   zoom: (factor, x, y) => zoomAt(factor, x, y),
   pan: (dx, dy) => panBy(dx, dy),
   resetView,
+  configure, focusRoom: name => { const r = roomByKey.get('p:' + name); if (r) focusRoom(r); },
   setWeather: w => { weather = w; },
   setActive: on => { active = on; wake(); },
   setFps: n => { fpsCap = n; },
@@ -1353,7 +1504,7 @@ if (PV && !PV.house) {
     if (PV.theme === 'kitchen') { visit('k1', 'claude', 'wait', 'waiting'); visit('k2', 'codex', 'wait', 'idle'); visit('k3', 'claude', 'wait', 'idle'); }
     if (PV.theme === 'roof') { visit('r1', 'claude', 'sleep', 'idle-sleep'); visit('r2', 'claude', 'look', 'idle'); }
   } else ensureRoom('p:' + DEMO_PROJECTS[0], THEMES[PV.theme].name, PV.theme);
-} else { ensureRoom('__bath', 'Ванная', 'bath'); ensureRoom('__kitchen', 'Кухня', 'kitchen'); ensureRoom('__roof', 'Крыша', 'roof');
+} else if (SCENE !== 'extra') { ensureRoom('__bath', 'Ванная', 'bath'); ensureRoom('__kitchen', 'Кухня', 'kitchen'); ensureRoom('__roof', 'Крыша', 'roof');
   if (PV?.house) DEMO_PROJECTS.slice(0, demoProjects).forEach(p => ensureRoom('p:' + p, p)); }
 ctl.hidden = !(demo || PV) || PV?.controls === false;
 layout();

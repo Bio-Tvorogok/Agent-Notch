@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher = MenuWatcher(store: store) { [weak notch] in notch?.fullWingLeft }
         if args.contains("--open-list") { notch.showList() }
         if args.contains("--open-prompts") { picker.show() }
+        RoomProjects.shared.source = { [store] in store.shown.map(\.project) }
         let room = RoomWallpaper(store: store)
         self.room = room
         roomSub = AppSettings.shared.$roomWallpaper.sink { on in on || args.contains("--room") ? room.start() : room.stop() }
