@@ -93,6 +93,12 @@ final class RoomInfoFeed {
                 v["window"] = w.label
                 if let r = w.resetsAt { v["resetsAt"] = Int(r.timeIntervalSince1970) }
             }
+            // every window, for the tank's tooltip
+            v["windows"] = l.windows.filter { $0.usedPercent.isFinite }.map { w -> [String: Any] in
+                var o: [String: Any] = ["label": w.label, "used": (w.usedPercent * 10).rounded() / 10]
+                if let r = w.resetsAt { o["resetsAt"] = Int(r.timeIntervalSince1970) }
+                return o
+            }
             u[l.vendor.rawValue] = v
         }
         let usd = spend.compactMap(\.usd).reduce(0, +)

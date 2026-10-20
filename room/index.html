@@ -3065,7 +3065,13 @@ function infoOverClawd(sp, left, top, rows, C, bc, sleeping, t) {
 
 // --- subscription limits: two fuel tanks on the roof, the level is what is left ---
 const VENDOR_CAP = { claude: '#d97757', codex: '#eef0f6' };
-const TANK_NAME = { claude: 'CLAUDE', codex: 'GPT' };
+const TANK_NAME = { claude: 'CLAUDE', codex: 'CODEX' };
+// the app's window labels ('5 h', 'неделя', '2 ч') as a plate under the number; whole words, a lone Ч reads as a 4
+const winShort = l => { if (!l) return ''; if (/нед|week/i.test(l)) return 'НЕДЕЛЯ';
+  const m = /^(\d+)\s*(h|ч|min|мин)$/i.exec(l.trim()); if (!m) return l.toUpperCase();
+  const n = +m[1], h = /h|ч/i.test(m[2]), k = n % 10, kk = n % 100;
+  return n + ' ' + (h ? (k === 1 && kk !== 11 ? 'ЧАС' : k >= 2 && k <= 4 && (kk < 12 || kk > 14) ? 'ЧАСА' : 'ЧАСОВ') : 'МИН'); };
+INFO.tankHit = {};
 function limitTank(x, y, vendor) {
   const u = INFO.usage && INFO.usage[vendor], warn = (INFO.usage && INFO.usage.warning) || 80;
   const used = u && isFinite(u.used) ? Math.max(0, Math.min(100, u.used)) : null, left = used === null ? 0 : 100 - used;
@@ -3093,6 +3099,22 @@ function limitTank(x, y, vendor) {
   g.fillStyle = emi('#201a2a'); rect(bx, by, tw + 6, 5 * TK + 6);
   g.fillStyle = emi(VENDOR_CAP[vendor]); rect(bx, by, tw + 6, 1);
   pfDraw(txt, bx + 3, by + 3, emi(used !== null && used >= warn ? '#ff7060' : '#f4f0e8'), TK);
+  const wl = used === null ? '' : winShort(u.window); // which window the number is for
+  if (wl) { const ww = sfWidth(wl), wx = Math.round(px - ww / 2) - 2, wy = by + 5 * TK + 8;
+    g.fillStyle = lit(OUT); rect(wx - 1, wy - 1, ww + 6, SH + 6); g.fillStyle = emi('#201a2a'); rect(wx, wy, ww + 4, SH + 4);
+    sfDraw(wl, wx + 2, wy + 2, emi('#c8c0d8'), 1); }
+  const [ax, ay] = iso(x, y + d, 0), [bx2] = iso(x + w, y, 0); // the tank and its plate, for the tooltip
+  INFO.tankHit[vendor] = [Math.min(ax, bx) - 2, by - 2, Math.max(bx2, bx + tw + 8) - Math.min(ax, bx) + 4, ay - by + 4];
+}
+function tankTip(vendor) {
+  const u = INFO.usage && INFO.usage[vendor], name = vendor === 'codex' ? 'Codex' : 'Claude';
+  const until = r => { if (!r) return ''; const m = Math.max(0, Math.round((r * 1000 - Date.now()) / 60000));
+    return ' · сброс через ' + (m >= 2880 ? Math.round(m / 1440) + ' дн' : m >= 60 ? Math.floor(m / 60) + ' ч' + (m % 60 && m < 600 ? ' ' + m % 60 + ' мин' : '') : m + ' мин'); };
+  const ws = u && (u.windows || (isFinite(u.used) ? [{ label: u.window || '', used: u.used, resetsAt: u.resetsAt }] : [])) || [];
+  const line = w => `${w.label ? w.label + ': ' : ''}осталось ${Math.round(100 - w.used)}%${until(w.resetsAt)}`;
+  const used = u && isFinite(u.used) ? u.used : null, warn = (INFO.usage && INFO.usage.warning) || 80;
+  return { title: 'Лимит подписки ' + name, color: used === null ? '#8a8a96' : used >= warn ? '#e5534b' : used >= warn - 10 ? '#f0b030' : '#58c860',
+    status: ws.length ? line(ws[0]) : 'нет данных о лимитах', detail: ws.slice(1).map(line).join(' · ') || (ws.length ? 'число на баке — окно, где осталось меньше всего' : '') };
 }
 
 // --- spend today: a piggy bank in the kitchen, coins drop in when it grows ---
@@ -3140,7 +3162,7 @@ function demoUsage() {
   if (!demo || INFO.real) return;
   const s = INFO.spend ? INFO.spend.usd + (Math.random() < .5 ? Math.random() * .6 : 0) : 3.4;
   const k = (Date.now() / 60000) % 1;
-  setUsage({ claude: { used: Math.round(45 + 50 * k) }, codex: { used: 22 }, warning: 80, spend: { usd: Math.round(s * 100) / 100, partial: false } });
+  setUsage({ claude: { used: Math.round(45 + 50 * k), window: 'неделя', windows: [{ label: 'неделя', used: Math.round(45 + 50 * k), resetsAt: Date.now() / 1000 + 200000 }, { label: '5 ч', used: 30, resetsAt: Date.now() / 1000 + 5000 }] }, codex: { used: 22, window: '5 ч' }, warning: 80, spend: { usd: Math.round(s * 100) / 100, partial: false } });
 }
 
 // --- rooms grow with the project: every new agent seen there counts, kept across launches ---
@@ -3300,6 +3322,8 @@ function updateTip() {
   }
   cv.style.cursor = hovered ? 'pointer' : '';
   let info = null;
+  if (!hovered && mouse && shared('roof')) for (const v of ['claude', 'codex']) { const h = INFO.tankHit[v]; // the limit tanks on the roof
+    if (h && mouse[0] >= h[0] && mouse[0] <= h[0] + h[2] && mouse[1] >= h[1] && mouse[1] <= h[1] + h[3]) info = { ...tankTip(v), x: mouse[2], y: mouse[3] }; }
   if (hovered) {
     const a = hovered.agent, [stt, col] = STATE_TEXT[a.state] || [a.state, '#aaa'];
     info = { title: safeText(a.title), status: `${stt} · ${a.project}${a.model ? ' · ' + a.model : ''}`, color: col,
