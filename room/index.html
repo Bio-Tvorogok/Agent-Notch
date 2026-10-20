@@ -9,6 +9,9 @@
   canvas{position:fixed;left:0;top:0;image-rendering:pixelated;image-rendering:crisp-edges}
   .label{position:fixed;transform:translate(0,-50%);padding:3px 9px;border-radius:999px;background:rgba(20,16,32,.55);
     color:rgba(255,255,255,.9);font-weight:600;white-space:nowrap;pointer-events:none}
+  #home{position:fixed;left:16px;top:46px;z-index:3;padding:6px 12px;border-radius:999px;background:rgba(20,16,32,.72);color:#fff;
+    font:600 13px -apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;opacity:0;transform:translateY(-6px);transition:opacity .25s,transform .25s;pointer-events:none;user-select:none}
+  #home.on{opacity:1;transform:none;pointer-events:auto}
   #tip{position:fixed;pointer-events:none;padding:8px 10px;border-radius:10px;background:rgba(18,16,28,.94);color:#eee;
     box-shadow:0 6px 24px rgba(0,0,0,.35);opacity:0;transition:opacity .12s;max-width:320px;z-index:3}
   #tip b{display:block;font-size:13px;margin-bottom:2px}
@@ -27,6 +30,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="tip"></div>
+<div id="home">⌂ Общий вид</div>
 <div id="ctl" hidden>
   <input id="hour" type="range" min="0" max="24" step="0.25"><span class="t" id="hourTxt"></span>
   <button id="now" title="Настоящее время">сейчас</button>
@@ -823,6 +827,7 @@ function applyView() {
 }
 // x, y in CSS pixels of the page. The view eases toward where it is told to go (see stepCamera), so a pinch glides.
 function zoomAt(factor, x, y) {
+  CAM.touched = performance.now();
   const T = viewTarget(), z = Math.min(6, Math.max(1, T.zoom * factor));
   if (z <= 1.001) { followTo(1, VIEW.home); return; }
   const P = VIEW.base * T.zoom, P2 = VIEW.base * z;
@@ -830,6 +835,7 @@ function zoomAt(factor, x, y) {
   followTo(z, [w[0] - (x * DPR / P2 - Math.ceil(innerWidth * DPR / P2) / 2), w[1] - (y * DPR / P2 - Math.ceil(innerHeight * DPR / P2) / 2)]);
 }
 function panBy(dx, dy) {
+  CAM.touched = performance.now();
   const T = viewTarget();
   if (T.zoom === 1) return;
   const P = VIEW.base * T.zoom;
@@ -2466,12 +2472,21 @@ function configure(o) {
 const CAM = { glide: null, follow: null };
 const viewTarget = () => CAM.glide ? CAM.glide.to : CAM.follow || { zoom: VIEW.zoom, at: VIEW.at };
 function glideTo(zoom, at, ms = 420) {
-  CAM.follow = null;
+  CAM.follow = null; CAM.touched = performance.now();
   CAM.glide = { from: { zoom: VIEW.zoom, at: VIEW.at.slice() }, to: { zoom, at: at.slice() }, t0: performance.now(), ms };
   wake();
 }
 function followTo(zoom, at) { CAM.glide = null; CAM.follow = { zoom, at: at.slice() }; wake(); }
+// Back to the overview: a button while zoomed in, and on its own after half a minute without touching the view.
+const homeBtn = document.getElementById('home');
+homeBtn.addEventListener('click', () => resetView());
+function stepHome(t) {
+  const zoomed = viewTarget().zoom > 1.01;
+  homeBtn.classList.toggle('on', zoomed);
+  if (zoomed && !CAM.glide && !CAM.follow && performance.now() - (CAM.touched || 0) > 30000) resetView();
+}
 function stepCamera(t, dt) {
+  stepHome(t);
   const lz = Math.log;
   if (CAM.glide) {
     const G = CAM.glide, u = Math.min(1, Math.max(0, (t - G.t0) / G.ms)), e = u < .5 ? 4 * u * u * u : 1 - Math.pow(2 - 2 * u, 3) / 2;
@@ -2594,7 +2609,8 @@ window.room = {
   // the app forwards the cursor (CSS pixels) because the wallpaper window never gets mouse events itself
   pointer: (x, y) => { mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; },
   leave: () => { mouse = null; },
-  click: (x, y) => { mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; updateTip(); cv.dispatchEvent(new MouseEvent('click')); },
+  click: (x, y) => { if (document.elementFromPoint(x, y) === homeBtn && homeBtn.classList.contains('on')) return resetView();
+    mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; updateTip(); cv.dispatchEvent(new MouseEvent('click')); },
   zoom: (factor, x, y) => zoomAt(factor, x, y),
   pan: (dx, dy) => panBy(dx, dy),
   resetView,
