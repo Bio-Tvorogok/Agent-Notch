@@ -528,7 +528,7 @@ const THEMES = {
   roof: {
     name: 'Крыша', shared: true, open: true, floor: { kind: 'deck', a: '#c89060', b: '#a87448' },
     windows: [], clock: null, hub: [5.0, 4.0, 0],
-    spots: { sleep: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4]], cowork: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4], [4.2, 5.6, 0]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
+    spots: { cat: [[1.05, 4.5, 0]], sleep: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4]], cowork: [[3.0, 2.2, 4.4], [5.0, 2.2, 4.4], [7.0, 2.2, 4.4], [4.2, 5.6, 0]], wait: [[6.0, 5.0, 0]], pace: [[4, 4.5, 0], [6, 4, 0]], look: [[5.6, 6.6, 0]] },
     decor() {},
     items(add, D) {
       const rail = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / .9); for (let i = 0; i <= n; i++) B(x0 + (x1 - x0) * i / n - .06, y0 + (y1 - y0) * i / n - .06, 0, .12, .12, 10, '#f4f0e8', 0, 1);
@@ -543,6 +543,17 @@ const THEMES = {
         polyOutline([iso(7.7, 5.1, 24), iso(9.9, 5.1, 24), iso(9.9, 7.2, 24), iso(7.7, 7.2, 24)], lit(OUT)); poly([iso(7.7, 5.1, 24), iso(9.9, 5.1, 24), iso(9.9, 7.2, 24), iso(7.7, 7.2, 24)], lit('#e85a5a')); poly([iso(8.2, 5.6, 25.5), iso(9.4, 5.6, 25.5), iso(9.4, 6.7, 25.5), iso(8.2, 6.7, 25.5)], lit('#f4f0e8')); });
       add(12.6, () => { for (const [x, y] of [[6.2, 6.0], [6.6, 6.0], [6.4, 5.7]]) line(iso(x, y, 0), iso(6.4, 5.9, 14), lit('#5a4a3a')); B(6.0, 5.6, 14, 1.0, .35, .35, '#c0c8d0'); B(6.0, 5.65, 13.6, .3, .25, 1.1, '#d0d4dc'); });
       add(9.6, () => { pot(1.0, 6.4, .8, '#e07050', '#3e9a46', '#7ad070', 6, 6); });
+      add(5.4, () => { // the cat's house, moved up from the yard: a little red house by the rail, its door to the deck
+        const x = .7, y = 3.4, G = 0, frozen = weather === 'snow' || seasonNow() === 'winter';
+        B(x, y, G, .7, .7, 5, '#c06848');
+        const rl = [iso(x + .35, y - .07, G + 8.6), iso(x + .35, y + .77, G + 8.6), iso(x - .07, y + .77, G + 4.6), iso(x - .07, y - .07, G + 4.6)];
+        const rr = [iso(x + .35, y - .07, G + 8.6), iso(x + .77, y - .07, G + 4.6), iso(x + .77, y + .77, G + 4.6), iso(x + .35, y + .77, G + 8.6)];
+        const gab = [iso(x, y + .7, G + 5), iso(x + .7, y + .7, G + 5), iso(x + .35, y + .7, G + 8.3)];
+        for (const q of [rl, rr, gab]) polyOutline(q, lit(OUT));
+        poly(gab, lit('#d88060')); poly(rl, lit('#8a3a2a')); poly(rr, lit(frozen ? '#f4f8ff' : '#a84a34'));
+        FY(x + .19, x + .51, y + .701, G, G + 2.6, '#2a1a1a'); FY(x + .25, x + .45, y + .702, G + 2.6, G + 3.2, '#2a1a1a'); FY(x + .21, x + .49, y + .702, G + 3.8, G + 4.5, '#f0d080');
+        FL(x + .1, y + .72, x + .6, y + 1.05, '#d8b070', G + .02); B(x + .75, y + .85, G, .3, .25, .8, '#4a80d8'); FL(x + .8, y + .9, x + 1.0, y + 1.05, '#a0603a', G + .81);
+      });
       add(12.9, () => { pot(3.6, 6.6, .6, '#e8e0d0', '#4aa84a', '#8ad870', 7, 5); pot(4.4, 6.7, .5, '#e07050', '#3e9a46', '#7ad070', 8, 4); });
       add(-.5, () => { for (const [x, y] of [[0, 0], [10, 0], [0, 8]]) B(x - .07, y - .07, 0, .14, .14, 30, '#5a4a3a', 0, 1);
         for (let i = 0; i <= 20; i++) { const u = i / 20, sag = Math.sin(u * Math.PI) * 4; pix(u * 10, 0, 29 - sag, ['#ffd060', '#ff80c0', '#80e0ff'][i % 3], DARK > .2); pix(0, u * 8, 29 - sag, ['#80e0ff', '#ffd060', '#ff80c0'][i % 3], DARK > .2); } });
@@ -774,6 +785,7 @@ const LOOKS = { // arms: the row they hang at, how far up a wave lifts them, and
 const lookOf = sp => sp.vendor === 'codex' ? (sp.small ? LOOKS.petMini : LOOKS.pet) : sp.small ? LOOKS.mini : LOOKS.clawd;
 function drawClawd(X, Y, sp, t) {
   if (sp.kind === 'cat') return drawCat(X, Y, sp, t);
+  if (sp.kind === 'dog') return drawDog(X, Y, sp, t);
   const egg = eggLook(sp, t);
   const small = sp.small, L = lookOf(sp), rows = L.rows, w = rows[0].length, C = S, pet = L === LOOKS.pet || L === LOOKS.petMini; // one sprite cell is S pixels
   if (drowsy(sp)) t *= .5; // a nearly full context makes it slow and sleepy
@@ -788,6 +800,7 @@ function drawClawd(X, Y, sp, t) {
   else if (st === 'fall') armRow = 0;
   else if (st === 'working' && !moving && sp.seated) armRow = 2 + (Math.floor(t / 160) % 2);
   if (sp.waving) armRow = Math.sin(t / 160) > 0 ? 0 : 1; // calling a stair over
+  if (sp.toss && t - sp.toss < 450) armRow = 0; // throwing the dog's ball
   if (egg && egg.arms != null) armRow = egg.arms;
   armRow = L.arm + Math.round((armRow - 2) * L.lift / 2); // the Clawd's rows, moved onto this body
   g.globalAlpha *= sp.alpha;
@@ -1507,15 +1520,17 @@ function walkIn(nodes, r, from) {
 // the yard's paths: a little tree of waypoints from the hub by the lamp, along the stepping stones and the dirt path,
 // to the foot of the stairs and to every bridge
 // round the kitchen's post, in front of the bench, behind the swing, beside the beds and clear of the stairs' step
-const YW = [[8.9, 6.3], [8.6, 7.0], [2.6, 7.0], [1.8, 7.05], [1.0, 7.65], [8.9, 3.7], [13.4, 3.6], [8.9, 1.5], [9.9, .85],
-  [10.4, 6.35], [10.3, 5.1], [11.9, 6.3], [12.3, 7.0], [9.05, 2.45], [11.7, 3.62], [1.75, 7.6]], YUP = [-1, 0, 1, 2, 15, 0, 5, 5, 7, 0, 9, 9, 11, 5, 5, 3];
+const YW = [[8.9, 6.3], [8.6, 7.0], [2.6, 7.0], [1.8, 7.05], [1.0, 7.65], [8.9, 3.7], [16.0, 3.6], [8.9, 1.5], [9.9, .85],
+  [10.4, 6.35], [10.3, 5.1], [11.9, 6.3], [12.3, 7.0], [9.05, 2.45], [11.7, 3.62], [1.75, 7.6], [13.4, 3.6], [14.7, 5.0], [15.5, 7.2], [14.8, 2.2]],
+  YUP = [-1, 0, 1, 2, 15, 0, 16, 5, 7, 0, 9, 9, 11, 5, 5, 3, 5, 16, 17, 16];
 const YGATE = { foot: 3, Yl: 4, Yr: 6, tower: 8 }; // tower: by the lift, through the gap in the back fence
 function yardNear(p) {
   const i = YW.findIndex(w => Math.hypot(w[0] - p[0], w[1] - p[1]) < .35); if (i >= 0) return i;
   const [x, y] = p;
   if (x < 3.2) return y > 7.25 ? 4 : 3;
   if (x > 9.5 && y < 1.3) return 8;                 // by the lift
-  if (x > 12.5 && y > 6.6) return 12;               // the cat's corner
+  if (x > 13.9) return y > 6.4 ? 18 : y > 4.2 ? 17 : y < 3.0 ? 19 : x > 15.6 ? 6 : 16; // the dog's corner
+  if (x > 12.5 && y > 6.6) return 12;
   if (x > 11.6 && y > 5.8) return 11;
   if (x > 9.8 && x < 11.6 && y > 6.6) return 9;     // the swing
   if (x > 9.5 && x < 11.2 && y > 4.3 && y < 5.8) return 10; // the bench, by the lamp
@@ -1635,16 +1650,17 @@ const gateUsed = kind => links.some(L => L.a === YARD && L.pa.kind === kind);
 // It is a walkable place of its own (YARD), drawn with the bathroom and in the bathroom's tile coordinates,
 // its z = 0 is the grass. Clawds reach it from the bathroom by the stairs' landing and its step, and from the islands
 // over the bridges at the gate in its side fence and past the foot of the stairs.
-const YD = { x1: 14.0, y0: 1.0 }; // the ground beyond the bath's old island: out to x1, from y0 to the front
+const YD = { x1: 16.6, y0: 1.0 }; // the ground beyond the bath's old island: out to x1, from y0 to the front; the dog's corner past x 14
+const KENNEL = { x: 15.0, y: 5.5, w: 1.1, d: 1.1 };
 const POND = { x: 12.0, y: 5.0, rx: 1.0, ry: .8 };
 const YARD_THEME = {
   name: 'Двор', shared: true, open: true, windows: [], clock: null, hub: [8.9, 6.3, 0], lights: () => [], decor() {}, items() {}, corner() {},
   spots: { stroll: [[12.2, 3.7, 0], [10.6, 5.3, 0], [12.1, 6.85, 0], [5.4, 6.95, 0], [11.4, 3.8, 0], [8.1, 3.9, 0]],
     bench: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8]], swing: [[10.7, 7.05, 4.5]], sleep: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [10.7, 7.05, 4.5]],
     look: [[10.5, 5.6, 0], [11.9, 6.3, 0]], water: [[10.4, 2.45, 0], [11.75, 3.0, 0]], wait: [[8.9, 6.3, 0]], pace: [[10.6, 5.3, 0], [11.4, 3.8, 0]],
-    mail: [[4.05, 6.95, 0]], cat: [[13.05, 6.95, 0]], cowork: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [8.1, 3.9, 0], [11.4, 3.8, 0]] },
+    mail: [[4.05, 6.95, 0]], dog: [[15.55, 6.95, 0]], romp: [[14.6, 2.2, 0], [15.6, 3.0, 0], [14.8, 4.6, 0], [15.9, 4.4, 0], [12.4, 6.9, 0]], cowork: [[10.0, 4.55, 3.8], [10.55, 4.55, 3.8], [8.1, 3.9, 0], [11.4, 3.8, 0]] },
 };
-const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: 13.9, NY: 7.85, tower: -1, floor: -1, tx: 0, ty: 0, seed: 11, born: 0, swinger: null,
+const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: YD.x1 - .1, NY: 7.85, tower: -1, floor: -1, tx: 0, ty: 0, seed: 11, born: 0, swinger: null,
   get ox() { const b = roomByKey.get('__bath'); return b ? b.ox : 0; },
   get oy() { const b = roomByKey.get('__bath'); return b ? b.oy + SLAB * S : 0; },
   get drop() { const b = roomByKey.get('__bath'); return b ? b.drop : 0; } };
@@ -1670,7 +1686,7 @@ function yardGround(r) {
   const stone = (x, y) => { const pts = [iso(x - .2, y, G), iso(x, y - .16, G), iso(x + .2, y, G), iso(x, y + .16, G)]; polyOutline(pts, lit('#8a8272')); poly(pts, lit(snow ? '#e8e8ec' : '#c8c0b0')); };
   for (let x = 1.45; x < 8.6; x += .55) stone(x + (scRnd(x * 7, 3) - .5) * .12, 7.0 + (scRnd(x * 7, 4) - .5) * .16);
   for (let y = 3.75; y < 6.6; y += .55) stone(8.9 + (scRnd(y * 7, 5) - .5) * .16, y);
-  if (gateUsed('Yr')) for (let x = 9.5; x < 13.8; x += .55) stone(x, 3.62 + (scRnd(x * 7, 6) - .5) * .14); // on to the side gate's bridge
+  if (gateUsed('Yr')) for (let x = 9.5; x < YD.x1 - .2; x += .55) stone(x, 3.62 + (scRnd(x * 7, 6) - .5) * .14); // on to the side gate's bridge
   B(1.2, 6.75, G, .35, .55, 3, '#b07a4a'); // a step down from the stairs' landing
   return true;
 }
@@ -1709,10 +1725,11 @@ function yardItems(r, add, D) {
   const run = (x0, y0, x1, y1, front) => { const m = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 1.2));
     for (let k = 0; k < m; k++) { const a = [x0 + (x1 - x0) * k / m, y0 + (y1 - y0) * k / m], b = [x0 + (x1 - x0) * (k + 1) / m, y0 + (y1 - y0) * (k + 1) / m];
       fence(a[0], a[1], b[0], b[1], front ? Math.max(a[0], b[0]) + Math.max(a[1], b[1]) + .6 : Math.min(a[0], b[0]) + Math.min(a[1], b[1]) - .3); } };
-  if (LIFT) { run(7.0, 1.1, 8.6, 1.1, false); run(LIFT.x1 + .3, 1.1, 13.9, 1.1, false); } else run(7.0, 1.1, 13.9, 1.1, false);
+  const FX1 = YD.x1 - .1; // the side fence
+  if (LIFT) { run(7.0, 1.1, 8.6, 1.1, false); run(LIFT.x1 + .3, 1.1, FX1, 1.1, false); } else run(7.0, 1.1, FX1, 1.1, false);
   run(3.0, 6.1, 3.0, 6.45, false); run(3.0, 7.45, 3.0, 7.85, false);
-  run(3.0, 7.85, 13.9, 7.85, true);
-  if (gateUsed('Yr')) { run(13.9, 1.1, 13.9, 3.05, true); run(13.9, 4.15, 13.9, 7.85, true); } else run(13.9, 1.1, 13.9, 7.85, true);
+  run(3.0, 7.85, FX1, 7.85, true);
+  if (gateUsed('Yr')) { run(FX1, 1.1, FX1, 3.05, true); run(FX1, 4.15, FX1, 7.85, true); } else run(FX1, 1.1, FX1, 7.85, true);
   add(3.0 + 6.45 + .2, () => { // the gate: two posts, the leaf swung in
     B(2.94, 6.39, G, .12, .12, 8, '#d8c8b0'); B(2.94, 7.39, G, .12, .12, 8, '#d8c8b0'); pix(3.0, 6.45, G + 8, '#f0e6d4', 0, S, S); pix(3.0, 7.45, G + 8, '#f0e6d4', 0, S, S);
     for (let i = 0; i < 5; i++) B(3.08 + i * .13, 6.4, G + .6, .08, .08, 5.4, '#f0e6d4', 0, 1);
@@ -1760,16 +1777,22 @@ function yardItems(r, add, D) {
     for (const x of [10.45, 10.95]) line(iso(x, 7.05, G + 22), iso(x, 7.05 + dy, G + 4.6 + dz), lit('#d8c8a0'));
     B(10.35, 6.92 + dy, G + 4 + dz, .7, .26, .5, '#c04848');
   }, true);
-  add(13.05 + 6.45 + .3, () => { // the cat's house behind the pond
-    B(12.7, 6.1, G, .7, .7, 5, '#c06848');
-    const rl = [iso(13.05, 6.03, G + 8.6), iso(13.05, 6.87, G + 8.6), iso(12.63, 6.87, G + 4.6), iso(12.63, 6.03, G + 4.6)];
-    const rr = [iso(13.05, 6.03, G + 8.6), iso(13.47, 6.03, G + 4.6), iso(13.47, 6.87, G + 4.6), iso(13.05, 6.87, G + 8.6)];
-    const gab = [iso(12.7, 6.8, G + 5), iso(13.4, 6.8, G + 5), iso(13.05, 6.8, G + 8.3)];
-    for (const p of [rl, rr, gab]) polyOutline(p, lit(OUT));
-    poly(gab, lit('#d88060')); poly(rl, lit('#8a3a2a')); poly(rr, lit(frozen ? '#f4f8ff' : '#a84a34'));
-    FY(12.89, 13.21, 6.801, G, G + 2.6, '#2a1a1a'); FY(12.95, 13.15, 6.802, G + 2.6, G + 3.2, '#2a1a1a'); FY(12.91, 13.19, 6.802, G + 3.8, G + 4.5, '#f0d080');
-    FL(12.8, 6.82, 13.3, 7.15, '#d8b070', G + .02); B(13.45, 6.95, G, .3, .25, .8, '#4a80d8'); FL(13.5, 7.0, 13.7, 7.15, '#a0603a', G + .81);
+  add(KENNEL.x + KENNEL.y + KENNEL.w + KENNEL.d - .4, () => { // the dog's kennel in the far corner, its bowl by the door
+    const { x, y, w, d } = KENNEL, cx = x + w / 2, top = G + 13, eave = G + 7.5;
+    B(x, y, G, w, d, 7.5, '#b07a4a'); FY(x, x + w, y + d + .001, G + 1, G + 7, '#9a6a40'); for (let k = 1; k < 4; k++) line(iso(x, y + d + .002, G + k * 1.8), iso(x + w, y + d + .002, G + k * 1.8), lit('#8a5a36'));
+    const rl = [iso(cx, y - .07, top), iso(cx, y + d + .07, top), iso(x - .08, y + d + .07, eave), iso(x - .08, y - .07, eave)];
+    const rr = [iso(cx, y - .07, top), iso(x + w + .08, y - .07, eave), iso(x + w + .08, y + d + .07, eave), iso(cx, y + d + .07, top)];
+    const gab = [iso(x, y + d, eave), iso(x + w, y + d, eave), iso(cx, y + d, top - .4)];
+    for (const q of [rl, rr, gab]) polyOutline(q, lit(OUT));
+    poly(gab, lit('#c08850')); poly(rl, lit('#3a6a9a')); poly(rr, lit(frozen ? '#f4f8ff' : '#4a7ab0'));
+    FY(cx - .3, cx + .3, y + d + .003, G, G + 4.6, '#20140e'); FY(cx - .22, cx + .22, y + d + .004, G + 4.6, G + 5.4, '#20140e');
+    FY(cx - .34, cx + .34, y + d + .004, G + 9, G + 10.2, '#f0d080'); // the name plate over the door
+    B(x - .55, y + d - .2, G, .4, .32, .8, '#d04848'); FL(x - .5, y + d - .15, x - .2, y + d + .07, '#a0603a', G + .81); // the bowl
   });
+  add(() => SC.ball ? (p => p[0] + p[1] + .05)(ballAt(SC.ball, D.t)) : 0, () => { if (!SC.ball || SC.ball.held) return; const bl = SC.ball, p = ballAt(bl, D.t); // the ball while it flies or lies on the grass
+    const [X, Y] = iso(p[0], p[1], G + p[2]), [sx, sy] = iso(p[0], p[1], G);
+    g.fillStyle = 'rgba(0,0,0,.22)'; rect(Math.round(sx) - 1, Math.round(sy), 3, 1);
+    g.fillStyle = lit(OUT); rect(Math.round(X) - 2, Math.round(Y) - 4, 4, 4); g.fillStyle = lit('#f0d040'); rect(Math.round(X) - 1, Math.round(Y) - 3, 2, 2); }, true);
   // the mailbox inside the gate, its flag up for a while after a commit is posted
   add(12.2, () => { B(3.9, 7.45, G, .14, .14, 12, '#6a6a74', 0, 1); B(3.6, 7.2, G + 12, .75, .55, 4.5, '#3a6ad0'); B(3.65, 7.25, G + 16.5, .65, .45, .8, '#5a8ae8');
     FY(3.75, 4.2, 7.751, G + 14, G + 14.6, '#1a2040'); pix(3.7, 7.75, G + 13, '#f4f0e8', 0, S, 1); });
@@ -1808,7 +1831,7 @@ function yardVisit(h, t, when) {
   return true;
 }
 // the cat sleeps at home most nights
-function catHome() { return yardOn() && Math.random() < (DARK > .5 ? .8 : .25) ? [YARD, YARD_THEME.spots.cat[0]] : null; }
+function catHome() { const r = shared('roof'); return r && Math.random() < (DARK > .5 ? .8 : .25) ? [r, THEMES.roof.spots.cat[0]] : null; }
 function spawn(id, room, init) {
   const sp = Object.assign({ id, room, homeRoom: room, x: room.theme.hub[0], y: room.theme.hub[1], z: 0, path: [], alpha: 0, fade: 1,
     seed: (hashStr(id) % 1000) / 1000, moving: false, goal: null }, init);
@@ -1835,6 +1858,7 @@ function setAgents(list) {
         const busy = [...sprites.values()].some(o => o.goal && o.goal.room === shared('bath') && o.goal.cat === 'shower');
         // the clock starts under the shower, not here: the walk over can take longer than the wash itself
         sp.errand = { room: shared('bath'), cat: busy ? 'wash' : 'shower', dur: busy ? 6000 : SHOWER_MS, until: Infinity, since: performance.now() };
+        dogGreet(sp);
       }
     }
     if (a.state !== 'done') sp.errand = null;
@@ -1930,7 +1954,7 @@ function stepSprites(dt) {
     if (n.bridge) { // across a bridge or up a stair, u from its foot (0) to its far end (1)
       const T = n.bridge;
       if (sp.onBridge?.pair !== T) { sp.onBridge = { pair: T, u: n.from ?? (n.to > .5 ? 0 : 1) }; sp.room = null; }
-      const ob = sp.onBridge, dir = n.to >= ob.u ? 1 : -1, step = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) / Math.max(.5, T.len);
+      const ob = sp.onBridge, dir = n.to >= ob.u ? 1 : -1, step = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) * (sp.speed || 1) / Math.max(.5, T.len);
       ob.forward = dir > 0;
       if (Math.abs(n.to - ob.u) <= step) {
         ob.u = n.to; sp.path.shift();
@@ -1953,7 +1977,7 @@ function stepSprites(dt) {
     }
     if (n.jump) { sp.room = n.r; [sp.x, sp.y, sp.z] = n.p; sp.path.shift(); if (n.poof) sp.alpha = 0; continue; }
     const [tx, ty, tz] = n.p, dz = (tz - sp.z) / 14, dist = Math.hypot(tx - sp.x, ty - sp.y, dz);
-    const stepLen = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1);
+    const stepLen = dt / 1000 * (sp.small ? 2.3 : 1.9) * (drowsy(sp) ? .55 : 1) * (sp.speed || 1);
     if (dist <= stepLen || dist === 0) { sp.x = tx; sp.y = ty; sp.z = tz; sp.path.shift(); sp.moving = sp.path.length > 0; }
     else { const k = stepLen / dist; sp.x += (tx - sp.x) * k; sp.y += (ty - sp.y) * k; sp.z += (tz - sp.z) * k; sp.moving = true; }
   }
@@ -2662,6 +2686,114 @@ function catThink(c, t) {
   }
 }
 
+// ----- the dog: lives in the kennel in the yard's far corner, on the ground only -----
+// It sleeps there at night and while nobody works, meets an agent that finished and trots with it to the shower,
+// chases a ball whoever is in the yard throws, and runs barking to a fire.
+const DOG = { // a brown dog with dark ears, a white belly and a red collar, a size up from the cat
+  walk1: ['..........dd....', '.........dbbbb..', '.........bbbebb.', '.........bbbbbbn', 't........rbbbb..', '.t.bbbbbbbbbb...', '..bbbbbbbbbbb...', '..bwwwwwwwbbb...', '..bb.bb...bb.bb.', '..bb.bb...bb.bb.'],
+  walk2: ['..........dd....', '.........dbbbb..', '.........bbbebb.', '.........bbbbbbn', '.........rbbbb..', 'tt.bbbbbbbbbb...', '..bbbbbbbbbbb...', '..bwwwwwwwbbb...', '...bb.bb.bb.bb..', '...bb.bb.bb.bb..'],
+  sit1: ['......dd....', '.....dbbbb..', '.....bbbebb.', '.....bbbbbbn', '.....rbbbb..', 't...bbbbbb..', '.t.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
+  sit2: ['......dd....', '.....dbbbb..', '.....bbbebb.', '.....bbbbbbn', '.....rbbbb..', '....bbbbbb..', 'tt.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
+  bark: ['......dd....', '.....dbbbb..', '.....bbbebbn', '.....bbbb.mm', '.....rbbbb..', 't...bbbbbb..', '.t.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
+  nap: ['..........dd..', '...bbbbbbdbbbb', '..bbbbbbbbbcbb', 'tbbbbbbbbbbbbn', '.bbbbbbbbbbbb.', '.wwwwwwwwww...'],
+};
+function drawDog(X, Y, sp, t) {
+  const a0 = g.globalAlpha; g.globalAlpha *= sp.alpha;
+  const n = sp.path[0];
+  if (sp.onBridge) sp.face = sp.onBridge.forward ? 1 : -1;
+  else if (n && n.p) { const dx = (n.p[0] - sp.x) - (n.p[1] - sp.y); if (Math.abs(dx) > .05) sp.face = Math.sign(dx); }
+  else if (sp.look) { const dx = (sp.look[0] - sp.x) - (sp.look[1] - sp.y); if (Math.abs(dx) > .05) sp.face = Math.sign(dx); }
+  const pose = sp.moving ? 'walk' : (sp.pose || 'sit'), wag = sp.wag || pose === 'bark';
+  const rows = pose === 'walk' ? (Math.floor(t / (sp.speed > 1 ? 90 : 120)) % 2 ? DOG.walk2 : DOG.walk1) : pose === 'nap' ? DOG.nap
+    : pose === 'bark' ? (Math.floor(t / 260) % 2 ? DOG.bark : DOG.sit1) : (Math.floor(t / (wag ? 140 : 900) + sp.seed * 7) % (wag ? 2 : 6) === 0 ? DOG.sit2 : DOG.sit1);
+  const w = rows[0].length, x0 = Math.round(X - w / 2), y0 = Math.round(Y) - rows.length;
+  g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x0 + 1, Math.round(Y), w - 2, 1);
+  pxStamp(x0, y0, rows, { b: lit('#a0683a'), d: lit('#3a2414'), w: lit('#f4ecdc'), e: DARK > .5 && pose !== 'nap' ? emi('#f0e070') : lit('#20140e'), n: lit('#20140e'),
+    t: lit('#8a5630'), r: lit('#d83a3a'), c: lit('#3a2414'), m: lit('#e86a7a') }, sp.face < 0);
+  if (sp.ball) { const bx = sp.face < 0 ? x0 - 1 : x0 + w - 1, by = y0 + 3; g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, 4, 4); g.fillStyle = lit('#f0d040'); g.fillRect(bx, by, 2, 2); }
+  if (pose === 'nap') { const k = (t / 1900 + sp.seed) % 1; g.fillStyle = `rgba(255,255,255,${(1 - k) * .8})`;
+    const zx = Math.round(X + (sp.face < 0 ? -7 : 5) + k * 3), zy = Math.round(y0 - 2 - k * 7); g.fillRect(zx, zy, 3, 1); g.fillRect(zx + 1, zy + 1, 1, 1); g.fillRect(zx, zy + 2, 3, 1); }
+  if (pose === 'bark' && Math.floor(t / 520) % 2 === 0) { const txt = 'ГАВ!', tw = sfWidth(txt); sfDraw(txt, Math.round(X - tw / 2), y0 - SH - 4, lit('#ffffff'), 1, lit(OUT)); }
+  g.globalAlpha = a0;
+}
+// a thrown ball: from the thrower's hand up in an arc to where it lands, then it lies there until the dog has it
+function ballAt(bl, t) {
+  if (bl.held) return bl.to;
+  const k = Math.min(1, (t - bl.t0) / bl.ms);
+  return [bl.from[0] + (bl.to[0] - bl.from[0]) * k, bl.from[1] + (bl.to[1] - bl.from[1]) * k, 6 + Math.sin(k * Math.PI) * 26 * (1 - k * .3) - k * 6];
+}
+function dogGo(d, room, p, pose, speed = 1) {
+  setGoal(d, { room, cat: 'dog', i: -1, p: [p[0], p[1], 0] }); d.want = pose; d.speed = speed; d.wag = false;
+}
+function dogGreet(a) { const d = sprites.get('__dog'); if (d && !d.fireOf) { d.greet = { id: a.id, stage: 'meet', t0: performance.now() }; d.next = 0; } }
+const dogFree = d => !d.path.length && !d.onBridge && d.room;
+function dogThink(d, t) {
+  if (!d.path.length && d.want) d.pose = d.want;
+  if (d.onBridge || !d.room) return; // on a bridge, a stair or in a lift: decide once it stands somewhere
+  // a fire anywhere: run there and bark until it is out
+  const fire = [...sprites.values()].find(o => o.fire && o.room && !o.onBridge && o.alpha > .5);
+  if (fire) {
+    if (d.fireOf !== fire.id || (dogFree(d) && d.room !== fire.room && t > (d.re || 0))) { d.fireOf = fire.id; d.greet = null; dropBall(d); d.re = t + 3000;
+      const r = fire.room; dogGo(d, r, [scClamp(fire.x + 1.3, .4, r.NX - .4), scClamp(fire.y + .9, .4, r.NY - .4)], 'bark', 1.6); }
+    d.look = [fire.x, fire.y]; return;
+  }
+  if (d.fireOf) { d.fireOf = null; d.look = null; d.next = t + 1500; d.pose = 'sit'; d.want = 'sit'; }
+  // a finished agent: meet it, then trot along to the bathroom and wait there, wagging, until it is dry
+  const gr = d.greet, a = gr && sprites.get(gr.id), bath = shared('bath');
+  if (gr) {
+    const e = a && a.errand, washing = e && (e.cat === 'shower' || e.cat === 'dry' || e.cat === 'wash');
+    if (!a || !bath || (!washing && gr.stage !== 'meet') || t - gr.t0 > 120000) { d.greet = null; d.wag = false; d.next = t + 2000; }
+    else if (gr.stage === 'meet') {
+      const near = a.room && d.room === a.room && Math.hypot(a.x - d.x, a.y - d.y) < 1.6;
+      if (near || t - gr.t0 > 25000) { gr.stage = 'along'; d.pose = 'sit'; d.wag = true; gr.t1 = t; }
+      else if (dogFree(d) || (t > (gr.re || 0) && a.room && d.room !== a.room && !a.onBridge)) { gr.re = t + 2500;
+        if (a.room && !a.onBridge) dogGo(d, a.room, [scClamp(a.x + .6, .4, a.room.NX - .4), scClamp(a.y + .6, .4, a.room.NY - .4)], 'sit', 1.6); }
+      if (!washing && a.state !== 'done') d.greet = null;
+      return;
+    } else if (gr.stage === 'along' && t - gr.t1 > 1200) { gr.stage = 'wait'; dogGo(d, bath, [3.5, 2.25], 'sit', 1.3); }
+    if (gr.stage === 'wait' && dogFree(d)) { d.wag = true; d.look = [a.x, a.y]; }
+    return;
+  }
+  d.look = null;
+  // fetch: a round of throws while someone stands in the yard
+  if (SC.ball) { fetchStep(d, t); return; }
+  if (d.path.length || t < d.next) return;
+  const working = [...sprites.values()].some(o => o.kind === 'agent' && o.state === 'working' && !o.leaving);
+  if (DARK > .5 || !working) { // home to the kennel for a nap
+    dogGo(d, YARD, YARD_THEME.spots.dog[0], 'nap'); d.next = t + 30000 + Math.random() * 30000; return; }
+  const thrower = d.room === YARD && pickThrower(d);
+  if (thrower && Math.random() < .55) { startFetch(d, thrower, t); return; }
+  const roll = Math.random();
+  if (roll < .6 || !bath) { const p = scPick(YARD_THEME.spots.romp); dogGo(d, YARD, p, 'sit'); d.next = t + 6000 + Math.random() * 8000; }
+  else if (roll < .8) { dogGo(d, YARD, YARD_THEME.spots.dog[0], 'nap'); d.next = t + 15000 + Math.random() * 15000; }
+  else { const k = shared('kitchen'); const r = k || bath; dogGo(d, r, [scClamp(r.theme.hub[0] + .8, .4, r.NX - .4), scClamp(r.theme.hub[1] + .6, .4, r.NY - .4)], 'sit'); d.next = t + 9000 + Math.random() * 6000; }
+}
+// someone free in the yard: a resident, or an agent that has finished
+function pickThrower(d) {
+  const c = [...sprites.values()].filter(o => (o.kind === 'home' || (o.kind === 'agent' && o.agent?.state === 'done')) && o.room === YARD && !o.path.length && !o.onBridge
+    && o.alpha > .6 && YARD.swinger !== o && !o.hold && !o.leaving && !o.exit && !o.errand?.dur);
+  return c.length ? scPick(c) : null;
+}
+const PITCH = [14.0, 6.75, 0], PITCH_DOG = [14.7, 6.4]; // where the thrower stands, by the kennel, and where the dog brings the ball
+function startFetch(d, th, t) {
+  SC.ball = { by: th.id, n: 0, of: 2 + Math.floor(Math.random() * 3), t0: t, ms: 0, from: PITCH.slice(0, 2), to: PITCH.slice(0, 2), held: false, stage: 'come' };
+  th.hold = { kind: 'fetch', t0: t, errand: th.errand, state: 'idle' }; th.errand = null; th.state = 'idle';
+  setGoal(th, { room: YARD, cat: 'pitch', i: -1, p: PITCH.slice() });
+  dogGo(d, YARD, PITCH_DOG, 'sit', 1.5); }
+function dropBall(d) { const th = SC.ball && sprites.get(SC.ball.by); SC.ball = null; d.ball = false; if (th?.hold?.kind === 'fetch') releaseHold(th); }
+function fetchStep(d, t) {
+  const bl = SC.ball, th = sprites.get(bl.by);
+  if (!th || th.hold?.kind !== 'fetch' || (bl.stage !== 'come' && th.path.length) || (d.room !== YARD && !d.onBridge && !d.path.length) || t - th.hold.t0 > 90000) {
+    dropBall(d); if (th?.hold?.kind === 'fetch') releaseHold(th); d.next = t + 3000; return; }
+  if (bl.stage === 'come') { if (dogFree(d) && !th.path.length) { bl.stage = 'throw'; bl.t1 = t + 700; d.pose = 'sit'; d.wag = true; d.look = [th.x, th.y]; } return; }
+  if (bl.stage === 'throw' && t > bl.t1) { // up it goes, into the open grass by the kennel
+    const to = [14.3 + Math.random() * 1.9, 1.6 + Math.random() * 3.0]; bl.from = [th.x, th.y]; bl.to = to; bl.t0 = t; bl.ms = 700 + Math.hypot(to[0] - th.x, to[1] - th.y) * 140; bl.held = false; bl.stage = 'fly';
+    th.toss = t; dogGo(d, YARD, to, 'sit', 1.8); return; }
+  if (bl.stage === 'fly' && dogFree(d) && t > bl.t0 + bl.ms) { bl.stage = 'back'; bl.held = true; d.ball = true; dogGo(d, YARD, PITCH_DOG, 'sit', 1.5); return; }
+  if (bl.stage === 'back' && dogFree(d)) { d.ball = false; bl.n++; d.wag = true; d.look = [th.x, th.y];
+    if (bl.n >= bl.of) { SC.ball = null; releaseHold(th); d.next = t + 5000; } else { bl.stage = 'throw'; bl.t1 = t + 900; } }
+}
+
 // ----- residents (kind 'home') live by the clock: coffee in the morning, plants by day, a book in the evening, bed at night -----
 const PLANTS = { bedroom: [[9.0, 3.2, 0]], greenhouse: [[1.8, 2.0, 0], [4.6, 6.6, 0], [5.3, 1.6, 0]] };
 const ROOF_PLANTS = [[2.2, 6.8, 0], [1.4, 1.8, 0], [9.0, 2.2, 0]];
@@ -2767,6 +2899,8 @@ function stepHold(sp, t) {
       if (dist <= 2) { h.spraying = true; h.sprayFrom ??= t; tg.fire.foamed = t; }
       else if (t > (h.re || 0)) { h.re = t + 1500; extGoal(sp, tg); }
     }
+  } else if (h.kind === 'fetch') {
+    if (!SC.ball || SC.ball.by !== sp.id || t - h.t0 > 90000) releaseHold(sp);
   } else if (h.kind === 'celebrate') {
     if (sp.path.length) { h.t0 = t; if (t - h.start > 8000) releaseHold(sp); return; }
     if (h.z0 == null) h.z0 = sp.z;
@@ -2797,7 +2931,7 @@ function sceneTrack(sp, a, prev) {
   }
   const h = sp.hold;
   if (h) {
-    const ok = h.kind === 'mail' ? a.state === 'working' : h.kind === 'ext' ? a.state !== 'error' && a.state !== 'waiting' : h.kind === 'handover' ? !h.vanish && a.state === 'done' : a.state === 'done';
+    const ok = h.kind === 'fetch' ? a.state === 'done' : h.kind === 'mail' ? a.state === 'working' : h.kind === 'ext' ? a.state !== 'error' && a.state !== 'waiting' : h.kind === 'handover' ? !h.vanish && a.state === 'done' : a.state === 'done';
     if (!ok) releaseHold(sp);
   }
   if (!sp.hold && prev && prev !== 'done' && a.state === 'done') {
@@ -2835,6 +2969,9 @@ function updateScenes(t, d) {
   if (!SC.init) { SC.init = true; ACTS.push('Bash · git commit -m "scenes"', 'Bash · swift test', 'Write · Scenes.swift', 'WebFetch · docs', 'Bash · git push'); }
   if (rooms.length && ![...sprites.values()].some(s => s.kind === 'cat')) spawn('__cat', shared('kitchen') || rooms[0], { kind: 'cat', vendor: 'home', small: true, state: 'idle', pose: 'sit', next: t + 3000 });
   updateYard(t);
+  const dog = sprites.get('__dog');
+  if (yardOn() && !dog) { const d = spawn('__dog', YARD, { kind: 'dog', vendor: 'home', small: true, state: 'idle', pose: 'nap', next: t + 4000 }); [d.x, d.y] = YARD_THEME.spots.dog[0]; }
+  else if (!yardOn() && dog) { sprites.delete('__dog'); SC.ball = null; }
   for (const sp of [...sprites.values()]) {
     if (sp.kind === 'agent') {
       if (sp.agent?.state === 'error' && !sp.leaving) { sp.errSince ??= t; if (!sp.fire && t - sp.errSince > 3000) sp.fire = { t0: t }; }
@@ -2842,6 +2979,7 @@ function updateScenes(t, d) {
     }
     if (sp.kind === 'home' && String(sp.id).startsWith('home:')) residentRoutine(sp, t, d);
     if (sp.kind === 'cat') catThink(sp, t);
+    if (sp.kind === 'dog') dogThink(sp, t);
     if (sp.hold) stepHold(sp, t);
     if (sp.arriveState && !sp.path.length) { sp.state = sp.arriveState; sp.arriveState = null; }
   }
@@ -3010,7 +3148,7 @@ function drawRoom(r, t, d) {
     g.fillStyle = `rgba(255,244,210,${k})`; const pts = [iso(wd.a + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z1, bb * wd.z1, 0), iso(wd.a + a * wd.z1, bb * wd.z1, 0)];
     const { y0, out } = spans(pts); out.forEach((s, i) => s && g.fillRect(s[0], y0 + i, s[1] - s[0], 1));
   }
-  const list = cache.items.map(it => ({ depth: it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
+  const list = cache.items.map(it => ({ depth: typeof it.depth === 'function' ? it.depth() : it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
   for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = s.room === r ? iso(s.x, s.y, s.z) : scAt(s.room, s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
   if (r.floor === 0) list.push({ depth: r.NX + r.NY + 1.6, draw: () => drawSign(r, t) }); // the post on the grass at the front corner
   if (LIFT && r.tower === 0) list.push({ depth: LIFT.x0 + LIFT.y1 - LIFT.fl[r.floor].yoff, draw: () => drawLifts(t, r.floor) }); // its piece of the lift
@@ -3794,7 +3932,7 @@ function eggCount() {
   if (dirty) eggStore.set('seen', EGG.seen);
 }
 function eggUfoPick(test) {
-  const ok = s => s.kind !== 'cat' && s.room && !s.onBridge && s.alpha > .6 && !s.fall && !s.leaving && !s.exit && !s.hold;
+  const ok = s => s.kind !== 'cat' && s.kind !== 'dog' && s.room && !s.onBridge && s.alpha > .6 && !s.fall && !s.leaving && !s.exit && !s.hold;
   const all = [...sprites.values()];
   let c = all.filter(s => ok(s) && !s.path.length && (s.state === 'done' || s.state === 'idle-sleep'));
   if (!c.length && test) c = all.filter(s => ok(s) && !s.path.length);
@@ -3865,7 +4003,7 @@ const eggFrozen = sp => { const n = performance.now(); return !!((sp.hi5 && n < 
 
 // ----- Clawds: golden, dancing, beamed up, high-fiving, walking backwards on the first of April -----
 function eggLook(sp, t) {
-  if (!EGG.on || sp.kind === 'cat') return null;
+  if (!EGG.on || sp.kind === 'cat' || sp.kind === 'dog') return null;
   let o = null; const set = () => o || (o = { dy: 0 });
   if (sp.golden) { set().gold = GOLD; o.after = true; }
   if (EGG.party && sp.kind === 'agent' && sp.state === 'working') set().dy += Math.round(Math.abs(Math.sin(t * Math.PI / 480)) * 3); // to the beat
