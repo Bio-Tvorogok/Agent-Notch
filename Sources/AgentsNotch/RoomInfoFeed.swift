@@ -117,6 +117,7 @@ final class RoomInfoFeed {
         for l in limits {
             guard let used = UsageView.tightest(l) else { continue }
             var v: [String: Any] = ["used": (used * 10).rounded() / 10]
+            v["updated"] = Int(l.updatedAt.timeIntervalSince1970) // how old the figures are, for the tank's tooltip
             if let w = l.windows.first(where: { $0.usedPercent == used }) {
                 v["window"] = w.label
                 if let r = w.resetsAt { v["resetsAt"] = Int(r.timeIntervalSince1970) }

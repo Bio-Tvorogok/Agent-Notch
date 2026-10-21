@@ -276,6 +276,7 @@ run("settingsVisibilityAndPass") { settings.visibilityAndPass() }
 // NOTCH-fix-usage
 let usageFix = UsageFixChecks()
 run("usageExpiredLimits") { try usageFix.expiredLimits() }
+run("claudeWeeklyReset") { try usageFix.claudeWeeklyReset() }
 run("usageOutputDoesNotExpandWindow") { try usageFix.outputDoesNotExpandWindow() }
 
 run("usageConfiguredThresholds") { usageFix.configuredThresholds() }

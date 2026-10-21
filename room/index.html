@@ -2722,13 +2722,13 @@ function catThink(c, t) {
 // ----- the dog: lives in the kennel in the yard's far corner, on the ground only -----
 // It sleeps there at night and while nobody works, meets an agent that finished and trots with it to the shower,
 // chases a ball whoever is in the yard throws, and runs barking to a fire.
-const DOG = { // a brown dog with dark ears, a white belly and a red collar, a size up from the cat
-  walk1: ['..........dd....', '.........dbbbb..', '.........bbbebb.', '.........bbbbbbn', 't........rbbbb..', '.t.bbbbbbbbbb...', '..bbbbbbbbbbb...', '..bwwwwwwwbbb...', '..bb.bb...bb.bb.', '..bb.bb...bb.bb.'],
-  walk2: ['..........dd....', '.........dbbbb..', '.........bbbebb.', '.........bbbbbbn', '.........rbbbb..', 'tt.bbbbbbbbbb...', '..bbbbbbbbbbb...', '..bwwwwwwwbbb...', '...bb.bb.bb.bb..', '...bb.bb.bb.bb..'],
-  sit1: ['......dd....', '.....dbbbb..', '.....bbbebb.', '.....bbbbbbn', '.....rbbbb..', 't...bbbbbb..', '.t.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
-  sit2: ['......dd....', '.....dbbbb..', '.....bbbebb.', '.....bbbbbbn', '.....rbbbb..', '....bbbbbb..', 'tt.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
-  bark: ['......dd....', '.....dbbbb..', '.....bbbebbn', '.....bbbb.mm', '.....rbbbb..', 't...bbbbbb..', '.t.bbbbwbb..', '..bbbbbwbb..', '..bbbbbwbb..', '..bbb.bbbb..'],
-  nap: ['..........dd..', '...bbbbbbdbbbb', '..bbbbbbbbbcbb', 'tbbbbbbbbbbbbn', '.bbbbbbbbbbbb.', '.wwwwwwwwww...'],
+const DOG = { // an Irish terrier: a wiry red coat, folded ears, eyebrows and a beard, long legs, a green collar
+  walk1: ['.................dd.....', '................dddbb...', '...............bbbbbbb..', '...............bhhebbbb.', '...............bbbbbbbbb', '...............bbbbbbbbn', '................bkkkkkk.', '.t.............rrbbkk...', '.t.............bbbbb....', '.bbbbbbbbbbbbbbbbbbb....', '.bbbbbbbbbbbbbbbbbbb....', '..bbbbbbbbbbbbbbbbbb....', '..bbbbbbbbbbbbbbbbb.....', '..bb.bb.......bb.bb.....', '..bb.bb.......bb.bb.....', '..bb.bb.......bb.bb.....', '..kk.kk.......kk.kk.....'],
+  walk2: ['.................dd.....', '................dddbb...', '...............bbbbbbb..', '...............bhhebbbb.', '...............bbbbbbbbb', '...............bbbbbbbbn', '................bkkkkkk.', 't..............rrbbkk...', '.t.............bbbbb....', '.bbbbbbbbbbbbbbbbbbb....', '.bbbbbbbbbbbbbbbbbbb....', '..bbbbbbbbbbbbbbbbbb....', '..bbbbbbbbbbbbbbbbb.....', '...bb.bb.....bb.bb......', '...bb.bb.....bb.bb......', '...bb.bb.....bb.bb......', '...kk.kk.....kk.kk......'],
+  sit1: ['.........dd.....', '........dddbb...', '.......bbbbbbb..', '.......bhhebbbb.', '.......bbbbbbbbb', '.......bbbbbbbbn', '........bkkkkkk.', '.......rrbbkk...', '.t.....bbbbb....', '.t....bbbbbbb...', '..b..bbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbb.bb....', '.bbbbbbbb.bb....', '.bbbbbbbb.bb....', '.kkkkkkk..kk....'],
+  sit2: ['.........dd.....', '........dddbb...', '.......bbbbbbb..', '.......bhhebbbb.', '.......bbbbbbbbb', '.......bbbbbbbbn', '........bkkkkkk.', '.......rrbbkk...', 't......bbbbb....', '..t...bbbbbbb...', '..b..bbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbb.bb....', '.bbbbbbbb.bb....', '.bbbbbbbb.bb....', '.kkkkkkk..kk....'],
+  bark: ['.........dd.....', '........dddbb...', '.......bbbbbbb..', '.......bhhebbbb.', '.......bbbbbbbbb', '.......bbbbbb...', '........bkkk.mm.', '.......rrbbkk...', '.t.....bbbbb....', '.t....bbbbbbb...', '..b..bbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbbbbbb...', '..bbbbbbb.bb....', '.bbbbbbbb.bb....', '.bbbbbbbb.bb....', '.kkkkkkk..kk....'],
+  nap: ['....................dd..', '..................dddbb.', '..bbbbbbbbbbbbbbbbbbbbbb', 'tbbbbbbbbbbbbbbbbbbcbbbb', '.bbbbbbbbbbbbbbbbbbbbbbn', '.bbbbbbbbbbbbbbbbbbkkkk.', '.kkk..kk...kkk.kk.......'],
 };
 function drawDog(X, Y, sp, t) {
   const a0 = g.globalAlpha; g.globalAlpha *= sp.alpha;
@@ -2741,9 +2741,9 @@ function drawDog(X, Y, sp, t) {
     : pose === 'bark' ? (Math.floor(t / 260) % 2 ? DOG.bark : DOG.sit1) : (Math.floor(t / (wag ? 140 : 900) + sp.seed * 7) % (wag ? 2 : 6) === 0 ? DOG.sit2 : DOG.sit1);
   const w = rows[0].length, x0 = Math.round(X - w / 2), y0 = Math.round(Y) - rows.length;
   g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(x0 + 1, Math.round(Y), w - 2, 1);
-  pxStamp(x0, y0, rows, { b: lit('#a0683a'), d: lit('#3a2414'), w: lit('#f4ecdc'), e: DARK > .5 && pose !== 'nap' ? emi('#f0e070') : lit('#20140e'), n: lit('#20140e'),
-    t: lit('#8a5630'), r: lit('#d83a3a'), c: lit('#3a2414'), m: lit('#e86a7a') }, sp.face < 0);
-  if (sp.ball) { const bx = sp.face < 0 ? x0 - 1 : x0 + w - 1, by = y0 + 3; g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, 4, 4); g.fillStyle = lit('#f0d040'); g.fillRect(bx, by, 2, 2); }
+  pxStamp(x0, y0, rows, { b: lit('#b4582c'), d: lit('#7e3818'), h: lit('#d8844c'), k: lit('#8a4020'), e: DARK > .5 && pose !== 'nap' ? emi('#f0e070') : lit('#20140e'), n: lit('#20140e'),
+    t: lit('#b4582c'), r: lit('#2e9a4a'), c: lit('#5a2810'), m: lit('#e86a7a') }, sp.face < 0);
+  if (sp.ball) { const bx = sp.face < 0 ? x0 - 1 : x0 + w - 2, by = y0 + 6; g.fillStyle = lit(OUT); g.fillRect(bx - 1, by - 1, 4, 4); g.fillStyle = lit('#f0d040'); g.fillRect(bx, by, 2, 2); }
   if (pose === 'nap') { const k = (t / 1900 + sp.seed) % 1; g.fillStyle = `rgba(255,255,255,${(1 - k) * .8})`;
     const zx = Math.round(X + (sp.face < 0 ? -7 : 5) + k * 3), zy = Math.round(y0 - 2 - k * 7); g.fillRect(zx, zy, 3, 1); g.fillRect(zx + 1, zy + 1, 1, 1); g.fillRect(zx, zy + 2, 3, 1); }
   if (pose === 'bark' && Math.floor(t / 520) % 2 === 0) { const txt = 'ГАВ!', tw = sfWidth(txt); sfDraw(txt, Math.round(X - tw / 2), y0 - SH - 4, lit('#ffffff'), 1, lit(OUT)); }
@@ -3310,6 +3310,12 @@ function limitTank(x, y, vendor) {
   const [ax, ay] = iso(x, y + d, 0), [bx2] = iso(x + w, y, 0); // the tank and its plate, for the tooltip
   INFO.tankHit[vendor] = [Math.min(ax, bx) - 2, by - 2, Math.max(bx2, bx + tw + 8) - Math.min(ax, bx) + 4, ay - by + 4];
 }
+// the limits are only as fresh as their source's last sample: say how old they are once that is more than a few minutes
+function ageText(sec) {
+  if (!sec) return ''; const m = Math.round((Date.now() / 1000 - sec) / 60); if (m < 10) return '';
+  const d = new Date(sec * 1000), p = n => String(n).padStart(2, '0');
+  return 'данные от ' + (m < 1440 ? '' : p(d.getDate()) + '.' + p(d.getMonth() + 1) + ' ') + p(d.getHours()) + ':' + p(d.getMinutes());
+}
 function tankTip(vendor) {
   const u = INFO.usage && INFO.usage[vendor], name = vendor === 'codex' ? 'Codex' : 'Claude';
   const until = r => { if (!r) return ''; const m = Math.max(0, Math.round((r * 1000 - Date.now()) / 60000));
@@ -3318,7 +3324,7 @@ function tankTip(vendor) {
   const line = w => `${w.label ? w.label + ': ' : ''}осталось ${Math.round(100 - w.used)}%${until(w.resetsAt)}`;
   const used = u && isFinite(u.used) ? u.used : null, warn = (INFO.usage && INFO.usage.warning) || 80;
   return { title: 'Лимит подписки ' + name, color: used === null ? '#8a8a96' : used >= warn ? '#e5534b' : used >= warn - 10 ? '#f0b030' : '#58c860',
-    status: ws.length ? line(ws[0]) : 'нет данных о лимитах', detail: ws.slice(1).map(line).join(' · ') || (ws.length ? 'число на баке — окно, где осталось меньше всего' : '') };
+    status: ws.length ? line(ws[0]) : 'нет данных о лимитах', detail: [...ws.slice(1).map(line), ageText(u && u.updated)].filter(Boolean).join(' · ') };
 }
 
 // --- spend today: a piggy bank in the kitchen, coins drop in when it grows ---
