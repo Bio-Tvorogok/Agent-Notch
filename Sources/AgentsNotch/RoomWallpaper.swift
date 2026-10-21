@@ -28,6 +28,8 @@ final class RoomWallpaper: NSObject {
     var settingsSubs: Set<AnyCancellable> = []
     private var pressed: (NSPoint, Double)?
     private let info = RoomInfoFeed()
+    /// Whether the house page is drawing (an agent works or someone walks); the other screens follow it.
+    private(set) var houseAwake = true
 
     init(store: Store) { self.store = store }
 
@@ -244,6 +246,11 @@ final class RoomWallpaper: NSObject {
     fileprivate func received(_ body: Any) {
         guard let msg = body as? [String: Any] else { return }
         if let error = msg["jsError"] as? String { NSLog("agents-notch: room page error: \(error.prefix(400))"); return }
+        if let awake = msg["awake"] as? Bool { // the other screens' sky moves only while the house does
+            houseAwake = awake
+            extras.values.forEach { $0.sync(awake: awake) }
+            return
+        }
         if msg.keys.contains("tip") {
             if let t = msg["tip"] as? [String: Any], let w = window { tip.show(t, in: w.frame) } else { tip.hide() }
             return

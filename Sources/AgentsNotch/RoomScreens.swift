@@ -32,7 +32,7 @@ extension RoomWallpaper {
         for screen in others {
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
             keep.insert(id)
-            if let extra = extras[id] { extra.place(on: screen) } else { extras[id] = RoomExtraScreen(screen: screen, page: page, fps: Self.fps) }
+            if let extra = extras[id] { extra.place(on: screen) } else { extras[id] = RoomExtraScreen(screen: screen, page: page, fps: Self.fps, awake: houseAwake) }
         }
         for (id, extra) in extras where !keep.contains(id) { extra.close(); extras[id] = nil }
     }
@@ -54,9 +54,12 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
     private var fps: Int
     private var sentActive: Bool?
     private var sentFps = 0
+    private var awake: Bool
+    private var sentAwake: Bool?
 
-    init(screen: NSScreen, page: URL, fps: Int) {
+    init(screen: NSScreen, page: URL, fps: Int, awake: Bool) {
         self.fps = fps
+        self.awake = awake
         let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
         w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
         w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
@@ -99,10 +102,17 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
         syncPower()
     }
 
+    /// The main screen's house woke up or went still; this screen draws or stands still with it.
+    func sync(awake: Bool) {
+        self.awake = awake
+        syncPower()
+    }
+
     private func syncPower() {
         let visible = window.occlusionState.contains(.visible)
         if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
         if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
+        if awake != sentAwake { sentAwake = awake; web.evaluateJavaScript("room.setHouseAwake(\(awake))") }
     }
 
     func close() {
@@ -116,6 +126,7 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
         MainActor.assumeIsolated {
             sentActive = nil
             sentFps = 0
+            sentAwake = nil
             syncPower()
         }
     }

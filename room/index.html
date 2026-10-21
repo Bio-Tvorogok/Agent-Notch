@@ -2793,6 +2793,10 @@ function catThink(c, t) {
   if (c.deskOf) { const a = sprites.get(c.deskOf); if (!a || a.state !== 'working' || a.path.length || a.goal?.cat !== 'work') { c.deskOf = null; c.next = Math.min(c.next, t); } }
   if (!c.path.length && c.want) c.pose = c.want;
   if (c.path.length || t < c.next || c.onBridge) return;
+  if (!anyWorking()) { // nobody works: the cat curls up and sleeps, so the house can stand still
+    if (c.pose !== 'nap' && c.want !== 'nap') { const naps = catNaps(); if (naps.length) { const [room, p] = catHome() || scPick(naps); catGo(c, room, p.slice(), 'nap'); c.deskOf = null; } }
+    c.next = t + 4000; return;
+  }
   const roll = Math.random();
   const desks = [...sprites.values()].filter(a => a.kind === 'agent' && a.state === 'working' && a.room && !a.path.length && a.goal?.cat === 'work' && a.z > 3
     && CAT_DESK[THEME_KEY.get(a.room.theme)] && !(THEME_KEY.get(a.room.theme) === 'library' && a.goal.i === 1)
@@ -3689,26 +3693,45 @@ function drawOrder() {
 // ---------- main loop ----------
 let last = performance.now();
 // Battery: the app pauses the page while the desktop is hidden and caps the frame rate on battery.
-// fpsCap (from the app) is for an agent on the move, the lift, the view gliding or the cursor over the house;
-// while only the pets stroll the page draws fewer frames, and fewer still while nothing moves at all.
-let active = true, fpsCap = 60, looping = false;
-const petFps = cap => cap >= 60 ? 30 : cap >= 30 ? 20 : Math.min(cap, 15), idleFps = cap => cap >= 60 ? 15 : Math.min(cap, 10);
-function motionFps(t) {
-  if (demo || mouse || CAM.glide || CAM.follow || PAR.x || PAR.y || METEORS.list.length) return fpsCap;
-  if (LIFT && LIFT.cabins.some(c => c.state === 'move')) return fpsCap;
-  if (links.some(L => L.turn) || rooms.some(r => t - r.born < 2500)) return fpsCap;
-  let pets = false;
-  for (const sp of sprites.values()) if (sp.path.length || sp.onBridge || sp.fall) { if (sp.kind === 'agent') return fpsCap; pets = true; }
-  return pets ? petFps(fpsCap) : idleFps(fpsCap);
+// The house is awake while an agent works or anything moves; once it has been still for a moment the loop stops
+// and the last frame stays on screen. Anything the app or the viewer does wakes it, and so does every new minute
+// (the clocks, the light), so the residents' routines and a new day still come along.
+let active = true, fpsCap = 60, looping = false, stillSince = 0, extraAwake = true, sentAwake = null, nap = 0;
+const STILL_MS = 3000;
+function houseAwake(t) {
+  if (SCENE === 'extra') return extraAwake;
+  if (demo || mouse || CAM.glide || CAM.follow || PAR.x || PAR.y) return true;
+  if (METEORS.list.length || SC.fireworks.length || SC.puffs.length || SC.papers.length || INFO.coins.length) return true;
+  if (LIFT && LIFT.cabins.some(c => c.state !== 'idle')) return true;
+  if (links.some(L => L.turn) || rooms.some(r => t - r.born < 2500)) return true;
+  for (const sp of sprites.values()) {
+    if (sp.path.length || sp.onBridge || sp.fall || sp.hold || sp.fire) return true;
+    if (sp.kind === 'agent' && (sp.agent?.state === 'working' || sp.state === 'working')) return true;
+  }
+  return false;
+}
+const anyWorking = () => [...sprites.values()].some(sp => sp.kind === 'agent' && (sp.agent?.state === 'working' || sp.state === 'working'));
+function tellAwake(on) {
+  if (on === sentAwake || SCENE === 'extra') return; sentAwake = on;
+  if (window.webkit?.messageHandlers?.room) try { window.webkit.messageHandlers.room.postMessage({ awake: on }); } catch (e) {}
 }
 function loop(t) {
   if (!active) { looping = false; return; }
-  requestAnimationFrame(loop);
-  const cap = motionFps(t);
-  if (cap < 60 && t - last < 1000 / cap - 2) return;
+  if (fpsCap < 60 && t - last < 1000 / fpsCap - 2) { requestAnimationFrame(loop); return; }
   frame(t);
+  if (houseAwake(t)) { stillSince = 0; tellAwake(true); }
+  else if (!stillSince) stillSince = t;
+  if (stillSince && t - stillSince >= STILL_MS) { looping = false; tellAwake(false); napUntilNextMinute(); return; }
+  requestAnimationFrame(loop);
+}
+function napUntilNextMinute() {
+  clearTimeout(nap);
+  const ms = 60000 - Date.now() % 60000 + 50;
+  nap = setTimeout(() => { if (!looping) { stillSince = performance.now() - STILL_MS - 100; wake(); } }, ms); // one frame, then still again
 }
 function wake() { if (active && !looping) { looping = true; last = performance.now(); requestAnimationFrame(loop); } }
+// something happened: draw again, and keep drawing for a moment even if it settles at once
+function stir() { stillSince = 0; wake(); }
 function frame(t) {
   const dt = Math.max(0, Math.min(100, t - last)); last = t; // the first rAF stamp can be a little before wake()
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
@@ -5001,7 +5024,11 @@ window.room = {
   setInsets: o => { INSETS = { top: +o.top || 0, bottom: +o.bottom || 0, right: +o.right || 0 }; layout(); },
   setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),
   egg: name => eggTrigger(name),
+  setHouseAwake: on => { extraAwake = !!on; if (on) stir(); },
 };
+for (const [k, f] of Object.entries(room)) if (typeof f === 'function' && k !== 'setActive' && k !== 'backdrops')
+  room[k] = (...a) => { const v = f(...a); stir(); return v; };
+for (const ev of ['pointermove', 'wheel', 'click', 'keydown', 'resize']) addEventListener(ev, () => stir(), { passive: true });
 if (PV && !PV.house) {
   document.getElementById('add').hidden = true;
   if (THEMES[PV.theme].shared) {

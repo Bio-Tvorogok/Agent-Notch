@@ -25,13 +25,13 @@ struct RoomPrefs: Codable, Equatable {
         screens = (try? c.decodeIfPresent(Screens.self, forKey: .screens)) ?? .main
     }
 
-    /// The page's frame cap while agents move: the chosen one, or 30 on power and 20 on battery or in Low Power Mode.
-    /// The page draws fewer while only the pets stroll or nothing moves (room/index.html, motionFps).
+    /// Frames per second while the house is awake: the chosen cap, or 60 on power, 30 on battery and 20 in Low Power Mode.
+    /// While no agent works and nobody walks the page draws nothing at all (room/index.html, houseAwake).
     func fps(lowPower: Bool, onBattery: Bool) -> Int {
         switch frameRate {
         case .fps30: 30
         case .fps60: 60
-        case .auto: lowPower || onBattery ? 20 : 30
+        case .auto: lowPower ? 20 : onBattery ? 30 : 60
         }
     }
 

@@ -88,7 +88,7 @@ enum HouseText {
         }
     }
     static var frameRateTitle: String { Loc.t("Frame rate", "Частота кадров") }
-    static var frameRateHelp: String { Loc.t("Auto: 30 on power, 20 on battery", "Авто: 30 от сети, 20 от батареи") }
+    static var frameRateHelp: String { Loc.t("Auto: 60 on power, 30 on battery", "Авто: 60 от сети, 30 от батареи") }
     static func frameRate(_ f: RoomPrefs.FrameRate) -> String {
         switch f {
         case .auto: Loc.t("Auto", "Авто")
