@@ -918,6 +918,19 @@ function layout() {
   const oldLinks = new Map(links.map(L => [L.id, L]));
   links = village ? islandPlan(stack.slice(1).map(s => s[0]), stack[0]) : [];
   for (const L of links) { const o = oldLinks.get(L.id); if (L.kind === 'stair' && o?.kind === 'stair' && o.targets.length === L.targets.length) Object.assign(L, { lift: o.lift, aim: o.aim, turn: o.turn, next: o.next }); }
+  // The lift's floors are numbered from the bathroom up; when a project joins or leaves the tower the numbers shift.
+  // Whoever waits for the lift or rides it then has a trip to a floor that is now another room, or none: start it over
+  // from the floor it stands on (a rider steps out where the cage is).
+  const floorsOf = L => L ? L.fl.map(q => q.r?.key).join('|') : '';
+  if (floorsOf(LIFT) !== floorsOf(oldLift)) for (const sp of sprites.values()) {
+    const riding = sp.onBridge?.pair?.kind === 'lift', waits = sp.path.some(n => n.lift);
+    if (!riding && !waits) continue;
+    let at = riding ? (sp.onBridge.pair.level ?? 0) : sp.path.find(n => n.lift)?.lift.from ?? 0;
+    const old = oldLift?.fl[at]?.r, to = riding || !sp.room ? (at === 0 || !old ? (yardOn() ? YARD : shared('bath')) : old) : sp.room;
+    sp.onBridge = null; sp.path = []; sp.room = rooms.includes(to) || to === YARD ? to : sp.homeRoom;
+    if (riding || !sp.room) [sp.x, sp.y, sp.z] = [...(sp.room === YARD ? YW[YGATE.tower] : sp.room.theme.hub), 0].slice(0, 3);
+    if (sp.goal) setGoal(sp, sp.goal);
+  }
   for (const sp of sprites.values()) if (sp.onBridge) { // a walker halfway across keeps going on the same bridge or stair, rebuilt
     const o = sp.onBridge.pair, L = o.kind === 'lift' ? LIFT?.cabins.find(h => h.id === o.id) : links.find(l => l.id === o.id);
     if (L) { sp.onBridge.pair = L; for (const n of sp.path) { if (n.bridge === o) n.bridge = L; if (n.call === o) n.call = L; } }
@@ -1281,7 +1294,7 @@ function updateStairs(t) {
 // A cage goes for whoever has waited longest, takes up to three, and lets each out on the floor they want.
 // Those left waiting on the ledge pass the time chatting.
 const WOOD = '#8a5a36', WOOD_L = '#b07a4a', WOOD_P = '#c48c58';
-const liftZ = k => k === 0 ? -SLAB : LIFT.fl[k].z;
+const liftZ = k => k === 0 ? -SLAB : (LIFT.fl[k] || LIFT.fl[LIFT.fl.length - 1]).z; // a stale floor number still lands somewhere
 function updateLifts(t, dt) {
   if (!LIFT) return;
   const all = [...sprites.values()], inCab = c => all.filter(sp => sp.onBridge?.pair === c);
@@ -3612,10 +3625,12 @@ function frame(t) {
   eggSky(t, d);
   if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
-  updateResidents(t); updateErrands(t); stepSprites(dt); updateLifts(t, dt);
-  updateScenes(t, d);
-  eggStep(t);
-  updateStairs(t);
+  try { // one sprite in a state nobody planned for must not leave the sky without a house: report it and draw on
+    updateResidents(t); updateErrands(t); stepSprites(dt); updateLifts(t, dt);
+    updateScenes(t, d);
+    eggStep(t);
+    updateStairs(t);
+  } catch (e) { frameError(e); }
   // back to front: the tower (with its lift), every island, every bridge and stair by how deep it lies
   for (const it of drawOrder()) it.room ? drawRoom(it.room, t, d) : drawLink(it.link, t);
   drawEscapes(t);
@@ -3625,6 +3640,12 @@ function frame(t) {
   drawMist(t, d);
   eggOver(t);
   updateTip(); updateControls(d);
+}
+
+function frameError(e) {
+  const t = Date.now(); if (t - (frameError.at || 0) < 5000) return; frameError.at = t;
+  console.error(e);
+  if (window.webkit?.messageHandlers?.room) try { window.webkit.messageHandlers.room.postMessage({ jsError: String(e && e.message) + ' @ ' + String(e && e.stack || '').split('\n').slice(0, 4).join(' | ') }); } catch (x) {}
 }
 
 // ---------- demo: fake agents so the page lives on its own ----------
