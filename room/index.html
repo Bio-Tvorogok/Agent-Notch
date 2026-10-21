@@ -3523,6 +3523,11 @@ function safeText(t) {
   return t.length > 70 ? t.slice(0, 69) + '…' : t;
 }
 const inApp = !!window.webkit?.messageHandlers?.room;
+// a script error in the app's page goes to the app's log (at most one a second), so a broken frame can be traced
+{ let sent = 0; const report = (msg, where) => { const t = Date.now(); if (!inApp || t - sent < 1000) return; sent = t;
+    try { window.webkit.messageHandlers.room.postMessage({ jsError: String(msg) + (where ? ' @ ' + where : '') }); } catch (e) {} };
+  addEventListener('error', e => report(e.message, (e.lineno || '') + ':' + (e.colno || '') + ' ' + ((e.error && e.error.stack) || '').split('\n').slice(0, 4).join(' | ')));
+  addEventListener('unhandledrejection', e => report(e.reason && e.reason.message || e.reason, e.reason && e.reason.stack)); }
 let tipSent = '';
 function updateTip() {
   hovered = null;

@@ -243,6 +243,7 @@ final class RoomWallpaper: NSObject {
 
     fileprivate func received(_ body: Any) {
         guard let msg = body as? [String: Any] else { return }
+        if let error = msg["jsError"] as? String { NSLog("agents-notch: room page error: \(error.prefix(400))"); return }
         if msg.keys.contains("tip") {
             if let t = msg["tip"] as? [String: Any], let w = window { tip.show(t, in: w.frame) } else { tip.hide() }
             return
