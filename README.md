@@ -83,7 +83,7 @@ An optional animated pixel wallpaper: every project is a room, every agent walks
 
 <img src="assets/readme/agent-house.gif" width="820" alt="The agents' house on the desktop: rooms on islands above a pixel city, the view flies in to one room and back">
 
-It is off by default. Turn it on in **Settings → Desktop house**, where you also pick the layout, frame rate, screens and a room per project. Nothing is drawn while windows cover the desktop. On Auto it draws 60 fps on power, 30 on battery and 20 in Low Power Mode.
+It is off by default. Turn it on in **Settings → Desktop house**, where you also pick the layout, frame rate, screens and a room per project. Nothing is drawn while windows cover the desktop. On Auto it draws up to 30 fps on power and 20 on battery or in Low Power Mode, and fewer while only the pets move or nothing moves at all.
 
 The same house also comes as a screen saver, **Agent Notch House**. macOS lets no app draw on the lock screen, but with **Lock Screen → Require password after screen saver begins: Immediately** the screen saver is what you see while the Mac is locked. Install it with **Settings → Desktop house → Screen saver → Install**, or double-click `Agent Notch House.saver` from the DMG or the release's `AgentNotchHouse-<version>.saver.zip`. Then pick it in **System Settings → Screen Saver**. The running app hands the house to it through `~/Library/Application Support/AgentsNotch/house.json`; while the app is not running, the house is empty.
 

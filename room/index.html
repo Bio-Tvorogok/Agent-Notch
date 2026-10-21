@@ -568,9 +568,10 @@ const PROJECT_THEMES = (Q.get('themes') || 'bedroom,server,library,greenhouse,ar
 // ---------- clock face ----------
 const FONT = {0:'111101101101111',1:'010110010010111',2:'111001111100111',3:'111001111001111',4:'101101111001001',
   5:'111100111001111',6:'111100111101111',7:'111001001001001',8:'111101111101111',9:'111101111001111',':':'000010000010000',' ':'000000000000000'};
+const clockText = d => String(d.getHours()).padStart(2, '0') + (d.getSeconds() % 2 || speed > 1 ? ':' : ' ') + String(d.getMinutes()).padStart(2, '0');
 function drawClock(c, d) {
   if (!c) return;
-  const s = String(d.getHours()).padStart(2, '0') + (d.getSeconds() % 2 || speed > 1 ? ':' : ' ') + String(d.getMinutes()).padStart(2, '0');
+  const s = clockText(d);
   const at = (col, row) => c.wall === 'L' ? iso(.03, c.at - col / 8, c.z - row) : iso(c.at + col / 8, .03, c.z - row);
   const w = 19;
   poly([at(-2, -2), at(w + 1, -2), at(w + 1, 7), at(-2, 7)], lit(OUT)); poly([at(-1, -1), at(w, -1), at(w, 6), at(-1, 6)], c.dark ? emi('#14141c') : lit('#f4f0e6'));
@@ -606,11 +607,16 @@ function pane(pts, t, seed) { // a window's glass: the sky outside, the weather 
   precipitation(t, lft, top, rgt - lft, bot - top, 2.5);
   g.restore();
 }
-function drawWindow(wd, t, seed) {
+// The frame and the bars, sill and curtains are still (drawn from images by drawRoom); only the glass is live.
+function drawWindow(wd, t, seed, part) {
   const at = (u, z) => wd.wall === 'R' ? iso(wd.a + u * (wd.b - wd.a), 0, z) : iso(0, wd.b - u * (wd.b - wd.a), z);
-  poly([at(-.07, wd.z0 - 2.5), at(1.07, wd.z0 - 2.5), at(1.07, wd.z1 + 2.5), at(-.07, wd.z1 + 2.5)], lit(OUT));
-  poly([at(-.05, wd.z0 - 2), at(1.05, wd.z0 - 2), at(1.05, wd.z1 + 2), at(-.05, wd.z1 + 2)], lit('#f4f0e8'));
-  pane([at(0, wd.z0), at(1, wd.z0), at(1, wd.z1), at(0, wd.z1)], t, seed);
+  if (part !== 'over' && part !== 'pane') {
+    poly([at(-.07, wd.z0 - 2.5), at(1.07, wd.z0 - 2.5), at(1.07, wd.z1 + 2.5), at(-.07, wd.z1 + 2.5)], lit(OUT));
+    poly([at(-.05, wd.z0 - 2), at(1.05, wd.z0 - 2), at(1.05, wd.z1 + 2), at(-.05, wd.z1 + 2)], lit('#f4f0e8'));
+  }
+  if (part === 'under') return;
+  if (part !== 'over') pane([at(0, wd.z0), at(1, wd.z0), at(1, wd.z1), at(0, wd.z1)], t, seed);
+  if (part === 'pane') return;
   if (wd.vent) { for (let z = wd.z0 + 1.5; z < wd.z1; z += 1.5) { line(at(0, z), at(1, z), lit('#e8e0d0')); line(at(0, z + .5), at(1, z + .5), lit('#a89c8c')); } return; }
   const mid = (wd.z0 + wd.z1) / 2;
   for (const [a, b] of [[at(.5, wd.z0), at(.5, wd.z1)], [at(0, mid), at(1, mid)]]) { line(a, b, lit('#f4f0e8')); line([a[0] + 1, a[1]], [b[0] + 1, b[1]], lit('#f4f0e8')); }
@@ -654,10 +660,13 @@ function drawWalls(th, t) {
   B(0, 0, h, .12, NY, 1.5, th.trim, 0, 1); B(0, 0, h, NX, .12, 1.5, th.trim, 0, 1);
   B(0, 0, 0, .1, NY, 2.5, th.trim, 0, 1); B(0, 0, 0, NX, .1, 2.5, th.trim, 0, 1);
 }
-function drawGlassWalls(th, t) {
+function drawGlassWalls(th, t, part) { // part 'pane' draws only the glass, 'bars' only the mullions over it
   const NX = R.NX, NY = R.NY, h = th.lowH;
-  pane([iso(.02, 0, h), iso(.02, NY, h), iso(.02, NY, WH), iso(.02, 0, WH)], t, 7);
-  pane([iso(0, .02, h), iso(NX, .02, h), iso(NX, .02, WH), iso(0, .02, WH)], t, 3);
+  if (part !== 'bars') {
+    pane([iso(.02, 0, h), iso(.02, NY, h), iso(.02, NY, WH), iso(.02, 0, WH)], t, 7);
+    pane([iso(0, .02, h), iso(NX, .02, h), iso(NX, .02, WH), iso(0, .02, WH)], t, 3);
+  }
+  if (part === 'pane') return;
   const m = lit('#f4f8f2'), md = lit('#c8d0c4');
   for (let y = 0; y <= NY; y += 1.6) { line(iso(.03, y, h), iso(.03, y, WH), m); line(iso(.03, y + .06, h), iso(.03, y + .06, WH), md); }
   for (let x = 0; x <= NX; x += 1.66) { line(iso(x, .03, h), iso(x, .03, WH), m); line(iso(x + .06, .03, h), iso(x + .06, .03, WH), md); }
@@ -1372,16 +1381,23 @@ function drawLifts(t, f) {
     const X0 = x0 + .14, Y0 = y0 + .14, X1 = x1 - .14, Y1 = y1 - .14, z = c.z, ch = 28;
     const r0 = Math.max(zlo, z + ch + 2), r1 = Math.min(zhi, zt + 3); if (r1 > r0) line(iso(cx, cy, r1), iso(cx, cy, r0), lit('#3a2c20'));
     if (inSlice(z)) {
-      B(X0, Y0, z - 2.5, X1 - X0, Y1 - Y0, 2.5, WOOD);
-      FX(Y0, Y1, X0 + .01, z, z + 13, WOOD_P); FY(X0, X1, Y0 + .01, z, z + 13, '#b88250');
-      for (let k = .3; k < Y1 - Y0; k += .3) line(iso(X0 + .02, Y0 + k, z), iso(X0 + .02, Y0 + k, z + 13), lit(WOOD_L));
-      for (let k = .3; k < X1 - X0; k += .3) line(iso(X0 + k, Y0 + .02, z), iso(X0 + k, Y0 + .02, z + 13), lit(WOOD_L));
+      // a cage standing at a floor is drawn from two images, its riders between them; a moving one is drawn live
+      const cage = (name, paint) => c.state === 'move' ? paint() : blit(bakeWorld(bk, f + name + i, key + '|' + z + '|' + c.state,
+        [X0 - .2, Y0 - .2, z - 4, X1 + .2, Y1 + .2, z + ch + 4], paint));
+      cage('cageBack', () => {
+        B(X0, Y0, z - 2.5, X1 - X0, Y1 - Y0, 2.5, WOOD);
+        FX(Y0, Y1, X0 + .01, z, z + 13, WOOD_P); FY(X0, X1, Y0 + .01, z, z + 13, '#b88250');
+        for (let k = .3; k < Y1 - Y0; k += .3) line(iso(X0 + .02, Y0 + k, z), iso(X0 + .02, Y0 + k, z + 13), lit(WOOD_L));
+        for (let k = .3; k < X1 - X0; k += .3) line(iso(X0 + k, Y0 + .02, z), iso(X0 + k, Y0 + .02, z + 13), lit(WOOD_L));
+      });
       [...sprites.values()].filter(sp => sp.onBridge?.pair === c).map(sp => [sp, transitPoint(c, 0, linkW(sp))]).filter(q => q[1])
         .sort((a, b) => a[1][1] - b[1][1]).forEach(([sp, q]) => drawClawd(q[0], q[1], sp, t));
-      for (const [px, py] of [[X1, Y0], [X0, Y1], [X1, Y1], [X0, Y0]]) B(px - .05, py - .05, z, .1, .1, ch, WOOD, 0, 1);
-      B(X1 - .08, Y0, z + 10, .1, Y1 - Y0, 1.5, WOOD_L, 0, 1); // the side rail; the front opens when the cage stops
-      if (c.state !== 'open') B(X0, Y1 - .08, z + 10, X1 - X0, .1, 1.5, WOOD_L, 0, 1);
-      B(X0 - .06, Y0 - .06, z + ch, X1 - X0 + .12, Y1 - Y0 + .12, 2, WOOD_L);
+      cage('cageFront', () => {
+        for (const [px, py] of [[X1, Y0], [X0, Y1], [X1, Y1], [X0, Y0]]) B(px - .05, py - .05, z, .1, .1, ch, WOOD, 0, 1);
+        B(X1 - .08, Y0, z + 10, .1, Y1 - Y0, 1.5, WOOD_L, 0, 1); // the side rail; the front opens when the cage stops
+        if (c.state !== 'open') B(X0, Y1 - .08, z + 10, X1 - X0, .1, 1.5, WOOD_L, 0, 1);
+        B(X0 - .06, Y0 - .06, z + ch, X1 - X0 + .12, Y1 - Y0 + .12, 2, WOOD_L);
+      });
     }
     // the front of the frame
     still('front' + i, () => {
@@ -1460,6 +1476,7 @@ const D = { t: 0, on: () => false, showering: false };
 function buildCache(r) {
   const key = lightKey + '|' + weather + '|' + r.floor + '|' + !!roomAt(r.tower, r.floor + 1) + '|' + r.NX + r.NY + '|' + growthKey(r) + '|' + houseKey(r);
   if (r.cache && r.cache.key === key) return r.cache;
+  r.still = null; // the room changed: its theme, size or light
   const items = [], add = (depth, draw, dyn) => items.push({ depth, draw, dyn });
   r.theme.corner(add);
   r.theme.items(add, D);
@@ -1474,6 +1491,12 @@ function buildCache(r) {
   return r.cache;
 }
 function blit(b) { if (b) g.drawImage(b.img, R.ox + b.dx, R.oy + R.drop + b.dy); }
+// A still part of room r that changes only with `key` (the light, the time shown...): painted once, then an image.
+function still(r, name, key, paint) {
+  const m = r.still || (r.still = new Map()), c = m.get(name);
+  if (!c || c.key !== key) m.set(name, { key, b: bake(r, paint) });
+  blit(m.get(name).b);
+}
 
 // ---------- sprites ----------
 const sprites = new Map();
@@ -2567,10 +2590,21 @@ function drawFallers(t) {
     drawClawd(x, y, sp, t);
   }
 }
+// A soft round light: one gradient per colour and size, painted once and then stamped at strength k.
+const GLOWS = new Map();
 function glow(x, y, rad, color, k) {
-  const c = rgb(color), gr = g.createRadialGradient(x, y, 0, x, y, rad);
-  gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},${k})`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
-  g.fillStyle = gr; g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  const r = Math.max(1, Math.round(rad)), key = color + '|' + r;
+  let img = GLOWS.get(key);
+  if (!img) {
+    if (GLOWS.size > 256) GLOWS.clear();
+    img = document.createElement('canvas'); img.width = img.height = 2 * r;
+    const x2 = img.getContext('2d'), c = rgb(color), gr = x2.createRadialGradient(r, r, 0, r, r, r);
+    gr.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},1)`); gr.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+    x2.fillStyle = gr; x2.fillRect(0, 0, 2 * r, 2 * r); GLOWS.set(key, img);
+  }
+  const a = g.globalAlpha; g.globalAlpha = a * Math.min(1, Math.max(0, k));
+  g.drawImage(img, Math.round(x) - r, Math.round(y) - r);
+  g.globalAlpha = a;
 }
 
 // ---------- scenes: props, helpers, fire, fireworks, daily routines, the cat, life in the sky ----------
@@ -3229,10 +3263,15 @@ function drawRoom(r, t, d) {
   D.fog = r.fog || 0;
   g.globalAlpha = Math.min(1, e * 1.6);
   blit(cache.A);
-  if (r.theme.pattern === 'glass') drawGlassWalls(r.theme, t);
-  for (const wd of r.theme.windows) drawWindow(wd, t, r.seed);
+  const lk = lightKey + '|' + weather;
+  if (r.theme.pattern === 'glass') { drawGlassWalls(r.theme, t, 'pane'); still(r, 'glass', lk, () => drawGlassWalls(r.theme, t, 'bars')); }
+  r.theme.windows.forEach((wd, i) => {
+    still(r, 'win' + i, lk, () => drawWindow(wd, t, r.seed, 'under'));
+    drawWindow(wd, t, r.seed, 'pane');
+    still(r, 'bars' + i, lk, () => drawWindow(wd, t, r.seed, 'over'));
+  });
   blit(cache.B);
-  drawClock(r.theme.clock, d);
+  if (r.theme.clock) still(r, 'clock', lk + '|' + clockText(d), () => drawClock(r.theme.clock, d));
   if (DARK < .4 && weather !== 'rain') for (const wd of r.theme.windows) if (wd.wall === 'R' && !wd.vent) { // sunlight on the floor
     const k = (1 - DARK / .4) * (weather === 'clouds' ? .05 : .12), a = .006, bb = .055;
     g.fillStyle = `rgba(255,244,210,${k})`; const pts = [iso(wd.a + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z1, bb * wd.z1, 0), iso(wd.a + a * wd.z1, bb * wd.z1, 0)];
@@ -3650,22 +3689,22 @@ function drawOrder() {
 // ---------- main loop ----------
 let last = performance.now();
 // Battery: the app pauses the page while the desktop is hidden and caps the frame rate on battery.
-// While no agent walks, rides or falls and nothing follows the cursor, the house only breathes: the pets strolling
-// about get PET_FPS frames, a house with nothing on the move IDLE_FPS.
+// fpsCap (from the app) is for an agent on the move, the lift, the view gliding or the cursor over the house;
+// while only the pets stroll the page draws fewer frames, and fewer still while nothing moves at all.
 let active = true, fpsCap = 60, looping = false;
-const PET_FPS = 30, IDLE_FPS = 15;
+const petFps = cap => cap >= 60 ? 30 : cap >= 30 ? 20 : Math.min(cap, 15), idleFps = cap => cap >= 60 ? 15 : Math.min(cap, 10);
 function motionFps(t) {
-  if (demo || mouse || CAM.glide || CAM.follow || PAR.x || PAR.y || METEORS.list.length) return 60;
-  if (LIFT && LIFT.cabins.some(c => c.state === 'move')) return 60;
-  if (links.some(L => L.turn) || rooms.some(r => t - r.born < 2500)) return 60;
+  if (demo || mouse || CAM.glide || CAM.follow || PAR.x || PAR.y || METEORS.list.length) return fpsCap;
+  if (LIFT && LIFT.cabins.some(c => c.state === 'move')) return fpsCap;
+  if (links.some(L => L.turn) || rooms.some(r => t - r.born < 2500)) return fpsCap;
   let pets = false;
-  for (const sp of sprites.values()) if (sp.path.length || sp.onBridge || sp.fall) { if (sp.kind === 'agent') return 60; pets = true; }
-  return pets ? PET_FPS : IDLE_FPS;
+  for (const sp of sprites.values()) if (sp.path.length || sp.onBridge || sp.fall) { if (sp.kind === 'agent') return fpsCap; pets = true; }
+  return pets ? petFps(fpsCap) : idleFps(fpsCap);
 }
 function loop(t) {
   if (!active) { looping = false; return; }
   requestAnimationFrame(loop);
-  const cap = Math.min(fpsCap, motionFps(t));
+  const cap = motionFps(t);
   if (cap < 60 && t - last < 1000 / cap - 2) return;
   frame(t);
 }
