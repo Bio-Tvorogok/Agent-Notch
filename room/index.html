@@ -2900,7 +2900,7 @@ function drawDog(X, Y, sp, t) {
 // a thrown ball: from the thrower's hand up in an arc to where it lands, then it lies there until the dog has it
 function ballAt(bl, t) {
   if (bl.held) return bl.to;
-  const k = Math.min(1, (t - bl.t0) / bl.ms);
+  const k = bl.ms > 0 ? Math.min(1, (t - bl.t0) / bl.ms) : 1;
   return [bl.from[0] + (bl.to[0] - bl.from[0]) * k, bl.from[1] + (bl.to[1] - bl.from[1]) * k, 6 + Math.sin(k * Math.PI) * 26 * (1 - k * .3) - k * 6];
 }
 function dogGo(d, room, p, pose, speed = 1) {

@@ -41,7 +41,9 @@ public final class HouseBehaviourSpriteState {
     public var towel: Double?, handed = false, popped = false
 }
 
-/// Stage 2c extension points. Returning false lets the ordinary agent behaviour
+/// Life-layer extension points, installed by enableLife (the seeded initializer
+/// enables it automatically). The injected-RNG initializer keeps the isolated
+/// stage 2b contract until explicitly enabled. Returning false lets agent behaviour
 /// proceed. Subagent pop/handover is stage 2b and runs outside these gates.
 /// sceneTrack gates celebration after >8s work, git commit/push mail and their
 /// hold cancellation/resumption. sceneLeave gates releasing those scene holds.
@@ -86,6 +88,8 @@ public final class HouseBehaviour {
         public var to: String { target.id }
         init(from: HouseSprite, to: HouseSprite, t0: Double) { source = from; target = to; self.t0 = t0 }
     }
+    public let life = HouseLifeState()
+    public var stage3 = HouseLifeStage3Hooks()
     public let sim: HouseSim
     public var hooks = HouseBehaviourHooks()
     public internal(set) var projects: [String] = []
@@ -104,6 +108,7 @@ public final class HouseBehaviour {
                             insets: HouseLayout.Insets = .init(), themes: [HouseLayout.ThemeChoice] = []) {
         let rng = HouseRandom(seed: seed)
         self.init(layout: layout, canvas: canvas, insets: insets, themes: themes, random: { rng.nextDouble() })
+        enableLife()
     }
     public init(layout: HouseLayout.Style = .islands, canvas: HouseLayout.Canvas = .init(width: 1440, height: 900),
                 insets: HouseLayout.Insets = .init(), themes: [HouseLayout.ThemeChoice] = [], random: @escaping () -> Double) {
@@ -156,7 +161,9 @@ public final class HouseBehaviour {
                 }
             }
             if a.state != "done" { b.errand = nil }
-            if trackSubagent(sp,a,prev) || hooks.sceneTrack(sp,a,prev) { continue }
+            if life.enabled {
+                if hooks.sceneTrack(sp,a,prev) { continue }
+            } else if hooks.sceneTrack(sp,a,prev) || trackSubagent(sp,a,prev) { continue }
             let (target,cat) = b.errand.map { ($0.room,$0.cat) } ?? placeFor(sp)
             if sp.goal == nil || sp.goal!.cat != cat || !HouseRoutes.same(sp.goal!.room,target) {
                 sim.setGoal(sp,pickSpot(sp,target,cat))
@@ -165,7 +172,7 @@ public final class HouseBehaviour {
         for sp in sprites where sp.kind == "agent" && !seen.contains(Array(sp.id.utf16)) && !sp.leaving {
             sp.leaving = true; sp.behaviour.errand = nil
             if sp.alpha < 0.5 || sp.room == nil { sp.fade = 0; continue }
-            if leaveSubagent(sp) || hooks.sceneLeave(sp) { continue }
+            if hooks.sceneLeave(sp) || (!life.enabled && leaveSubagent(sp)) { continue }
             sp.exit = true; sp.state = "idle"; sp.goal = nil
             guard let key = sp.room else { continue }
             let r = sim.room(key)
@@ -200,23 +207,36 @@ public final class HouseBehaviour {
     }
     private func beginStep(_ agents: [HouseAgentRow]?) {
         if let agents { setAgents(agents) }
+        if life.enabled { stage3.lightingAndWeather(time); stage3.eggSky(time) }
         _ = hooks.residents(time)
         updateErrands()
     }
     private func finishStep() {
-        updateYard()
-        for sp in sprites where sp.behaviour.handover != nil { stepHandover(sp) }
-        _ = hooks.cat(time); _ = hooks.dog(time); _ = hooks.dayScenes(time)
-        _ = hooks.scenes(time)
+        if life.enabled { _ = hooks.scenes(time) }
+        else {
+            updateYard()
+            for sp in sprites where sp.behaviour.handover != nil { stepHandover(sp) }
+        }
+        if !life.enabled {
+            _ = hooks.cat(time); _ = hooks.dog(time); _ = hooks.dayScenes(time)
+            _ = hooks.scenes(time)
+        }
+        if life.enabled { stage3.eggStep(time) }
         sim.updateStairs()
         for (key,start) in born {
             let e = min(1,max(0,(time-start)/900))
             sim.roomDrops[key] = houseRound(-pow(1-e,3)*140)
         }
+        if life.enabled { updateLifeFacing() }
         updateFallers()
         // drawSceneOverlays owns these lifetimes on the page, after fallers.
+        if life.enabled { stage3.drawSeason(time) }
         puffs.removeAll { time-$0.t0 > 750 }
         papers.removeAll { time-$0.t0 > 900 || ($0.source.room == nil && $0.source.onBridge == nil) || ($0.target.room == nil && $0.target.onBridge == nil) }
+        if life.enabled {
+            life.fireworks.removeAll { time-$0.t0 > 3800 || !sim.hasRoom($0.room) }
+            stage3.eggOver(time)
+        }
     }
     static func jsNumber(_ x: Double) -> String { x.rounded() == x ? String(format: "%.0f", x) : String(x) }
 }

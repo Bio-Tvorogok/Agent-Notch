@@ -395,6 +395,7 @@ run("houseLayoutGoldenFixtures") { try HouseLayoutChecks().goldenFixtures() }
 run("houseLayoutRoomSeeds") { try HouseLayoutChecks().roomSeeds() }
 run("houseRouteGoldenFixtures") { try HouseRouteChecks().goldenFixtures() }
 run("houseBehaviourGoldenFixtures") { try HouseBehaviourChecks().goldenFixtures() }
+run("houseLifeGoldenFixtures") { try HouseLifeChecks().goldenFixtures() }
 run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
