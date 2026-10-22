@@ -21,15 +21,15 @@ final class HousePixels {
     func color(_ c: [Int], _ alpha: Double = 1) {
         ctx.setFillColor(CGColor(colorSpace: Self.space, components: [CGFloat(c[0]) / 255, CGFloat(c[1]) / 255, CGFloat(c[2]) / 255, CGFloat(alpha)])!)
     }
+    /// What has been drawn so far (for cropping a mostly empty image); `mark` adds an area drawn some other way.
+    private(set) var dirty: CGRect?
+    func mark(_ r: CGRect) { dirty = dirty.map { $0.union(r) } ?? r }
     func fill(_ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, alpha: Double = 1) {
         guard w > 0, h > 0 else { return }
+        mark(CGRect(x: x, y: y, width: w, height: h))
         color(c, alpha); ctx.fill(CGRect(x: x, y: y, width: w, height: h))
     }
-    func texture() -> SKTexture {
-        let t = SKTexture(cgImage: ctx.makeImage()!)
-        t.filteringMode = .nearest
-        return t
-    }
+    func image() -> CGImage { ctx.makeImage()! }
 
     /// The page's spans()/poly(): a polygon on integer scanlines (rounded vertices, rounded edge crossings at the row's middle).
     func poly(_ pts: [[Double]], _ c: [Int], dx: Int, dy: Int) {
@@ -54,7 +54,41 @@ final class HousePixels {
     }
 }
 
-extension HouseScene2 {
+
+/// Everything the page paints live on a canvas and the renderer paints on the CPU (signs, clock faces, window panes, the sky and the
+/// city): pure functions of these inputs, so a job can run on a background queue while the scene keeps drawing.
+/// One painter is used by one job at a time.
+final class HousePainter {
+    struct Star { var x, y, b: Double; var big: Bool; var sp, ph: Double; var c: [Int] }
+    let parts: HouseParts
+    var layout: HouseLayout
+    var env: HouseSkyEnv?
+    var light: HouseLightState
+    var hour = 12.0, clockHM = (12, 0), colon = true, clockMillis = 100_000.0
+    var stars: [Star] = [], starKey = ""
+    var cityPlan: HouseCityPlan?, cityPlanKey = "", cityLightKey = ""
+    var cityImages: [CGImage] = [], cityBoards: [Int: (Int, Int, Int)] = [:]
+    var canvasW: Int { Int(layout.view.width) }
+    var canvasH: Int { Int(layout.view.height) }
+
+    init(parts: HouseParts, layout: HouseLayout) {
+        self.parts = parts; self.layout = layout
+        light = HouseLight.state(parts, hour: 12)
+    }
+
+    /// The inputs of a frame; set before painting.
+    struct Inputs {
+        var light: HouseLightState, hour: Double, clockHM: (Int, Int), colon: Bool, clockMillis: Double
+        var layout: HouseLayout, env: HouseSkyEnv?
+    }
+    func set(_ i: Inputs) {
+        light = i.light; hour = i.hour; clockHM = i.clockHM; colon = i.colon; clockMillis = i.clockMillis
+        if i.layout.view.width != layout.view.width || i.layout.view.height != layout.view.height { cityPlanKey = "" }
+        layout = i.layout; env = i.env
+    }
+}
+
+extension HousePainter {
     // MARK: sign
 
     static func fitText(_ s: String) -> String {
@@ -69,7 +103,7 @@ extension HouseScene2 {
     }
 
     /// The page's signImage + drawSign for a room at an hour's light: the image and where its top-left lies on the canvas.
-    func signImage(room r: HouseLayout.Room, name: String, vi: Int) -> (SKTexture, CGPoint, CGSize) {
+    func signImage(room r: HouseLayout.Room, name: String, vi: Int) -> (CGImage, CGPoint, CGSize) {
         let S = 2, b = parts.sign.variants[vi], plaque = r.floor > 0, board = plaque ? b.plaque : b.sign, k = parts.sign.k
         let text = Self.fitText(name)
         let c = { (p: HouseParts.Pair) in HouseLight.mix(p, self.light.amb, fa: self.parts.light.fA) }
@@ -96,7 +130,7 @@ extension HouseScene2 {
             let px = r.ox + (r.NX * 0.78 - r.NY) * 8 * Double(S), py = r.oy + (r.NX * 0.78 + r.NY) * 4 * Double(S) + parts.SLAB / 2 * Double(S)
             let p = HousePixels(iw, ih)
             boardPixels(p, 0, 0)
-            return (p.texture(), CGPoint(x: Double(HouseLight.round(px - Double(iw) / 2)), y: Double(HouseLight.round(py - Double(ih) / 2))), CGSize(width: iw, height: ih))
+            return (p.image(), CGPoint(x: Double(HouseLight.round(px - Double(iw) / 2)), y: Double(HouseLight.round(py - Double(ih) / 2))), CGSize(width: iw, height: ih))
         }
         let px = r.ox + (r.NX + 0.55 - (r.NY + 0.55)) * 8 * Double(S), py = r.oy + (r.NX + 0.55 + r.NY + 0.55) * 4 * Double(S) + parts.SLAB * Double(S)
         let X = HouseLight.round(px), Y = HouseLight.round(py), post = parts.sign.post
@@ -107,12 +141,12 @@ extension HouseScene2 {
         p.fill(c(b.postWood), -S - minX, -post - minY, 2 * S, post)
         p.fill([0, 0, 0], -3 * S - minX, -minY, 6 * S, 1, alpha: 0.18)
         boardPixels(p, bx - minX, by - minY)
-        return (p.texture(), CGPoint(x: X + minX, y: Y + minY), CGSize(width: maxX - minX, height: maxY - minY))
+        return (p.image(), CGPoint(x: X + minX, y: Y + minY), CGSize(width: maxX - minX, height: maxY - minY))
     }
 
     // MARK: clock
 
-    func clockImage(room r: HouseLayout.Room, clock c: HouseParts.Clock, vi: Int) -> (SKTexture, CGPoint, CGSize) {
+    func clockImage(room r: HouseLayout.Room, clock c: HouseParts.Clock, vi: Int) -> (CGImage, CGPoint, CGSize) {
         let S = 2, cc = c.dark == true ? parts.clockColors[vi].dark : parts.clockColors[vi].light
         let m = { (p: HouseParts.Pair) in HouseLight.mix(p, self.light.amb, fa: self.parts.light.fA) }
         let text = String(format: "%02d", clockHM.0) + (colon ? ":" : " ") + String(format: "%02d", clockHM.1)
@@ -136,13 +170,13 @@ extension HouseScene2 {
                 p.fill(fg, HouseLight.round(q[0]) - x0, HouseLight.round(q[1]) - y0, S, S) } }
             col += ch == ":" || ch == " " ? 3 : 4
         }
-        return (p.texture(), CGPoint(x: x0, y: y0), CGSize(width: p.w, height: p.h))
+        return (p.image(), CGPoint(x: x0, y: y0), CGSize(width: p.w, height: p.h))
     }
 
     // MARK: pane
 
     /// The page's pane(): the sky outside (vertical gradient SKY[0] -> SKY[1] over the polygon's bounds), stars at night, a reflection.
-    func paneImage(room r: HouseLayout.Room, layer l: HouseParts.Layer) -> (SKTexture, CGPoint, CGSize)? {
+    func paneImage(room r: HouseLayout.Room, layer l: HouseParts.Layer) -> (CGImage, CGPoint, CGSize)? {
         guard let pts0 = l.pts, !pts0.isEmpty else { return nil }
         let S = 2, pts = pts0.map { [$0[0] + r.ox, $0[1] + r.oy] }
         let top = pts.map { $0[1] }.min()!, bot = pts.map { $0[1] }.max()!, lft = pts.map { $0[0] }.min()!, rgt = pts.map { $0[0] }.max()!
@@ -170,7 +204,7 @@ extension HouseScene2 {
         p.color([255, 255, 255], 0.18)
         ctx.fill(CGRect(x: lft + (rgt - lft) * 0.15 - Double(x0), y: top - Double(y0), width: 3, height: bot - top))
         ctx.restoreGState()
-        return (p.texture(), CGPoint(x: x0, y: y0), CGSize(width: w, height: h))
+        return (p.image(), CGPoint(x: x0, y: y0), CGSize(width: w, height: h))
     }
 
     // MARK: sky

@@ -1,4 +1,5 @@
 import AppKit
+import NotchCore
 import SpriteKit
 
 /// What the page knows about its window that the sky depends on: the city is planned from the canvas, the window's
@@ -153,15 +154,20 @@ final class HouseCityPlan {
     }
 }
 
-extension HouseScene2 {
+extension HousePainter {
     static let outC = "#2a2438"
 
     var skyEnv: HouseSkyEnv { env ?? HouseSkyEnv(innerHeight: floor(Double(canvasH) * layout.view.PXD / layout.view.DPR), insetBottom: 0) }
 
-    /// bdGround(H - insetBottom())
-    var ground: Int {
-        let ib = HouseLight.round(skyEnv.insetBottom * layout.view.DPR / layout.view.PXD)
-        return (Int(floor(Double(canvasH - ib) / 2)) - 14) * 2
+    /// bdGround(H - insetBottom()), from the same numbers the painter has.
+    var ground: Int { Self.groundOf(layout: layout, env: skyEnv) }
+    static func groundOf(layout: HouseLayout, env: HouseSkyEnv?) -> Int { max(0, groundRaw(layout: layout, env: env)) }
+    /// Negative on a canvas too short for the Dock's inset: the page would draw nothing sensible there, so the app uses the page.
+    static func groundRaw(layout: HouseLayout, env: HouseSkyEnv?) -> Int {
+        let H = Int(layout.view.height)
+        let e = env ?? HouseSkyEnv(innerHeight: floor(Double(H) * layout.view.PXD / layout.view.DPR), insetBottom: 0)
+        let ib = HouseLight.round(e.insetBottom * layout.view.DPR / layout.view.PXD)
+        return (Int(floor(Double(H - ib) / 2)) - 14) * 2
     }
 
     // MARK: colours (lit / emi / haze of the page)
@@ -372,11 +378,34 @@ extension HouseScene2 {
         return p
     }
 
-    // MARK: the sky as one image: gradient, sunrise glow, stars, moon, sun (drawSky + drawCelestial)
+    // MARK: the sky, as layers (drawSky + drawCelestial + drawClouds): a 1 px column of the gradient, one image of the glow, the bands,
+    // the stars, the moon and the sun cropped to what they cover, the city's layers and the clouds.
 
     static func sunX(_ k: Double, _ W: Double) -> Double { W * (0.08 + 0.84 * k) }
 
-    func skyBase() -> SKTexture {
+    struct SkyPiece {
+        var key: String
+        var image: CGImage?
+        var tex: SKTexture?
+        var color: [Int]?
+        var x: Int, y: Int, w: Int, h: Int
+        var z: CGFloat
+        var alpha = 1.0
+        var ant: Double?
+    }
+    struct SkyBundle {
+        var pieces: [SkyPiece] = []
+        var clouds: [(i: Int, tex: SKTexture, w: Int)] = []
+        var reset = false
+    }
+
+    private func texture(_ img: CGImage) -> SKTexture {
+        let t = SKTexture(cgImage: img)
+        t.filteringMode = .nearest
+        return t
+    }
+
+    func celestialImage() -> (CGImage, Int, Int)? {
         let S = 2, W = canvasW, H = canvasH, gnd = Double(ground)
         let p = HousePixels(W, H), ctx = p.ctx
         func col(_ c: [Int], _ a: Double = 1) -> CGColor { CGColor(colorSpace: HousePixels.space, components: [CGFloat(c[0]) / 255, CGFloat(c[1]) / 255, CGFloat(c[2]) / 255, CGFloat(a)])! }
@@ -385,11 +414,8 @@ extension HouseScene2 {
             ctx.saveGState(); ctx.clip(to: clip); ctx.setShouldAntialias(true)
             ctx.drawRadialGradient(g, startCenter: CGPoint(x: x, y: y), startRadius: 0, endCenter: CGPoint(x: x, y: y), endRadius: r, options: [])
             ctx.restoreGState()
+            p.mark(clip)
         }
-        let grad = CGGradient(colorsSpace: HousePixels.space, colors: [col(light.skyTop), col(light.skyBottom)] as CFArray, locations: [0, 1])!
-        ctx.setShouldAntialias(true)
-        ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: 0, y: H), options: [])
-        ctx.setShouldAntialias(false)
         let w = Self.sunGlow(hour)
         if w >= 0.02 {
             let evening = hour > 12, sx = Self.sunX(evening ? 1 : 0, Double(W)), unit = max(2, HouseLight.round(Double(H) / 300)) * S
@@ -402,7 +428,6 @@ extension HouseScene2 {
                 p.fill(c, 0, y, W, h, alpha: a); p.fill(c, 0, y - S, W, S, alpha: a * 0.5)
             }
         }
-        // stars (static twinkle per minute)
         let dark = light.dark
         if dark >= 0.45 {
             let key = "\(W)x\(Int(gnd))"
@@ -429,7 +454,6 @@ extension HouseScene2 {
             }
         }
         func arc(_ k: Double) -> Double { gnd + 5 * Double(S) - sin(Double.pi * k) * (gnd - Double(H) * 0.1) }
-        // moon in its phase
         let km = (hour >= 12 ? hour - 19.5 : hour + 4.5) / 10.5
         if km > -0.08 && km < 1.08 {
             let ph = moonPhase(), lum = 1 - abs(ph - 0.5) * 2
@@ -450,7 +474,6 @@ extension HouseScene2 {
                 else { p.fill([70, 80, 120], mx - 6 * S + i * S, my - 6 * S + j * S, S, S, alpha: 0.5) }
             } }
         }
-        // sun on its arc
         let k = (hour - 6) / 13.5
         if k > -0.08 && k < 1.08 {
             let low = 1 - min(1, max(0, sin(Double.pi * k)) * 3.2), x = HouseLight.round(Self.sunX(k, Double(W))), y = HouseLight.round(arc(k))
@@ -461,7 +484,10 @@ extension HouseScene2 {
             p.fill(core, x - 3 * S, y - 6 * S, 6 * S, 12 * S); p.fill(core, x - 6 * S, y - 3 * S, 12 * S, 6 * S)
             p.fill(mixHex(hexOf(core), "#ffffff", 0.5), x - 3 * S, y - 4 * S, 3 * S, 2 * S)
         }
-        return p.texture()
+        guard let b = p.dirty else { return nil }
+        let r = b.intersection(CGRect(x: 0, y: 0, width: W, height: H)).integral
+        guard !r.isEmpty, let img = p.ctx.makeImage()?.cropping(to: r) else { return nil }
+        return (img, Int(r.minX), Int(r.minY))
     }
 
     /// 0 new, .5 full: the page's moonPhase() for the date the sky shows.
@@ -474,9 +500,7 @@ extension HouseScene2 {
         return (f + 1).truncatingRemainder(dividingBy: 1)
     }
 
-    // MARK: clouds (drawClouds)
-
-    func cloudImage(i: Int) -> (SKTexture, Int) {
+    func cloudImage(i: Int) -> (CGImage, Int) {
         let S = 2, cw = (26 + (i * 17) % 30) * S
         let a = 0.82 - light.dark * 0.4, w = Self.sunGlow(hour)
         let body = lit("#f6f8fc"), shade = lit("#d4dcec"), warm = mixHex("#ffb27a", "#ff7a8a", hour > 12 ? 0.4 : 0.1)
@@ -487,112 +511,98 @@ extension HouseScene2 {
             p.fill(warm, S, oy + 3 * S, cw - 2 * S, 2 * S, alpha: a * w); p.fill(warm, 6 * S, oy - S, cw - 14 * S, S, alpha: a * w)
             p.fill([255, 224, 176], 9 * S, oy - 5 * S, Int(Double(cw) * 0.35), S, alpha: a * w * 0.5)
         }
-        return (p.texture(), cw)
+        return (p.image(), cw)
     }
 
-    func updateClouds() {
-        let S = 2.0, W = Double(canvasW), H = Double(canvasH), gnd = Double(ground)
-        for (i, n) in clouds {
-            let x = HouseLight.round(((Double(i) * 131 * S + clockMillis * (0.004 + Double(i % 3) * 0.002) * S).truncatingRemainder(dividingBy: W + 80 * S)) - 60 * S)
-            let y = HouseLight.round(8 * S + (Double(i) * 29 * S).truncatingRemainder(dividingBy: max(20, min(H * 0.3, gnd * 0.45))))
-            n.position = CGPoint(x: Double(x), y: -Double(y - 10))
-        }
-        for (n, ph) in ants { n.isHidden = !((clockMillis / 1000 + ph).truncatingRemainder(dividingBy: 2.6) < 0.9) }
-    }
-
-    // MARK: assembling the sky
-
-    func refreshSky() {
+    /// The whole sky for the current inputs; heavy, so it can run off the main thread (the painter is only ever used by one job at a time).
+    func paintSky() -> SkyBundle {
         let S = 2, W = canvasW, H = canvasH
-        skyGroup.removeAllChildren()
-        clouds = []; ants = []
-        let g = SKSpriteNode(texture: skyBase(), size: CGSize(width: W, height: H))
-        g.anchorPoint = CGPoint(x: 0, y: 1); g.position = .zero; g.zPosition = -50_000
-        skyGroup.addChild(g)
+        var out = SkyBundle()
+        func add(_ key: String, _ img: CGImage?, _ x: Int, _ y: Int, _ w: Int, _ h: Int, _ z: CGFloat, alpha: Double = 1) {
+            var pc = SkyPiece(key: key, image: img, tex: nil, color: nil, x: x, y: y, w: w, h: h, z: z, alpha: alpha)
+            if let img { pc.tex = texture(img) }
+            out.pieces.append(pc)
+        }
+        func swatch(_ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, _ z: CGFloat, alpha: Double, ant: Double? = nil) {
+            out.pieces.append(SkyPiece(key: "", image: nil, tex: nil, color: c, x: x, y: y, w: w, h: h, z: z, alpha: alpha, ant: ant))
+        }
+        // the gradient: one column, stretched
+        let gcol = HousePixels(1, H)
+        do {
+            func col(_ c: [Int]) -> CGColor { CGColor(colorSpace: HousePixels.space, components: [CGFloat(c[0]) / 255, CGFloat(c[1]) / 255, CGFloat(c[2]) / 255, 1])! }
+            let g = CGGradient(colorsSpace: HousePixels.space, colors: [col(light.skyTop), col(light.skyBottom)] as CFArray, locations: [0, 1])!
+            gcol.ctx.setShouldAntialias(true)
+            gcol.ctx.drawLinearGradient(g, start: .zero, end: CGPoint(x: 0, y: H), options: [])
+        }
+        add("grad", gcol.image(), 0, 0, W, H, -50_000)
+        if let (img, x, y) = celestialImage() { add("cel", img, x, y, img.width, img.height, -49_900) }
 
         let gy = ground
         let key = "\(W)x\(H)|\(Int(skyEnv.innerHeight))"
         if cityPlan == nil || cityPlanKey != key {
-            cityPlanKey = key; cityLightKey = ""
+            cityPlanKey = key; cityLightKey = ""; out.reset = true
             cityPlan = HouseCityPlan(width: W, ground: gy, innerHeight: skyEnv.innerHeight, base: layout.view.base, dpr: layout.view.DPR, fontWidth: { self.fontWidth($0) })
         }
         let C = cityPlan!
         let lightKey = [light.amb.x, light.amb.y, light.amb.z].map { "\(HouseLight.round($0 * 60))" }.joined(separator: ",") + "|\(HouseLight.round(light.dark * 20))"
+        var fresh = false
         if lightKey != cityLightKey {
-            cityLightKey = lightKey
+            cityLightKey = lightKey; fresh = true; out.reset = true
             var boardAt: [Int: (Int, Int, Int)] = [:]
-            cityTextures = [
-                paintFar(C, C.farTop).texture(),
-                paintMid(C, C.midTop, boardAt: &boardAt).texture(),
-                paintRail(C, C.deck + 6).texture(),
-                paintNear(C, C.nearTop).texture(),
-                paintRoad(C, 16).texture(),
-            ]
+            cityImages = [paintFar(C, C.farTop).image(), paintMid(C, C.midTop, boardAt: &boardAt).image(), paintRail(C, C.deck + 6).image(),
+                          paintNear(C, C.nearTop).image(), paintRoad(C, 16).image()]
             cityBoards = boardAt
         }
-        let X = -16
-        func layer(_ tex: SKTexture, _ x: Int, _ y: Int, _ z: CGFloat, alpha: CGFloat = 1) {
-            let n = SKSpriteNode(texture: tex, size: tex.size())
-            n.anchorPoint = CGPoint(x: 0, y: 1); n.position = CGPoint(x: x, y: -y); n.zPosition = z; n.alpha = alpha
-            skyGroup.addChild(n)
-        }
-        let night = max(0, min(1, (light.dark - 0.08) * 3)), hm = Int(floor(hour * 60))
-        layer(cityTextures[0], X, gy - C.farTop * S, -49_500)
+        // city layers keep their texture between minutes: only a new light key sends images
+        func layer(_ n: Int, _ x: Int, _ y: Int, _ z: CGFloat) { add("city\(n)", fresh ? cityImages[n] : nil, x, y, cityImages[n].width, cityImages[n].height, z) }
+        let X = -16, night = max(0, min(1, (light.dark - 0.08) * 3)), hm = Int(floor(hour * 60))
+        layer(0, X, gy - C.farTop * S, -49_500)
         let mx = X, my = gy - C.midTop * S
-        layer(cityTextures[1], mx, my, -49_490)
+        layer(1, mx, my, -49_490)
         if night > 0 {
             let wins = C.mid.flatMap { $0.wins }.map { ($0, 0) }
-            layer(paintWins(wins, top: C.midTop, C: C, hm: hm).texture(), mx, my, -49_480, alpha: CGFloat(night))
+            let wi = paintWins(wins, top: C.midTop, C: C, hm: hm).image()
+            add("midwin", wi, mx, my, wi.width, wi.height, -49_480, alpha: night)
             for (bi, (bx, by, bw)) in cityBoards.sorted(by: { $0.key < $1.key }) where bi < C.mid.count {
-                func swatch(_ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, _ a: Double) {
-                    let n = SKSpriteNode(color: NSColor(srgbRed: CGFloat(c[0]) / 255, green: CGFloat(c[1]) / 255, blue: CGFloat(c[2]) / 255, alpha: 1), size: CGSize(width: w, height: h))
-                    n.anchorPoint = CGPoint(x: 0, y: 1); n.position = CGPoint(x: x, y: -y); n.zPosition = -49_475; n.alpha = CGFloat(a); skyGroup.addChild(n)
-                }
-                swatch([255, 240, 200], mx + bx * S, my + by * S, bw * S, 9 * S, night * 0.35)
-                swatch([255, 244, 208], mx + (bx + 2) * S, my + (by - 2) * S, S, S, night)
-                swatch([255, 244, 208], mx + (bx + bw - 3) * S, my + (by - 2) * S, S, S, night)
+                swatch([255, 240, 200], mx + bx * S, my + by * S, bw * S, 9 * S, -49_475, alpha: night * 0.35)
+                swatch([255, 244, 208], mx + (bx + 2) * S, my + (by - 2) * S, S, S, -49_475, alpha: night)
+                swatch([255, 244, 208], mx + (bx + bw - 3) * S, my + (by - 2) * S, S, S, -49_475, alpha: night)
             }
             for n in C.neon {
                 let img = neonImage(n)
-                layer(img, mx + (n.x - 3) * S, my + (C.midTop - n.y - 3) * S, -49_470, alpha: CGFloat(night))
+                add("neon\(C.neon.firstIndex(where: { $0.x == n.x && $0.y == n.y }) ?? 0)", img, mx + (n.x - 3) * S, my + (C.midTop - n.y - 3) * S, img.width, img.height, -49_470, alpha: night)
             }
             for an in C.ants {
                 let x = mx + an.x * S, y = my + (C.midTop - an.y - 1) * S
-                let halo = SKSpriteNode(color: NSColor(srgbRed: 1, green: 60 / 255, blue: 50 / 255, alpha: 1), size: CGSize(width: 3 * S, height: 3 * S))
-                halo.anchorPoint = CGPoint(x: 0, y: 1); halo.position = CGPoint(x: x - S, y: -(y - S)); halo.zPosition = -49_460; halo.alpha = CGFloat(0.25 * night)
-                let dot = SKSpriteNode(color: NSColor(srgbRed: 1, green: 0x40 / 255, blue: 0x30 / 255, alpha: 1), size: CGSize(width: S, height: S))
-                dot.anchorPoint = CGPoint(x: 0, y: 1); dot.position = CGPoint(x: x, y: -y); dot.zPosition = -49_459
-                skyGroup.addChild(halo); skyGroup.addChild(dot)
-                ants.append((halo, an.ph)); ants.append((dot, an.ph))
+                swatch([255, 60, 50], x - S, y - S, 3 * S, 3 * S, -49_460, alpha: 0.25 * night, ant: an.ph)
+                swatch([255, 64, 48], x, y, S, S, -49_459, alpha: 1, ant: an.ph)
             }
         }
-        layer(cityTextures[2], X, gy - (C.deck + 6) * S, -49_450)
+        layer(2, X, gy - (C.deck + 6) * S, -49_450)
         let ny = gy - C.nearTop * S
-        layer(cityTextures[3], X, ny, -49_440)
+        layer(3, X, ny, -49_440)
         if night > 0 {
             let wins = C.near.flatMap { $0.wins }.map { ($0, 0) }
-            layer(paintWins(wins, top: C.nearTop, C: C, hm: hm).texture(), X, ny, -49_430, alpha: CGFloat(night))
+            let wi = paintWins(wins, top: C.nearTop, C: C, hm: hm).image()
+            add("nearwin", wi, X, ny, wi.width, wi.height, -49_430, alpha: night)
         }
         let sy = gy - 16 * S
-        layer(cityTextures[4], X, sy, -49_420)
+        layer(4, X, sy, -49_420)
         if light.dark > 0.3 {
             let a = min(1, (light.dark - 0.3) * 3), img = lampGlow()
             for x in C.lamps {
-                layer(img, X + (x + 2) * S - 18 * S, sy + 3 * S - 4 * S, -49_410, alpha: CGFloat(a))
-                let n = SKSpriteNode(color: .init(srgbRed: 1, green: 0xf4 / 255, blue: 0xc8 / 255, alpha: 1), size: CGSize(width: 2 * S, height: S))
-                n.anchorPoint = CGPoint(x: 0, y: 1); n.position = CGPoint(x: X + (x + 1) * S, y: -(sy + 3 * S)); n.zPosition = -49_405; skyGroup.addChild(n)
+                add("lampglow", x == C.lamps.first ? img : nil, X + (x + 2) * S - 18 * S, sy + 3 * S - 4 * S, img.width, img.height, -49_410, alpha: a)
+                swatch([255, 244, 200], X + (x + 1) * S, sy + 3 * S, 2 * S, S, -49_405, alpha: 1)
             }
         }
         for i in 0..<3 {
-            let (tex, cw) = cloudImage(i: i)
-            let n = SKSpriteNode(texture: tex, size: CGSize(width: cw, height: 10 * S))
-            n.anchorPoint = CGPoint(x: 0, y: 1); n.zPosition = -47_000 + CGFloat(i)
-            skyGroup.addChild(n); clouds.append((i, n))
+            let (img, cw) = cloudImage(i: i)
+            out.clouds.append((i, texture(img), cw))
         }
-        updateClouds()
+        return out
     }
 
-    func neonImage(_ n: HouseCityPlan.Neon) -> SKTexture {
+    func neonImage(_ n: HouseCityPlan.Neon) -> CGImage {
         let S = 2, p = HousePixels((n.w + 6) * S, (n.h + 6) * S), ctx = p.ctx
         func glyphs(_ col: [Int]) { text(p, n.txt, 5 * S, 4 * S, col, S) }
         ctx.saveGState()
@@ -600,15 +610,15 @@ extension HouseScene2 {
         glyphs(n.col)
         ctx.restoreGState()
         glyphs(mixHex(hexOf(n.col), "#ffffff", 0.45))
-        return p.texture()
+        return p.image()
     }
 
-    func lampGlow() -> SKTexture {
+    func lampGlow() -> CGImage {
         let S = 2, p = HousePixels(36 * S, 30 * S), ctx = p.ctx
         let col = { (a: Double) in CGColor(colorSpace: HousePixels.space, components: [255 / 255, 220 / 255, 140 / 255, CGFloat(a)])! }
         let g = CGGradient(colorsSpace: HousePixels.space, colors: [col(0.45), col(0)] as CFArray, locations: [0, 1])!
         ctx.setShouldAntialias(true)
         ctx.drawRadialGradient(g, startCenter: CGPoint(x: 18 * S, y: 4 * S), startRadius: 0, endCenter: CGPoint(x: 18 * S, y: 4 * S), endRadius: CGFloat(18 * S), options: [])
-        return p.texture()
+        return p.image()
     }
 }

@@ -67,7 +67,7 @@ struct HouseParts: Decodable {
     struct Poses: Decodable { let names: [String]; let variants: [[String: Pose]] }
     struct Amb: Decodable { let hour: Double; let amb: [Double]; let sky: [String]; let dark: Double }
     struct PageInfo: Decodable { let file, fileE: String; let w, h: Int }
-    struct Edges: Decodable { let hi: Double }
+    struct Edges: Decodable { let hi: Double; let d: Double?; let exact: Bool? }
     struct LightInfo: Decodable { let variants: [Edges]; let fA: Double }
 
     let S: Int
@@ -88,11 +88,33 @@ struct HouseParts: Decodable {
 
     var variantCount: Int { light.variants.count }
 
-    /// The variant for a DARK: the first whose upper edge is not below it.
+    /// The variant for a DARK: the one marked exact at DARK == its value (the page mixes > .3 and >= .3), else the first
+    /// non-exact one whose upper edge is not below it.
     func variant(dark: Double) -> Int {
-        var i = 0
-        while i < light.variants.count - 1 && dark > light.variants[i].hi { i += 1 }
-        return i
+        let v = light.variants
+        if let e = v.firstIndex(where: { $0.exact == true && abs(dark - ($0.d ?? $0.hi)) < 1e-9 }) { return e }
+        var last = 0
+        for (i, x) in v.enumerated() where x.exact != true {
+            last = i
+            if dark <= x.hi { return i }
+        }
+        return last
+    }
+
+    /// Why the atlas cannot be drawn, nil when every per-variant list is as long as the scene indexes it.
+    func problem() -> String? {
+        let n = light.variants.count
+        if n == 0 { return "no light variants" }
+        if buckets.isEmpty || ambk.count < 2 { return "no hour table" }
+        if sky.ground < 0 || sky.W <= 0 || sky.H <= 0 { return "bad sky size/ground \(sky.ground)" }
+        if sky.buckets.isEmpty { return "no sky buckets" }
+        if clockColors.count < n || sign.variants.count < n || poses.variants.count < n { return "variant arrays shorter than \(n)" }
+        for (k, r) in rooms where r.variants.count < n { return "room \(k) has \(r.variants.count) of \(n) variants" }
+        for l in village.links where l.variants.count < n { return "link \(l.pa)-\(l.pb) has \(l.variants.count) of \(n) variants" }
+        for (k, l) in village.lift where l.variants.count < n { return "lift \(k) has \(l.variants.count) of \(n) variants" }
+        for a in ambk where a.amb.count < 3 || a.sky.count < 2 { return "bad hour row \(a.hour)" }
+        for (i, s) in sprites.enumerated() where s.count < 6 || s[0] < 0 || s[0] >= pages.count || s[3] <= 0 || s[4] <= 0 { return "bad sprite \(i)" }
+        return nil
     }
 }
 
@@ -131,15 +153,30 @@ final class HousePages {
         }
         sparsePages = sparse
         for p in parts.pages {
-            guard FileManager.default.fileExists(atPath: dir.appendingPathComponent(p.file).path),
-                  FileManager.default.fileExists(atPath: dir.appendingPathComponent(p.fileE).path) else { return nil }
+            // the header of every page must be a PNG of the size parts.json says (the pixels are decoded on first use)
+            for name in [p.file, p.fileE] {
+                guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(name) as CFURL, nil),
+                      CGImageSourceGetCount(src) > 0,
+                      let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                      props[kCGImagePropertyPixelWidth] as? Int == p.w, props[kCGImagePropertyPixelHeight] as? Int == p.h else { return nil }
+            }
         }
+    }
+
+    /// Called once, on the main thread, when a page cannot be decoded: the scene is blank where it is used, so the owner falls back.
+    var onFailure: ((String) -> Void)?
+    private var failed = false
+    private func fail(_ name: String) {
+        guard !failed else { return }
+        failed = true
+        NSLog("agents-notch: house page \(name) cannot be decoded")
+        onFailure?(name)
     }
 
     private func load(_ name: String) -> SKTexture? {
         autoreleasepool {
             guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(name) as CFURL, nil),
-                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail(name); return nil }
             let t = SKTexture(cgImage: img)
             t.filteringMode = .nearest
             return t
@@ -170,7 +207,7 @@ final class HousePages {
         guard cutPages.insert(i).inserted else { return }
         autoreleasepool {
             guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(parts.pages[i].file) as CFURL, nil),
-                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return }
+                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail(parts.pages[i].file); return }
             for (id, s) in parts.sprites.enumerated() where s[0] == i && !unusedSky.contains(id) {
                 guard let c = img.cropping(to: CGRect(x: s[1], y: s[2], width: s[3], height: s[4])) else { continue }
                 let t = SKTexture(cgImage: c)

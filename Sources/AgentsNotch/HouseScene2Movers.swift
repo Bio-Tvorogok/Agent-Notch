@@ -163,9 +163,11 @@ extension HouseScene2 {
             let c = Calendar.current, d = Date(), h = c.component(.hour, from: d), m = c.component(.minute, from: d)
             if h * 60 + m != lastMinute {
                 lastMinute = h * 60 + m
-                setTime(hour: Double(h) + Double(m) / 60, day: (c.ordinality(of: .day, in: .year, for: d) ?? 1) - 1)
+                // the page's setTime takes the seconds too
+                setTime(hour: Double(h) + Double(m) / 60 + Double(c.component(.second, from: d)) / 3600, day: (c.ordinality(of: .day, in: .year, for: d) ?? 1) - 1)
             }
-            colon = Int(d.timeIntervalSince1970) % 2 == 0
+            let blink = Int(d.timeIntervalSince1970) % 2 == 0
+            if blink != colon { colon = blink; repaint(sync: false, clockOnly: true) } // the clock faces' colon blinks with the seconds, as the page's
         }
         if let sim { sync(sim: sim) }
         updateClouds()

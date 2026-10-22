@@ -1,7 +1,7 @@
 // Runs inside room/index.html (export.swift in "parts" mode) and records the page's OWN frames for the SpriteKit scene proof:
 // for every fixture [projects, hour] the whole frame, the sky-only frame (the page's drawBackground), and the numbers the
 // Swift side needs to build the same layout (canvas size, PXD, DPR, insets, every room's origin, the mist's day).
-// window.__REF_FIXTURES = [[n, hour], ...] is prepended by scripts/house-atlas/scene-proof.sh.
+// window.__REF_FIXTURES = [[n, hour, growth?], ...] is prepended by scripts/house-atlas/scene-proof.sh.
 // Run with HOUSE_REF_ONLY=1 (export.swift then expects exactly the files returned in the manifest).
 // Output (through webkit.messageHandlers.out, "check/" goes to the check dir): ref-n{n}-h{hour}.png / -sky.png / .json
 (() => {
@@ -24,12 +24,13 @@
     for (const r of rooms) { r.born = -1e9; r.drop = 0; r.cache = null; }
   }
   const out = [], files = [];
-  for (const [n, hour] of window.__REF_FIXTURES) {
+  for (const [n, hour, grow] of window.__REF_FIXTURES) {
+    if (grow) Q.set('grow', String(grow)); else Q.delete('grow'); // growth level of every project room (page: ?grow=N)
     fixture(NAMES.slice(0, n).map(x => [x, null]));
     const bgc = document.createElement('canvas'); bgc.width = cv.width; bgc.height = cv.height; const realBG = drawBackground;
     drawBackground = (t, d) => { realBG(t, d); bgc.getContext('2d').drawImage(cv, 0, 0); }; // the sky as the page's own frame drew it
     fixedHour = hour; try { frame(T); } finally { drawBackground = realBG; }
-    const d = now(), tag = `n${n}-h${hour}`;
+    const d = now(), tag = `n${n}-h${hour}${grow ? '-g' + grow : ''}`;
     const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
     const meta = { n, hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T,
       rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),

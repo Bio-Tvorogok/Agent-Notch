@@ -20,6 +20,7 @@ final class HouseScene2: SKScene {
     let parts: HouseParts, pages: HousePages, shaders: HouseShaders
     private(set) var layout: HouseLayout
     let unit: CGFloat
+    struct LiveItem { weak var node: SKSpriteNode?; let make: (HousePainter) -> (CGImage, CGPoint, CGSize)?; let clock: Bool }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
     let world = SKNode()
@@ -43,19 +44,24 @@ final class HouseScene2: SKScene {
     var roomInfo: [String: RoomInfo] = [:]
     var linkInfo: [String: LinkInfo] = [:]
     var glows: [(SKSpriteNode, HouseParts.Light)] = []
-    var refreshers: [() -> Void] = []
     var cagePieces: [CagePiece] = []
     var riderZ: [Int: [Int: CGFloat]] = [:] // cabin -> floor -> z between the cage's back and front
     var cabinState: [(z: Double, state: String)] = []
     var skyGroup = SKNode()
     var clouds: [(Int, SKSpriteNode)] = []
     var ants: [(SKSpriteNode, Double)] = []
-    struct Star { var x, y, b: Double; var big: Bool; var sp, ph: Double; var c: [Int] }
-    var stars: [Star] = [], starKey = ""
-    var cityPlan: HouseCityPlan?, cityPlanKey = "", cityLightKey = ""
-    var cityTextures: [SKTexture] = [], cityBoards: [Int: (Int, Int, Int)] = [:]
     /// The page's window: its CSS height and the Dock's bottom inset set where the city's ground lies.
     var env: HouseSkyEnv?
+    /// The CPU painting (signs, clock faces, panes, sky, city) runs on its own queue; its results are swapped in on the main thread.
+    let painter: HousePainter
+    let paintQueue = DispatchQueue(label: "agents-notch.house.paint", qos: .userInitiated)
+    var texCache: [String: SKTexture] = [:]
+    var liveItems: [LiveItem] = []
+    var lastLive: [Int: (SKTexture, CGPoint, CGSize)] = [:]
+    /// Called on the main thread when the atlas cannot be read any more (a page is missing or corrupt): the host falls back to the page.
+    var onFailure: (() -> Void)?
+    /// Main-thread cost of applying a finished paint, ms (for measurements).
+    var onApply: ((Double) -> Void)?
     var mistBands: [SKSpriteNode] = [], mistWisps: [(SKSpriteNode, SKSpriteNode, Int)] = []
     var builtVariant = -1, builtKey = ""
     var wf: HouseLayout.Frame { layout.worldFrame }
@@ -74,7 +80,7 @@ final class HouseScene2: SKScene {
     var followClock = false
     var lastMinute = -1
     /// The highest rate this view may run at (60 on power, 30 on battery); `fixedFps` turns off the adaptive rate.
-    var maxFps = 60 { didSet { view?.preferredFramesPerSecond = rate } }
+    var maxFps = 60 { didSet { rate = fixedFps ?? min(rate, maxFps); view?.preferredFramesPerSecond = rate } }
     var fixedFps: Int?
     var rate = 60
     var stillSince: TimeInterval?
@@ -86,9 +92,11 @@ final class HouseScene2: SKScene {
 
     init(parts: HouseParts, pages: HousePages, layout: HouseLayout, unit: CGFloat, size: CGSize) {
         self.parts = parts; self.pages = pages; self.layout = layout; self.unit = unit
+        painter = HousePainter(parts: parts, layout: layout)
         shaders = HouseShaders(pages: pages, fa: parts.light.fA)
         light = HouseLight.state(parts, hour: 12)
         super.init(size: size)
+        pages.onFailure = { [weak self] _ in self?.onFailure?() }
         scaleMode = .resizeFill
         backgroundColor = .black
         anchorPoint = .zero
@@ -106,7 +114,8 @@ final class HouseScene2: SKScene {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent("parts.json")) else { return nil }
         let parts: HouseParts
         do { parts = try JSONDecoder().decode(HouseParts.self, from: data) } catch { NSLog("parts.json: \(error)"); return nil }
-        guard let pages = HousePages(parts: parts, dir: dir) else { NSLog("parts pages missing in \(dir.path)"); return nil }
+        if let why = parts.problem() { NSLog("parts.json unusable: \(why)"); return nil }
+        guard let pages = HousePages(parts: parts, dir: dir) else { NSLog("parts pages missing or not PNGs of the listed size in \(dir.path)"); return nil }
         return HouseScene2(parts: parts, pages: pages, layout: layout, unit: unit, size: size)
     }
 
@@ -116,6 +125,15 @@ final class HouseScene2: SKScene {
 
     /// A new project list: the layout changes, the house is built again.
     func setLayout(_ l: HouseLayout) { layout = l; builtKey = ""; rebuild() }
+
+    /// New growth levels (room key -> level); the rooms that changed are built again.
+    func setGrowth(_ g: [String: Int]) { guard g != growth else { return }; growth = g; rebuild() }
+
+    /// The name of a room whose parts (theme, tower or island, growth level) parts.json does not have, nil when everything can be drawn.
+    func missingParts(layout l: HouseLayout? = nil) -> String? {
+        for r in (l ?? layout).rooms where parts.rooms[partsKey(r)] == nil { return partsKey(r) }
+        return nil
+    }
 
     /// The hour (and the day, for the morning mist). A new variant (DARK crossed a threshold) rebuilds the tree; otherwise
     /// only uniforms, glow alphas and the live parts change.
@@ -147,19 +165,15 @@ final class HouseScene2: SKScene {
         return n
     }
 
-    /// An image painted on the CPU; `refresh` repaints it when the minute (the light, the clock) changes.
-    func live(z: CGFloat, make: @escaping () -> (SKTexture, CGPoint, CGSize)?) {
+    /// An image painted on the CPU by the painter; it is empty until the first paint arrives (or shows the last one of the same slot).
+    func live(z: CGFloat, clock: Bool = false, make: @escaping (HousePainter) -> (CGImage, CGPoint, CGSize)?) {
         let n = SKSpriteNode()
         n.anchorPoint = CGPoint(x: 0, y: 1)
         n.zPosition = z
+        n.isHidden = true
         root.addChild(n)
-        let paint = { [unowned self, weak n] in
-            guard let n else { return }
-            _ = self
-            if let (t, p, s) = make() { n.texture = t; n.size = s; n.position = CGPoint(x: p.x, y: -p.y); n.isHidden = false } else { n.isHidden = true }
-        }
-        paint()
-        refreshers.append(paint)
+        if let (t, p, sz) = lastLive[liveItems.count] { n.texture = t; n.size = sz; n.position = CGPoint(x: p.x, y: -p.y); n.isHidden = false }
+        liveItems.append(LiveItem(node: n, make: make, clock: clock))
     }
 
     func partsKey(_ r: HouseLayout.Room) -> String {
@@ -174,14 +188,16 @@ final class HouseScene2: SKScene {
     func rebuild() {
         root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
-        nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; refreshers = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
+        nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
         let vi = light.variant
         builtVariant = vi; builtKey = layoutKey
+        let oldSky = skyGroup
         skyGroup = SKNode(); root.addChild(skyGroup)
+        for c in oldSky.children { c.removeFromParent(); skyGroup.addChild(c) } // until the new paint arrives
         buildSkyNodes()
-        let rooms = Dictionary(uniqueKeysWithValues: layout.rooms.map { ($0.key, $0) })
-        let links = Dictionary(uniqueKeysWithValues: layout.links.map { ($0.id, $0) })
+        let rooms = Dictionary(layout.rooms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        let links = Dictionary(layout.links.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for item in layout.drawOrder {
             if let r = rooms[item.key] { buildRoom(r, vi: vi) } else if let l = links[item.key] { buildLink(l, vi: vi) }
         }
@@ -196,6 +212,7 @@ final class HouseScene2: SKScene {
         refreshLight()
         if let sim { sync(sim: sim) }
     }
+    var painted = false
 
     private func addLights(_ list: [HouseParts.Light], ox: Double, oy: Double) {
         for l in list {
@@ -220,12 +237,12 @@ final class HouseScene2: SKScene {
             case "lift": buildLiftSlice(room: r.key, vi: vi, depth: l.depth, info: &info)
             case "sign":
                 let name = r.theme == "bath" || r.theme == "kitchen" || r.theme == "roof" ? (Self.sharedNames[r.key] ?? r.name) : r.name
-                live(z: next()) { [unowned self] in self.signImage(room: r, name: name, vi: self.light.variant) }
+                live(z: next()) { p in p.signImage(room: r, name: name, vi: p.light.variant) }
             case "pane":
-                live(z: next()) { [unowned self] in self.paneImage(room: r, layer: l) }
+                live(z: next()) { p in p.paneImage(room: r, layer: l) }
             default:
                 if l.tag == "clock", let c = pr.clock {
-                    live(z: next()) { [unowned self] in self.clockImage(room: r, clock: c, vi: self.light.variant) }
+                    live(z: next(), clock: true) { p in p.clockImage(room: r, clock: c, vi: p.light.variant) }
                 } else if let id = l.sprite {
                     sprite(id, x: r.ox + (l.x ?? 0), y: r.oy + (l.y ?? 0), z: next(), blend: l.blend)
                 }
@@ -344,9 +361,8 @@ final class HouseScene2: SKScene {
     func refreshLight() {
         shaders.set(light.amb)
         for (n, l) in glows { n.alpha = CGFloat(max(0, min(1, l.a + l.b * light.dark))) }
-        for r in refreshers { r() }
         refreshRopes()
-        refreshSky()
+        repaint(sync: !painted)
         refreshMist()
     }
 }
