@@ -390,6 +390,8 @@ run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptT
 run("vendorIconPreferences") { try VendorIconChecks().preferences() }
 run("vendorIconResolution") { VendorIconChecks().resolution() }
 run("vendorIconThemeChoice") { try VendorIconChecks().themeChoice() }
+run("houseLayoutProjectIdentity") { HouseLayoutChecks().projectIdentity() }
+run("houseLayoutGoldenFixtures") { try HouseLayoutChecks().goldenFixtures() }
 run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
