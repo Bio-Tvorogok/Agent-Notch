@@ -3820,7 +3820,7 @@ document.addEventListener('visibilitychange', () => {
 function stir() { stillSince = 0; wake(); }
 function pointerBurst() { pointerUntil = performance.now() + 250; stir(); }
 function frame(t) {
-  const dt = Math.max(0, t - last); last = t; // the first rAF stamp can be a little before wake()
+  const dt = Math.min(1500, Math.max(0, t - last)); last = t; // the first rAF stamp can be a little before wake()
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
@@ -3832,7 +3832,7 @@ function frame(t) {
   if (demo) demoTick(t);
   try { // one sprite in a state nobody planned for must not leave the sky without a house: report it and draw on
     updateResidents(t); updateErrands(t);
-    // Integrate all elapsed time, even at 8 fps or after a late paint. No 100 ms speed loss.
+    // Preserve ordinary late paints, but bound catch-up work after a long rAF stall.
     for (let left = dt; left > 0;) { const step = Math.min(50, left); left -= step; stepSprites(step); updateLifts(t - left, step); }
     updateScenes(t, d);
     eggStep(t);

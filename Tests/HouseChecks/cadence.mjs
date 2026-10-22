@@ -8,6 +8,12 @@ s.run('pointerUntil=0;for(const sp of sprites.values())sp.path=[];const walker=[
 assert.equal(s.run('paintFps(10000)'),10,'autonomous walking stays within the ambient CPU budget');
 const before=s.run('walker.x');s.frame(10250);assert.ok(Math.abs(s.run('walker.x')-before-.475)<.00001,'250ms advances the full distance using substeps');
 s.run('walker.x=1;walker.path=[{r:walker.room,p:[8,1,0]}]');s.frame(11750);assert.ok(Math.abs(s.run('walker.x')-1-2.85)<.00001,'late 1500ms paint integrates the full elapsed distance');
+s.run('let integrated=0,substeps=0;const originalStepSprites=stepSprites;stepSprites=dt=>{integrated+=dt;substeps++;originalStepSprites(dt);};');
+s.frame(11750+3600000);
+assert.equal(s.run('integrated'),1500,'an hour-long rAF stall integrates at most 1.5 seconds');
+assert.equal(s.run('substeps'),30,'a stalled frame has bounded substep work');
+s.run('integrated=0;substeps=0');s.frame(11750+3600100);
+assert.equal(s.run('integrated'),100,'the next frame resumes from the latest rAF timestamp');
 s.run('room.setActive(true)');s.advance(500);assert.ok(s.timers.size<8,'one frame deadline, no accumulating callbacks');
 s.run('room.setActive(false)');assert.equal(s.rafs.size,0,'hidden cancels animation frame');
 const paints=s.calls.main;s.advance(500);assert.equal(s.calls.main,paints,'hidden does not paint');
