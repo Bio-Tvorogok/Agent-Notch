@@ -48,7 +48,14 @@ final class HouseScene2: SKScene {
     var riderZ: [Int: [Int: CGFloat]] = [:] // cabin -> floor -> z between the cage's back and front
     var cabinState: [(z: Double, state: String)] = []
     var skyGroup = SKNode()
-    var clouds: [(HouseParts.Cloud, SKSpriteNode)] = []
+    var clouds: [(Int, SKSpriteNode)] = []
+    var ants: [(SKSpriteNode, Double)] = []
+    struct Star { var x, y, b: Double; var big: Bool; var sp, ph: Double; var c: [Int] }
+    var stars: [Star] = [], starKey = ""
+    var cityPlan: HouseCityPlan?, cityPlanKey = "", cityLightKey = ""
+    var cityTextures: [SKTexture] = [], cityBoards: [Int: (Int, Int, Int)] = [:]
+    /// The page's window: its CSS height and the Dock's bottom inset set where the city's ground lies.
+    var env: HouseSkyEnv?
     var mistBands: [SKSpriteNode] = [], mistWisps: [(SKSpriteNode, SKSpriteNode, Int)] = []
     var builtVariant = -1, builtKey = ""
     var wf: HouseLayout.Frame { layout.worldFrame }
@@ -210,7 +217,7 @@ final class HouseScene2: SKScene {
             }
             let first = nextZ + 8
             switch l.kind {
-            case "lift": buildLiftSlice(floor: l.floor ?? r.floor, vi: vi, depth: l.depth, info: &info)
+            case "lift": buildLiftSlice(room: r.key, vi: vi, depth: l.depth, info: &info)
             case "sign":
                 let name = r.theme == "bath" || r.theme == "kitchen" || r.theme == "roof" ? (Self.sharedNames[r.key] ?? r.name) : r.name
                 live(z: next()) { [unowned self] in self.signImage(room: r, name: name, vi: self.light.variant) }
@@ -271,11 +278,10 @@ final class HouseScene2: SKScene {
 
     var liftParts: HouseParts.Lift? { layout.lift.flatMap { parts.village.lift["n\($0.fl.count)"] } }
 
-    func buildLiftSlice(floor f0: Int, vi: Int, depth: Double?, info: inout RoomInfo) {
+    func buildLiftSlice(room key: String,  vi: Int, depth: Double?, info: inout RoomInfo) {
         guard let lf = liftParts, vi < lf.variants.count, !lf.variants[vi].floors.isEmpty else { return }
-        // parts.json keys the room layers by absolute floor of the 4-floor house; the 3-floor lift (0 projects) has no floor 3:
-        // the roof is its top slice.
-        let f = min(f0, lf.variants[vi].floors.count - 1)
+        // the room's slice is found by its key in the lift's floor list (room:'self'), never by the cut-time floor
+        guard let f = lf.fl.firstIndex(where: { $0.room == key }), f < lf.variants[vi].floors.count else { return }
         let v = lf.variants[vi], fl = v.floors[f]
         var items: [(Double, (CGFloat) -> Void)] = []
         for p in fl.pieces { items.append((p.key, { [unowned self] z in self.sprite(p.sprite, x: self.wf.ox + p.x, y: self.wf.oy + p.y, z: z) })) }

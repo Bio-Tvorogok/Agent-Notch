@@ -176,6 +176,7 @@ final class RoomWallpaper: NSObject {
                                       insets: .init(top: top, bottom: bottom, right: icons ? 120 : 0))
         let unit = CGFloat(layout.view.PXD / layout.view.DPR)
         guard let scene = HouseScene2.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas"), layout: layout, unit: unit, size: screen.frame.size) else { return false }
+        scene.env = HouseSkyEnv(innerHeight: screen.frame.height, insetBottom: bottom)
         scene.followClock = true
         let view = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.ignoresSiblingOrder = true

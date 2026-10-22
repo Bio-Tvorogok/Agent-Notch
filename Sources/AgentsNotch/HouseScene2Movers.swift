@@ -119,18 +119,27 @@ extension HouseScene2 {
             lastPos[sp.id] = (sp.x, sp.y)
             let name = poseName(sp, look: look(sp), face: face, t: clockMillis)
             guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][look(sp).vendor + "/stand.0"] else { continue }
-            let r = pages.rect(pose.sprite)
+            let sig = pose.layers.map { String($0.sprite) }.joined(separator: ",")
             let n = moverNodes[sp.id] ?? {
                 let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); movers.addChild(m); moverNodes[sp.id] = m; return m
             }()
-            if n.userData?["sprite"] as? Int != pose.sprite {
-                n.texture = pages.texture(pose.sprite); n.size = CGSize(width: r.w, height: r.h)
-                n.shader = shaders.shader(page: r.page, flag: r.flag)
-                n.userData = ["sprite": pose.sprite]
+            if n.userData?["sig"] as? String != sig {
+                n.removeAllChildren()
+                for (k, ly) in pose.layers.enumerated() {
+                    let r = pages.rect(ly.sprite)
+                    let c = SKSpriteNode(texture: pages.texture(ly.sprite), size: CGSize(width: r.w, height: r.h))
+                    c.anchorPoint = CGPoint(x: 0, y: 1)
+                    c.position = CGPoint(x: Double(pose.layers[0].ax - ly.ax), y: -Double(pose.layers[0].ay - ly.ay))
+                    c.zPosition = CGFloat(k) * 0.01
+                    c.shader = shaders.shader(page: r.page, flag: r.flag)
+                    if ly.blend == "add" { c.blendMode = .add }
+                    n.addChild(c)
+                }
+                n.userData = ["sig": sig]
             }
             n.isHidden = false
             n.alpha = CGFloat(sp.alpha)
-            n.position = CGPoint(x: Double(HouseLight.round(at.x) - pose.ax), y: -Double(HouseLight.round(at.y) - pose.ay))
+            n.position = CGPoint(x: Double(HouseLight.round(at.x) - pose.layers[0].ax), y: -Double(HouseLight.round(at.y) - pose.layers[0].ay))
             n.zPosition = at.z
         }
         for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil }

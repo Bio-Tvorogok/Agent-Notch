@@ -41,11 +41,13 @@ struct HouseParts: Decodable {
     }
     struct Shaft: Decodable { let cx, cy, x0, x1, y0, y1: Double }
     struct LiftPiece: Decodable { let part: String; let shaft: Int; let key: Double; let sprite: Int; let x, y: Double }
-    struct LiftFloor: Decodable { let level: Int; let z, zlo, zhi, depth: Double; let pieces: [LiftPiece] }
+    struct LiftFloor: Decodable { let level: Int; let room: String?; let z, zlo, zhi, depth: Double; let pieces: [LiftPiece] }
     struct LiftCage: Decodable { let shaft: Int; let part: String; let key: Double; let sprite: Int; let x, y: Double }
     struct LiftVariant: Decodable { let floors: [LiftFloor]; let cages: [LiftCage]; let rope: Pair }
+    struct FloorRef: Decodable { let room: String; let yoff, z: Double }
     struct Lift: Decodable {
         let floors: Int
+        let fl: [FloorRef]
         let shafts: [Shaft]
         let top, cageZ, cageH: Double
         let variants: [LiftVariant]
@@ -60,7 +62,8 @@ struct HouseParts: Decodable {
     struct SkyPiece: Decodable { let sprite: Int; let x, y: Double }
     struct Bucket: Decodable { let sky: [String]; let dark: Double; let backdrop: SkyPiece?; let celestial: SkyPiece?; let clouds: [Cloud] }
     struct Sky: Decodable { let W, H, ground: Int; let buckets: [Bucket] }
-    struct Pose: Decodable { let sprite, ax, ay: Int }
+    struct PoseLayer: Decodable { let sprite, ax, ay: Int; let blend: String? }
+    struct Pose: Decodable { let layers: [PoseLayer] }
     struct Poses: Decodable { let names: [String]; let variants: [[String: Pose]] }
     struct Amb: Decodable { let hour: Double; let amb: [Double]; let sky: [String]; let dark: Double }
     struct PageInfo: Decodable { let file, fileE: String; let w, h: Int }

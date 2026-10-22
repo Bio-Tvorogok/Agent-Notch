@@ -14,43 +14,6 @@ extension HouseScene2 {
         return n
     }
 
-    func refreshSky() {
-        skyGroup.removeAllChildren()
-        clouds = []
-        let W = canvasW, H = canvasH
-        let g = SKSpriteNode(texture: skyImage(), size: CGSize(width: W, height: H))
-        g.anchorPoint = CGPoint(x: 0, y: 1); g.position = .zero; g.zPosition = -50_000
-        skyGroup.addChild(g)
-        let hs = parts.buckets
-        var i = 0
-        while i + 1 < hs.count && hs[i + 1] <= hour { i += 1 }
-        let a = i, b = (i + 1) % hs.count, h1 = i + 1 < hs.count ? hs[i + 1] : 24, t = max(0, min(1, (hour - hs[a]) / (h1 - hs[a])))
-        let dx = Double((W - parts.sky.W) / 2), dy = Double(H - parts.sky.H)
-        func piece(_ p: HouseParts.SkyPiece?, z: CGFloat, alpha: Double) {
-            guard let p else { return }
-            let n = sprite(p.sprite, x: p.x + dx, y: p.y + dy, z: z, parent: skyGroup)
-            n.alpha = CGFloat(alpha)
-        }
-        let ba = parts.sky.buckets[a], bb = parts.sky.buckets[b]
-        piece(ba.celestial, z: -49_000, alpha: 1)
-        if t > 0.002 { piece(bb.celestial, z: -48_900, alpha: t) }
-        piece(ba.backdrop, z: -48_000, alpha: 1)
-        if t > 0.002 { piece(bb.backdrop, z: -47_900, alpha: t) }
-        for c in (t < 0.5 ? ba : bb).clouds {
-            let n = sprite(c.sprite, x: 0, y: 0, z: -47_000 + CGFloat(c.i), parent: skyGroup)
-            clouds.append((c, n))
-        }
-        updateClouds()
-    }
-
-    func updateClouds() {
-        let S = 2.0, W = Double(canvasW), dx = Double((canvasW - parts.sky.W) / 2), dy = Double(canvasH - parts.sky.H)
-        for (c, n) in clouds {
-            let i = Double(c.i), x = HouseLight.round(((i * 131 * S + clockMillis * (0.004 + Double(c.i % 3) * 0.002) * S).truncatingRemainder(dividingBy: W + 80 * S)) - 60 * S)
-            n.position = CGPoint(x: Double(x + c.dx) + dx, y: -(Double(c.y + c.dy) + dy))
-        }
-    }
-
     // MARK: mist
 
     static func scRnd(_ i: Double, _ k: Double) -> Double {

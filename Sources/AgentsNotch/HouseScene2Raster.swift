@@ -183,30 +183,4 @@ extension HouseScene2 {
         let v = max(b(6.2, 1.4), b(19.3, 1.5))
         return v * v * (3 - 2 * v)
     }
-
-    /// drawSky: the gradient over the whole canvas, then the sunrise or sunset glow and its bands.
-    func skyImage() -> SKTexture {
-        let S = 2, W = canvasW, H = canvasH, ground = Double(parts.sky.ground) + Double(H - parts.sky.H)
-        let p = HousePixels(W, H), ctx = p.ctx
-        func col(_ c: [Int], _ a: Double = 1) -> CGColor { CGColor(colorSpace: HousePixels.space, components: [CGFloat(c[0]) / 255, CGFloat(c[1]) / 255, CGFloat(c[2]) / 255, CGFloat(a)])! }
-        let grad = CGGradient(colorsSpace: HousePixels.space, colors: [col(light.skyTop), col(light.skyBottom)] as CFArray, locations: [0, 1])!
-        ctx.setShouldAntialias(true)
-        ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: 0, y: H), options: [])
-        let w = Self.sunGlow(hour)
-        if w >= 0.02 {
-            let evening = hour > 12, sx = Double(W) * (0.08 + 0.84 * (evening ? 1 : 0)), unit = max(2, HouseLight.round(Double(H) / 300)) * S
-            let rg = CGGradient(colorsSpace: HousePixels.space, colors: [col([255, 160, 100], 0.75 * w), col([255, 170, 110], 0)] as CFArray, locations: [0, 1])!
-            ctx.drawRadialGradient(rg, startCenter: CGPoint(x: sx, y: ground), startRadius: 0, endCenter: CGPoint(x: sx, y: ground), endRadius: Double(W) * 0.55, options: [])
-            ctx.setShouldAntialias(false)
-            var y = Int(ground) + 4 * S
-            for (i, hex) in Self.bands.enumerated() {
-                let h = (3 + i * 2) * unit
-                y -= h
-                let a = w * (0.8 - Double(i) * 0.1), c = HouseLight.rgb(hex)
-                p.fill(c, 0, y, W, h, alpha: a)
-                p.fill(c, 0, y - S, W, S, alpha: a * 0.5)
-            }
-        }
-        return p.texture()
-    }
 }

@@ -96,6 +96,7 @@ case "proof":
         }
         let (scene, view) = makeScene(atlas: atlas, layout: layout)
         for r in meta["rooms"] as! [[String: Any]] { if let g = r["growth"] as? Int, g > 0 { scene.growth[r["key"] as! String] = g } }
+        scene.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
         scene.freezeClock = true; scene.clockMillis = meta["T"] as! Double; scene.colon = false
         scene.setTime(hour: hour, day: meta["day"] as! Int)
         let ours = render(scene, view: view)
@@ -134,6 +135,7 @@ case "snapdemo":
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, hour = Double(args[4]) ?? 12, secs = Double(args[5]) ?? 20
     let layout = makeLayout(projects: n, innerW: 1728, innerH: 1117, insets: .init(top: 38, bottom: 73, right: 120))
     let (scene, view) = makeScene(atlas: atlas, layout: layout)
+    scene.env = HouseSkyEnv(innerHeight: 1117, insetBottom: 73)
     scene.freezeClock = true; scene.colon = true
     scene.setTime(hour: hour, day: 294)
     let sim = HouseSim(layout: layout)
@@ -171,6 +173,7 @@ case "idle", "demo":
     let layout = makeLayout(projects: n, innerW: Double(screen.frame.width), innerH: Double(screen.frame.height), insets: .init(top: 38, bottom: 73, right: 120))
     let unit = CGFloat(layout.view.PXD / layout.view.DPR)
     guard let scene = HouseScene2.load(from: atlas, layout: layout, unit: unit, size: screen.frame.size) else { print("no atlas"); exit(1) }
+    scene.env = HouseSkyEnv(innerHeight: Double(screen.frame.height), insetBottom: 73)
     let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
     w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) + 1)
     w.isOpaque = true; w.backgroundColor = .black; w.ignoresMouseEvents = true
