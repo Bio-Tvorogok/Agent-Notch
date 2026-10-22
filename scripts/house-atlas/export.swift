@@ -52,6 +52,10 @@ loader.done = {
             guard let text = result as? String, var json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                   let pages = json["pages"] as? [[String: Any]], let reference = json["reference"] as? String
             else { fputs("export returned no data\n", stderr); exit(1) }
+            // pages from an earlier export with more of them must not linger (build.sh bundles house-*.png)
+            for f in (try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? [] where f.hasPrefix("house-") && f.hasSuffix(".png") {
+                try? FileManager.default.removeItem(at: out.appendingPathComponent(f))
+            }
             var names: [String] = []
             for (i, p) in pages.enumerated() {
                 let name = "house-\(i).png"
