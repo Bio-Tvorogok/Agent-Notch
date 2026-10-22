@@ -2928,7 +2928,10 @@ function dogThink(d, t) {
   if (d.path.length || t < d.next) return;
   const working = [...sprites.values()].some(o => o.kind === 'agent' && o.state === 'working' && !o.leaving);
   if (DARK > .5 || !working) { // home to the kennel for a nap
-    dogGo(d, YARD, YARD_THEME.spots.dog[0], 'nap'); d.next = t + 30000 + Math.random() * 30000; return; }
+    const p = YARD_THEME.spots.dog[0];
+    if (d.room !== YARD || Math.hypot(d.x - p[0], d.y - p[1], d.z) > .01) dogGo(d, YARD, p, 'nap');
+    else { d.want = d.pose = 'nap'; d.wag = false; } // already home: do not walk via the yard path and back
+    d.next = t + 30000 + Math.random() * 30000; return; }
   const thrower = d.room === YARD && pickThrower(d);
   if (thrower && Math.random() < .55) { startFetch(d, thrower, t); return; }
   const roll = Math.random();
