@@ -97,12 +97,13 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
         if window.frame != screen.frame { window.setFrame(screen.frame, display: true) }
     }
 
-    func sync(fps: Int) {
+    func sync(fps: Int, awake: Bool) {
         self.fps = fps
+        self.awake = awake
         syncPower()
     }
 
-    /// The main screen's house woke up or went still; this screen draws or stands still with it.
+    /// Swift's agent snapshot changed; this screen also checks its own visibility.
     func sync(awake: Bool) {
         self.awake = awake
         syncPower()
@@ -112,7 +113,8 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
         let visible = window.occlusionState.contains(.visible)
         if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
         if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
-        if awake != sentAwake { sentAwake = awake; web.evaluateJavaScript("room.setHouseAwake(\(awake))") }
+        let animate = RoomActivity.isActive(visible: visible, awake: awake)
+        if animate != sentAwake { sentAwake = animate; web.evaluateJavaScript("room.setHouseAwake(\(animate))") }
     }
 
     func close() {

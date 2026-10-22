@@ -29,8 +29,9 @@ final class RoomWallpaper: NSObject {
     var settingsSubs: Set<AnyCancellable> = []
     private var pressed: (NSPoint, Double)?
     private let info = RoomInfoFeed()
-    /// Whether the house page is drawing (an agent works or someone walks); the other screens follow it.
-    private(set) var houseAwake = true
+    private var activity = RoomActivity()
+    private var activityTimer: Timer?
+    var houseAwake: Bool { activity.awake(at: CACurrentMediaTime()) }
 
     init(store: Store) { self.store = store }
 
@@ -67,9 +68,10 @@ final class RoomWallpaper: NSObject {
         window = w
         self.web = web
         refreshDesktopHitTargets()
+        syncHouseActivity(working: store.shown.contains { $0.state == .working }, changed: true)
         observeRoomSettings()
 
-        store.$agents.combineLatest(store.$hooks)
+        store.objectWillChange
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.push() }
             .store(in: &subs)
@@ -157,6 +159,9 @@ final class RoomWallpaper: NSObject {
     }
 
     func stop() {
+        activityTimer?.invalidate()
+        activityTimer = nil
+        activity = RoomActivity()
         powerTimer?.invalidate()
         powerTimer = nil
         sentActive = nil
@@ -183,7 +188,7 @@ final class RoomWallpaper: NSObject {
         if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
         let fps = Self.fps
         if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
-        extras.values.forEach { $0.sync(fps: fps) }
+        extras.values.forEach { $0.sync(fps: fps, awake: houseAwake) }
         syncInsets()
     }
 
@@ -219,12 +224,32 @@ final class RoomWallpaper: NSObject {
 
     /// The agents as the page wants them; only changes are sent.
     private func push() {
-        info.track(store.shown)
-        let json = Self.rows(store.shown, contexts: info.contexts)
+        let agents = store.shown
+        info.track(agents)
+        let json = Self.rows(agents, contexts: info.contexts)
+        syncHouseActivity(working: agents.contains { $0.state == .working }, changed: json != lastJSON)
         guard json != lastJSON else { return }
         lastJSON = json
         web?.evaluateJavaScript("window.room && room.setAgents(\(json)); true") { _, error in
             if let error { NSLog("agents-notch: room update failed: \(error)") }
+        }
+    }
+
+    private func syncHouseActivity(working: Bool, changed: Bool) {
+        let now = CACurrentMediaTime()
+        activity.update(working: working, changed: changed, now: now)
+        extras.values.forEach { $0.sync(awake: houseAwake) }
+        activityTimer?.invalidate()
+        activityTimer = nil
+        if !working, activity.settleUntil > now {
+            let timer = Timer(timeInterval: activity.settleUntil - now, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.syncHouseActivity(working: self.store.shown.contains { $0.state == .working }, changed: false)
+                }
+            }
+            activityTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
         }
     }
 
@@ -256,11 +281,6 @@ final class RoomWallpaper: NSObject {
     fileprivate func received(_ body: Any) {
         guard let msg = body as? [String: Any] else { return }
         if let error = msg["jsError"] as? String { NSLog("agents-notch: room page error: \(error.prefix(400))"); return }
-        if let awake = msg["awake"] as? Bool { // the other screens' sky moves only while the house does
-            houseAwake = awake
-            extras.values.forEach { $0.sync(awake: awake) }
-            return
-        }
         if msg.keys.contains("tip") {
             if let t = msg["tip"] as? [String: Any], let w = window { tip.show(t, in: w.frame) } else { tip.hide() }
             return
@@ -320,6 +340,7 @@ final class RoomWallpaper: NSObject {
     /// Cache desktop IDs only when the windows/Space are created. AppKit's point hit test then handles
     /// exposed desktop beside any frontmost app, and Finder windows covering the house, without a list per move.
     private func refreshDesktopHitTargets() {
+        guard window != nil else { return }
         let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
         desktopHitTargets = Set(list.compactMap { info in
             guard let layer = info[kCGWindowLayer as String] as? Int, layer < 0 else { return nil }

@@ -12,12 +12,15 @@ final class Store: ObservableObject {
         usage.onSound = { [weak self] event in self?.play(event) }
     }
 
-    @Published private(set) var agents: [Agent] = []
+    @Published private(set) var agents: [Agent] = [] {
+        didSet { rememberHookOutput() }
+    }
     @Published var selected: Agent.ID?
     @Published private(set) var hooks = HookState() {
         didSet {
             let first = hooks.pending.first(where: { $0.delivery == .waiting })?.ticket
             if first != hinted?.ticket { hinted = first.map { ($0, Date().timeIntervalSince1970) } }
+            rememberHookOutput()
         }
     }
     /// The request the hotkeys answer and since when it has been the one shown with them.
@@ -43,6 +46,7 @@ final class Store: ObservableObject {
     private var livenessTimer: Timer?
     private var retentionTimer: Timer?
     private var retentionExpiry: Date?
+    private var hookPublication = HookOutputPublication()
     private var watcher: FileWatcher?
     private var processWatcher: ProcessWatcher?
     private var watchedPaths: [String] = []
@@ -113,6 +117,20 @@ final class Store: ObservableObject {
         }
     }
 
+    private func hookOutput(now: Double) -> [Agent] {
+        hooks.apply(to: agents, now: now, finishedRetention: Double(settings.appearance.finishedMinutes) * 60,
+                    project: names.name(for:))
+    }
+
+    private func rememberHookOutput() {
+        _ = hookPublication.update(hookOutput(now: Date().timeIntervalSince1970))
+    }
+
+    /// A scan can leave both stored properties unchanged while a hook-ended turn or shown prompt expires.
+    private func publishHookExpiry() {
+        if hookPublication.update(hookOutput(now: Date().timeIntervalSince1970)) { objectWillChange.send() }
+    }
+
     private func updateLivenessTimer() {
         let live = agents.contains { $0.state != .done } || !hooks.pending.isEmpty || watcher?.isWatching != true
         if live, livenessTimer == nil {
@@ -162,6 +180,7 @@ final class Store: ObservableObject {
                 let stale = hooks.expire(agents: self.agents, now: Date().timeIntervalSince1970)
                 if !stale.isEmpty { self.hooks = hooks }
                 for ticket in stale { self.deliverySounds[ticket] = nil }
+                self.publishHookExpiry()
                 if let next {
                     self.finisher.check(self.settings.listFilter.apply(self.hooks.apply(to: next, now: Date().timeIntervalSince1970, finishedRetention: retention, project: self.names.name(for:))))
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
@@ -396,5 +415,16 @@ enum Audit {
         } catch {
             // Logging must not prevent the decision from reaching the agent.
         }
+    }
+}
+
+/// Only effective row changes publish. Ordering from a scanner is not a visible hook change.
+struct HookOutputPublication {
+    private var rows: [Agent] = []
+    mutating func update(_ next: [Agent]) -> Bool {
+        let next = next.sorted { $0.id < $1.id }
+        guard next != rows else { return false }
+        rows = next
+        return true
     }
 }

@@ -143,7 +143,7 @@ final class HouseSaverView: ScreenSaverView {
         wasOnScreen = wasOnScreen || visible
         // ScreenSaverEngine mirrors an occluded host. Only a currently presented saver may ignore that
         // occlusion; hidden-page timer and process throttling retain WebKit's defaults throughout.
-        if sentActive != visible, let web { Self.occlusionDetection(web, enabled: !visible) }
+        if sentActive != visible, let web { Self.occlusionDetection(web, enabled: isPreview || !visible) }
         if visible && !loaded && web?.isLoading == false { reload(); return }
         guard loaded else { return }
         if sentActive != visible { sentActive = visible; send("room.setActive(\(visible))") }

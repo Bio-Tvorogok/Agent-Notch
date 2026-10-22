@@ -40,7 +40,7 @@ final class RoomSaverFeed {
 
     private func startFeeding() {
         feeding = true
-        store.$agents.combineLatest(store.$hooks)
+        store.objectWillChange
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.write() }
             .store(in: &subs)
