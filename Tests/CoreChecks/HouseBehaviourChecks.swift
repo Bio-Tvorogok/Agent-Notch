@@ -8,28 +8,40 @@ struct HouseBehaviourChecks {
     // Pin row ingestion, RNG short-circuiting, layout changes during transit,
     // errand arrival clocks, subagent handback, and fall removal to the real page.
     func goldenFixtures() throws {
+        // Debug aid: NOTCH_BEH_DIR=<dir> compares fixtures generated elsewhere (BEH_DIR/BEH_ONLY/BEH_EXTRA for the generator).
+        let scratch = ProcessInfo.processInfo.environment["NOTCH_BEH_DIR"]
         let js = Process()
         js.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         js.arguments = ["node", "Tests/HouseChecks/behaviour-fixtures.mjs", "--check"]
-        try js.run(); js.waitUntilExit()
-        XCTAssertEqual(js.terminationStatus, 0, "current JS must reproduce committed behaviour fixtures")
-        let files = try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: "Tests/Fixtures/house-behaviour"), includingPropertiesForKeys: nil)
+        if scratch == nil { try js.run(); js.waitUntilExit()
+        XCTAssertEqual(js.terminationStatus, 0, "current JS must reproduce committed behaviour fixtures") }
+        let files = try FileManager.default.contentsOfDirectory(at: URL(fileURLWithPath: scratch ?? "Tests/Fixtures/house-behaviour"), includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        XCTAssertEqual(files.map(\.lastPathComponent), ["01-projects.json","03-projects.json","06-projects.json","14-projects.json","churn-growth.json","crowding-bath.json","growth-ring.json","subagents-return.json"])
+        if scratch == nil { XCTAssertEqual(files.map(\.lastPathComponent), ["01-projects.json","03-projects.json","06-projects.json","14-projects.json","churn-10.json","churn-5.json","churn-growth.json","crowding-bath.json","growth-ring.json","lost-errand.json","odd-projects.json","relayout-bridges.json","relayout-lift-a.json","relayout-lift-b.json","relayout-lift-c.json","subagents-return.json","yard-exit.json"]) }
         var samples = 0
         for file in files {
             let f = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
             let input = f["input"] as! [String: Any], values = f["values"] as! [Any], trace = f["trace"] as! [[Int]]
             let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
             let world = HouseBehaviour(random: { rng.nextDouble() })
-            let events = input["events"] as! [[String: Any]]
+            let events = input["events"] as! [[String: Any]], every = input["sample"] as? Int ?? 250
             for tick in stride(from: 0, through: input["duration"] as! Int, by: 50) {
                 let event = events.first { $0["at"] as! Int == tick }
-                let rows = try event.map { try JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: $0["rows"]!)) }
+                let rows = try event.flatMap { $0["rows"] }.map { try JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: $0)) }
+                // Home sprites that were in the tower before any project room existed (they spawn before the tick's rows).
+                for j in event?["inject"] as? [[String: Any]] ?? [] {
+                    let sp = world.sim.spawn(id: j["id"] as! String, room: j["room"] as! String, kind: j["kind"] as! String)
+                    if let e = j["errand"] as? [String: Any] {
+                        sp.behaviour.errand = .init(room: e["room"] as! String, cat: e["cat"] as! String, dur: (e["dur"] as? NSNumber)?.doubleValue, since: world.time)
+                    }
+                    if let g = j["goal"] as? [String: Any] {
+                        world.sim.setGoal(sp, .init(room: g["room"] as! String, p: g["p"] as! [Double], cat: g["cat"] as! String))
+                    }
+                }
                 if tick == 0 { if let rows { world.setAgents(rows) } }
                 else { world.step(dt: 50, agents: rows) }
-                if tick % 250 == 0 {
-                    var expected = values[trace[tick/250][1]] as! [String: Any]
+                if tick % every == 0 {
+                    var expected = values[trace[tick/every][1]] as! [String: Any]
                     expected["sprites"] = (expected["sprites"] as! [Int]).map { values[$0] }
                     expected["render"] = (expected["render"] as! [Int]).map { i -> [Any] in
                         var row = values[i] as! [Any]; row[7] = (row[7] as! Double)*Double(tick); return row
@@ -70,7 +82,10 @@ struct HouseBehaviourChecks {
     }
     private struct Mismatch: Error, CustomStringConvertible { let description: String }
     private func compare(_ expected: Any, _ actual: Any, at path: String) throws {
-        func fail(_ detail: String) throws { throw Mismatch(description: path + ": " + detail) }
+        func fail(_ detail: String) throws {
+            if ProcessInfo.processInfo.environment["NOTCH_BEH_ALL"] != nil { print("MISMATCH", path + ": " + detail); return }
+            throw Mismatch(description: path + ": " + detail)
+        }
         if let a = expected as? [String: Any], let b = actual as? [String: Any] {
             guard Set(a.keys) == Set(b.keys) else { return try fail("keys \(a.keys.sorted()) != \(b.keys.sorted())") }
             for k in a.keys.sorted() { try compare(a[k]!, b[k]!, at: path + "." + k) }

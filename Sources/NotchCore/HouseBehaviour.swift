@@ -167,19 +167,43 @@ public final class HouseBehaviour {
             if sp.alpha < 0.5 || sp.room == nil { sp.fade = 0; continue }
             if leaveSubagent(sp) || hooks.sceneLeave(sp) { continue }
             sp.exit = true; sp.state = "idle"; sp.goal = nil
-            let r = sim.room(sp.room!)
+            guard let key = sp.room else { continue }
+            let r = sim.room(key)
             sim.route(sp,to: r.key,point: [r.NX * 0.55,r.NY - 0.1,0])
         }
     }
+    /// One fixed tick of `dt` ms (the golden fixtures step 50 ms): a single
+    /// stepSprites + updateLifts of the whole `dt`. It is NOT the page's frame();
+    /// a renderer driven by a display link calls `advance(frame:)`, which clamps the
+    /// delta and runs the 50 ms substeps the page does.
     /// Optional rows arrive at this step's ending clock, before errands/movement,
     /// matching a page setAgents delivery immediately before its frame.
     public func step(dt: Double, agents: [HouseAgentRow]? = nil) {
-        precondition(dt.isFinite && dt >= 0)
+        let dt = HouseSim.sane(dt)
         sim.time += dt
+        beginStep(agents)
+        sim.stepSprites(dt); sim.updateLifts(dt)
+        finishStep()
+    }
+    /// The page's frame() (see HouseSim.advance(frame:)): `raw` is the frame
+    /// clock's delta, motion is clamped to [0, 1500] ms in 50 ms substeps.
+    public func advance(frame raw: Double, agents: [HouseAgentRow]? = nil) {
+        let raw = raw.isFinite ? raw : 0, dt = min(1500, max(0, raw))
+        sim.time += max(0, raw)
+        beginStep(agents)
+        var left = dt
+        while left > 0 {
+            let step = min(50, left); left -= step
+            sim.stepSprites(step); sim.updateLifts(step, now: time - left)
+        }
+        finishStep()
+    }
+    private func beginStep(_ agents: [HouseAgentRow]?) {
         if let agents { setAgents(agents) }
         _ = hooks.residents(time)
         updateErrands()
-        sim.stepSprites(dt); sim.updateLifts(dt)
+    }
+    private func finishStep() {
         updateYard()
         for sp in sprites where sp.behaviour.handover != nil { stepHandover(sp) }
         _ = hooks.cat(time); _ = hooks.dog(time); _ = hooks.dayScenes(time)

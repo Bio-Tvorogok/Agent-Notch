@@ -8,7 +8,8 @@ extension HouseBehaviour {
         }
     }
     func startHandover(_ sp: HouseSprite, _ parent: HouseSprite, vanish: Bool) {
-        let b = sp.behaviour, r = sim.room(parent.room!)
+        guard let key = parent.room else { return }
+        let b = sp.behaviour, r = sim.room(key)
         b.handover = .init(parent: parent.id,vanish: vanish,t0: time,errand: b.errand)
         b.errand = nil; sp.state = "idle"
         sim.setGoal(sp,.init(room: r.key,p: [clamp(parent.x+0.8,0.4,r.NX-0.4),clamp(parent.y+0.6,0.4,r.NY-0.4),0],cat: "handover"))

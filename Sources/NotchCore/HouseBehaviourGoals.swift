@@ -67,7 +67,7 @@ extension HouseBehaviour {
     }
     func updateYard() {
         var swinger = false
-        let sw = sim.spots("__yard")["swing"]![0]
+        guard let sw = sim.spots("__yard")["swing"]?.first else { return }
         for sp in sprites where sp.room == "__yard" {
             if !layout.yard.on {
                 sp.room = "__bath"; let p = sim.hub("__bath"); sp.x = p[0]; sp.y = p[1]; sp.z = p[2]; sp.path = []
