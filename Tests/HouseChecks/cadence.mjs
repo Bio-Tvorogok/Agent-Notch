@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {scene,fixture} from './scene.mjs';
+const s=scene();fixture(s);
+assert.equal(s.run('paintFps(10000)'),10,'standing working animation uses 10 fps');
+s.run('mouse=[1,1,1,1]');assert.equal(s.run('paintFps(10000)'),10,'stationary pointer does not pin burst cadence');
+s.run('mouse=null;pointerUntil=10300');assert.equal(s.run('paintFps(10000)'),30,'pointer interaction gets a short burst');
+s.run('pointerUntil=0;for(const sp of sprites.values())sp.path=[];const walker=[...sprites.values()].find(sp=>sp.kind==="agent");walker.x=1;walker.y=1;walker.z=0;walker.path=[{r:walker.room,p:[8,1,0]}];');
+const before=s.run('walker.x');s.frame(10250);assert.ok(Math.abs(s.run('walker.x')-before-.475)<.00001,'250ms advances the full distance using substeps');
+s.run('room.setActive(true)');s.advance(500);assert.ok(s.timers.size<8,'one frame deadline, no accumulating callbacks');
+s.run('room.setActive(false)');assert.equal(s.rafs.size,0,'hidden cancels animation frame');
+const paints=s.calls.main;s.advance(500);assert.equal(s.calls.main,paints,'hidden does not paint');
+assert.deepEqual(s.errors,[]);console.log('OK house cadence, substeps, pointer and visibility');

@@ -266,8 +266,17 @@ final class RoomWallpaper: NSObject {
     /// Trackpad gestures over bare desktop drive the view: pinch zooms at the cursor, two fingers move, a double tap resets.
     private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0)) {
         guard let w = window, let web else { return }
+        let now = CACurrentMediaTime()
+        if type == .mouseMoved {
+            guard now - lastMove > 0.04 else { return }
+            lastMove = now
+        }
         let p = NSEvent.mouseLocation
-        let bare = w.frame.contains(p) && desktopIsBare(at: p)
+        // WindowServer queries belong to clicks and gestures, never the high-rate pointer stream.
+        let inside = w.frame.contains(p) && w.occlusionState.contains(.visible)
+        let bare = inside && (type == .mouseMoved
+            ? NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+            : desktopIsBare(at: p))
         let x = p.x - w.frame.minX, y = w.frame.maxY - p.y
         switch type {
         case .leftMouseDown:
@@ -294,9 +303,6 @@ final class RoomWallpaper: NSObject {
             return
         default: break
         }
-        let now = CACurrentMediaTime()
-        guard now - lastMove > 0.04 else { return }
-        lastMove = now
         if bare { hovering = true; web.evaluateJavaScript("room.pointer(\(x), \(y))") }
         else if hovering { hovering = false; tip.hide(); web.evaluateJavaScript("room.leave()") }
     }

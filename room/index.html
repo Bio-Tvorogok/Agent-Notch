@@ -3697,10 +3697,11 @@ let last = performance.now();
 // and the last frame stays on screen. Anything the app or the viewer does wakes it, and so does every new minute
 // (the clocks, the light), so the residents' routines and a new day still come along.
 let active = true, fpsCap = 60, looping = false, stillSince = 0, extraAwake = true, sentAwake = null, nap = 0;
+let frameDeadline = 0, frameRAF = 0, pointerUntil = 0;
 const STILL_MS = 3000;
 function houseAwake(t) {
   if (SCENE === 'extra') return extraAwake;
-  if (demo || mouse || CAM.glide || CAM.follow || PAR.x || PAR.y) return true;
+  if (demo || t < pointerUntil || CAM.glide || CAM.follow) return true;
   if (METEORS.list.length || SC.fireworks.length || SC.puffs.length || SC.papers.length || INFO.coins.length) return true;
   if (LIFT && LIFT.cabins.some(c => c.state !== 'idle')) return true;
   if (links.some(L => L.turn) || rooms.some(r => t - r.born < 2500)) return true;
@@ -3715,25 +3716,50 @@ function tellAwake(on) {
   if (on === sentAwake || SCENE === 'extra') return; sentAwake = on;
   if (window.webkit?.messageHandlers?.room) try { window.webkit.messageHandlers.room.postMessage({ awake: on }); } catch (e) {}
 }
+// Ambient poses use 10 fps. A stationary pointer or working agent never pins the movement rate.
+function paintFps(t) {
+  const moving = t < pointerUntil || CAM.glide || CAM.follow
+    || (LIFT && LIFT.cabins.some(c => c.state !== 'idle' && c.state !== 'open'))
+    || links.some(L => L.turn) || rooms.some(r => t - r.born < 1800)
+    || [...sprites.values()].some(sp => sp.path.length || sp.onBridge || sp.fall || sp.alpha !== sp.fade);
+  return Math.max(1, Math.min(fpsCap, moving ? 30 : 10));
+}
+function scheduleFrame(t) {
+  clearTimeout(frameDeadline);
+  frameDeadline = setTimeout(() => {
+    frameDeadline = 0;
+    if (active && looping) frameRAF = requestAnimationFrame(loop);
+  }, Math.max(0, t + 1000 / paintFps(t) - performance.now()));
+}
 function loop(t) {
+  frameRAF = 0;
   if (!active) { looping = false; return; }
-  if (fpsCap < 60 && t - last < 1000 / fpsCap - 2) { requestAnimationFrame(loop); return; }
   frame(t);
   if (houseAwake(t)) { stillSince = 0; tellAwake(true); }
   else if (!stillSince) stillSince = t;
   if (stillSince && t - stillSince >= STILL_MS) { looping = false; tellAwake(false); napUntilNextMinute(); return; }
-  requestAnimationFrame(loop);
+  scheduleFrame(t);
 }
 function napUntilNextMinute() {
   clearTimeout(nap);
   const ms = 60000 - Date.now() % 60000 + 50;
-  nap = setTimeout(() => { if (!looping) { stillSince = performance.now() - STILL_MS - 100; wake(); } }, ms); // one frame, then still again
+  nap = setTimeout(() => { if (!looping) { stillSince = performance.now() - STILL_MS - 100; wake(); } }, ms);
 }
-function wake() { if (active && !looping) { looping = true; last = performance.now(); requestAnimationFrame(loop); } }
-// something happened: draw again, and keep drawing for a moment even if it settles at once
+function wake() {
+  if (active && !looping) { looping = true; last = performance.now(); frameRAF = requestAnimationFrame(loop); }
+}
+function setActive(on) {
+  active = !!on;
+  if (!active) {
+    clearTimeout(frameDeadline); frameDeadline = 0;
+    cancelAnimationFrame(frameRAF); frameRAF = 0;
+    clearTimeout(nap); nap = 0; looping = false;
+  } else wake();
+}
 function stir() { stillSince = 0; wake(); }
+function pointerBurst() { pointerUntil = performance.now() + 250; stir(); }
 function frame(t) {
-  const dt = Math.max(0, Math.min(100, t - last)); last = t; // the first rAF stamp can be a little before wake()
+  const dt = Math.max(0, Math.min(1000, t - last)); last = t; // the first rAF stamp can be a little before wake()
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
@@ -3744,7 +3770,9 @@ function frame(t) {
   if (SCENE === 'extra') drawIslets(t);
   if (demo) demoTick(t);
   try { // one sprite in a state nobody planned for must not leave the sky without a house: report it and draw on
-    updateResidents(t); updateErrands(t); stepSprites(dt); updateLifts(t, dt);
+    updateResidents(t); updateErrands(t);
+    // Integrate all elapsed time, even at 8 fps or after a late paint. No 100 ms speed loss.
+    for (let left = dt; left > 0;) { const step = Math.min(50, left); left -= step; stepSprites(step); updateLifts(t - left, step); }
     updateScenes(t, d);
     eggStep(t);
     updateStairs(t);
@@ -5008,8 +5036,8 @@ function bdInstall() {
 window.room = {
   setAgents: list => { demo = false; ctl.hidden = true; setAgents(list); },
   // the app forwards the cursor (CSS pixels) because the wallpaper window never gets mouse events itself
-  pointer: (x, y) => { mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; },
-  leave: () => { mouse = null; },
+  pointer: (x, y) => { mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; pointerBurst(); },
+  leave: () => { mouse = null; pointerBurst(); },
   click: (x, y) => { if (document.elementFromPoint(x, y) === homeBtn && homeBtn.classList.contains('on')) return resetView();
     mouse = [x * DPR / PXD, y * DPR / PXD, x, y]; updateTip(); cv.dispatchEvent(new MouseEvent('click')); },
   zoom: (factor, x, y) => zoomAt(factor, x, y),
@@ -5017,7 +5045,7 @@ window.room = {
   resetView,
   configure, focusRoom: name => { const r = roomByKey.get('p:' + name); if (r) focusRoom(r); },
   setWeather: w => { weather = w; },
-  setActive: on => { active = on; wake(); },
+  setActive,
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setCodexPet: p => setCodexPet(p),
   setFps: n => { fpsCap = n; },
@@ -5028,7 +5056,7 @@ window.room = {
 };
 for (const [k, f] of Object.entries(room)) if (typeof f === 'function' && k !== 'setActive' && k !== 'backdrops')
   room[k] = (...a) => { const v = f(...a); stir(); return v; };
-for (const ev of ['pointermove', 'wheel', 'click', 'keydown', 'resize']) addEventListener(ev, () => stir(), { passive: true });
+for (const ev of ['pointermove', 'wheel', 'click', 'keydown', 'resize']) addEventListener(ev, () => pointerBurst(), { passive: true });
 if (PV && !PV.house) {
   document.getElementById('add').hidden = true;
   if (THEMES[PV.theme].shared) {
