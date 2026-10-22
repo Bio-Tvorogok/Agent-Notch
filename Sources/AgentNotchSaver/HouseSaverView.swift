@@ -6,8 +6,8 @@ import WebKit
 /// The agents' house as a screen saver: room/index.html in a WKWebView, fed from the snapshot the running app writes
 /// (HouseSnapshot), polled every `poll` seconds. With "Require password immediately" it works as a live lock screen.
 ///
-/// Sonoma can retain views without calling stopAnimation. Both stop paths release WebKit and a real
-/// saver stop exits the legacy host, even if it has retained a preview. Hidden pages keep WebKit's throttling.
+/// Sonoma can retain views without calling stopAnimation. A real stop releases WebKit and exits the legacy
+/// host; sustained invisibility catches retained windows without reacting to presentation blips. Hidden pages keep WebKit's throttling.
 @objc(AgentNotchHouseView)
 final class HouseSaverView: ScreenSaverView {
     static let poll: TimeInterval = 2
@@ -19,7 +19,7 @@ final class HouseSaverView: ScreenSaverView {
     private var observers: [NSObjectProtocol] = []
     private let file = HouseSnapshot.url(home: HouseSnapshot.realHome)
     private var running = false
-    private var wasOnScreen = false
+    private var activity = SaverActivity.State()
     private var sentActive: Bool?
 
     override init?(frame: NSRect, isPreview: Bool) {
@@ -29,7 +29,7 @@ final class HouseSaverView: ScreenSaverView {
         layer?.backgroundColor = NSColor.black.cgColor
         let center = DistributedNotificationCenter.default()
         observers.append(center.addObserver(forName: Notification.Name("com.apple.screensaver.willstop"), object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.saverWillStop() }
+            MainActor.assumeIsolated { self?.refresh() }
         })
         log("init \(isPreview ? "preview" : "screen") \(frame.size)")
     }
@@ -52,7 +52,7 @@ final class HouseSaverView: ScreenSaverView {
         super.startAnimation()
         log("start")
         running = true
-        wasOnScreen = false
+        activity = SaverActivity.State()
         if web == nil { makeWeb() } else if !loaded { reload() }
         timer?.invalidate()
         let t = Timer(timeInterval: Self.poll, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refresh() } }
@@ -69,12 +69,11 @@ final class HouseSaverView: ScreenSaverView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil {
-            if wasOnScreen && !isPreview { saverWillStop() } else { tearDown() }
-        }
+        // Detachment can be temporary during display reconfiguration. The poll owns the grace period.
+        if running { refresh() }
     }
 
-    /// The saver stopped: legacyScreenSaver may never call stopAnimation, so every view lets go of its page here.
+    /// Called by stopAnimation or after sustained invisibility, never by a single window transition.
     private func saverWillStop() {
         log("willstop")
         tearDown()
@@ -138,9 +137,11 @@ final class HouseSaverView: ScreenSaverView {
 
     /// Sends the house in the snapshot file when it changed; a missing or stale file is an empty house.
     private func refresh() {
-        let visible = onScreen
-        if wasOnScreen && !visible && !isPreview { saverWillStop(); return }
-        wasOnScreen = wasOnScreen || visible
+        guard running else { return }
+        activity = SaverActivity.sample(activity, now: ProcessInfo.processInfo.systemUptime,
+                                        running: running, visible: onScreen, preview: isPreview)
+        if activity.exitHost { saverWillStop(); return }
+        let visible = activity.draw
         // ScreenSaverEngine mirrors an occluded host. Only a currently presented saver may ignore that
         // occlusion; hidden-page timer and process throttling retain WebKit's defaults throughout.
         if sentActive != visible, let web { Self.occlusionDetection(web, enabled: isPreview || !visible) }
