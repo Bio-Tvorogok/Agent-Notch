@@ -48,101 +48,9 @@
 
 const Q = new URLSearchParams(location.search);
 const PV = window.ROOM_PREVIEW || null;
-const cv = document.getElementById('c'), main = retainedContext(cv.getContext('2d'));
+const cv = document.getElementById('c'), main = cv.getContext('2d');
 const tip = document.getElementById('tip');
 let g = main; // drawing target: the screen, or an offscreen cache while baking
-
-// Retain the ordered paint list. Changed commands damage old and new bounds; intersecting commands
-// are replayed in their original order through one tile-union clip (including translucent overlaps).
-function retainedContext(target) {
-  let ops = [], previous = [], stack = [], path = [], state, size = '', overflow = false;
-  const ids = new WeakMap(); let nextID = 1;
-  const ident = o => { if (!ids.has(o)) ids.set(o, nextID++); return ids.get(o); };
-  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-  const styleKey = v => typeof v === 'object' ? v.key : v;
-  const reset = () => { state = { fillStyle: '#000000', globalAlpha: 1, globalCompositeOperation: 'source-over', clips: [] }; stack = []; path = []; };
-  const bounds = p => {
-    const xs = [], ys = [];
-    for (const [name, ...a] of p) if (name === 'arc') { xs.push(a[0] - a[2], a[0] + a[2]); ys.push(a[1] - a[2], a[1] + a[2]); }
-    else if (a.length >= 2) { xs.push(a[0]); ys.push(a[1]); }
-    return xs.length ? [Math.min(...xs)-1, Math.min(...ys)-1, Math.max(...xs)+1, Math.max(...ys)+1] : [0,0,0,0];
-  };
-  const add = (type, args, b) => {
-    const fill = state.fillStyle, clips = state.clips, p = (type === 'fill' || type === 'stroke') ? path.slice() : null;
-    const key = [type, ...args.map(v => typeof v === 'object' ? ident(v) : v), styleKey(fill), state.globalAlpha,
-      state.globalCompositeOperation, JSON.stringify(clips), p ? JSON.stringify(p) : '', type === 'drawImage' ? args[0].houseVersion || 0 : 0];
-    const op = { type, args, b, fill, alpha: state.globalAlpha, composite: state.globalCompositeOperation, clips, path: p, key };
-    if (overflow) { replay(target, op); return; }
-    ops.push(op);
-    // At most two frame lists, each with 65,536 commands, even for user-supplied oversized fixtures.
-    if (ops.length >= 65536) { for (const o of ops) replay(target, o); ops = []; overflow = true; }
-  };
-  function setPath(ctx, p) { ctx.beginPath(); for (const [name, ...a] of p) ctx[name](...a); }
-  function replay(ctx, op) {
-    if (op.clips.length) { ctx.save(); for (const p of op.clips) { setPath(ctx, p); ctx.clip(); } }
-    ctx.globalAlpha = op.alpha; ctx.globalCompositeOperation = op.composite;
-    if (typeof op.fill === 'object') {
-      const f = ctx[op.fill.type](...op.fill.args); for (const stop of op.fill.stops) f.addColorStop(...stop); ctx.fillStyle = f;
-    } else ctx.fillStyle = op.fill;
-    if (op.path) setPath(ctx, op.path);
-    ctx[op.type](...op.args);
-    if (op.clips.length) ctx.restore();
-  }
-  const api = {
-    canvas: target.canvas,
-    invalidate() { size = ''; },
-    beginFrame() { ops = []; overflow = false; reset(); },
-    endFrame() {
-      if (overflow) { previous = []; size = ''; return; }
-      const W = target.canvas.width, H = target.canvas.height, tile = 64, cols = Math.ceil(W/tile), rows = Math.ceil(H/tile);
-      const dirty = new Set();
-      const damage = b => { for (let y=Math.max(0,Math.floor(b[1]/tile));y<Math.min(rows,Math.ceil(b[3]/tile));y++)
-        for(let x=Math.max(0,Math.floor(b[0]/tile));x<Math.min(cols,Math.ceil(b[2]/tile));x++)dirty.add(y*cols+x); };
-      if (size !== W+'|'+H || !previous.length) damage([0,0,W,H]);
-      else for (let i=0;i<Math.max(ops.length,previous.length);i++) {
-        const a=previous[i],b=ops[i]; if(a&&b&&same(a.key,b.key))continue;
-        if(a)damage(a.b);if(b)damage(b.b);
-      }
-      if(dirty.size) {
-        target.save(); target.beginPath();
-        for(const n of dirty)target.rect(n%cols*tile,Math.floor(n/cols)*tile,tile,tile);
-        target.clip();
-        for(const op of ops) {
-          let hit=false;
-          for(let y=Math.max(0,Math.floor(op.b[1]/tile));!hit&&y<Math.min(rows,Math.ceil(op.b[3]/tile));y++)
-            for(let x=Math.max(0,Math.floor(op.b[0]/tile));x<Math.min(cols,Math.ceil(op.b[2]/tile));x++)if(dirty.has(y*cols+x)){hit=true;break;}
-          if(hit)replay(target,op);
-        }
-        target.restore();
-      }
-      previous=ops;size=W+'|'+H;
-    },
-    capture(paint) {
-      const old=[ops,state,stack,path,overflow];ops=[];overflow=false;reset();
-      try { paint(); return ops; } finally { [ops,state,stack,path,overflow]=old; }
-    },
-    raster(list) {
-      if(!list.length || list.some(o=>o.composite!=='source-over'))return null;
-      const b=[Math.floor(Math.min(...list.map(o=>o.b[0]))),Math.floor(Math.min(...list.map(o=>o.b[1]))),Math.ceil(Math.max(...list.map(o=>o.b[2]))),Math.ceil(Math.max(...list.map(o=>o.b[3])))];
-      const c=document.createElement('canvas');c.width=Math.max(1,b[2]-b[0]);c.height=Math.max(1,b[3]-b[1]);
-      if(c.width*c.height>262144)return null;
-      const ctx=c.getContext('2d');ctx.translate(-b[0],-b[1]);for(const o of list)replay(ctx,o);
-      return {img:c,dx:b[0],dy:b[1]};
-    },
-    save(){stack.push({...state});},restore(){if(stack.length)state=stack.pop();},
-    beginPath(){path=[];},closePath(){path.push(['closePath']);},moveTo(...a){path.push(['moveTo',...a]);},lineTo(...a){path.push(['lineTo',...a]);},arc(...a){path.push(['arc',...a]);},
-    clip(){state.clips=[...state.clips,path.slice()];},
-    fill(){add('fill',[],bounds(path));},stroke(){add('stroke',[],bounds(path));},
-    fillRect(x,y,w,h){add('fillRect',[x,y,w,h],[Math.min(x,x+w)-1,Math.min(y,y+h)-1,Math.max(x,x+w)+1,Math.max(y,y+h)+1]);},
-    clearRect(x,y,w,h){add('clearRect',[x,y,w,h],[x,y,x+w,y+h]);},
-    drawImage(img,...a){const [x,y,w,h]=a.length===2?[...a,img.width,img.height]:a.slice(-4);add('drawImage',[img,...a],[x-1,y-1,x+w+1,y+h+1]);},
-  };
-  for(const type of ['createLinearGradient','createRadialGradient'])api[type]=(...args)=>{
-    const v={type,args,stops:[],key:''};v.addColorStop=(...a)=>{v.stops.push(a);v.key=JSON.stringify([type,args,v.stops]);};return v;
-  };
-  for(const key of ['fillStyle','globalAlpha','globalCompositeOperation'])Object.defineProperty(api,key,{get:()=>state[key],set:v=>{state[key]=v;}});
-  reset();return api;
-}
 
 // ---------- geometry ----------
 // S art pixels per unit: a tile is 16S x 8S, one unit of height is S pixels.
@@ -221,18 +129,7 @@ function line(a, b, color) {
 // ---------- drawing primitives in room space ----------
 const OUT = '#2a1f2e';
 // a box with a 1px dark outline and a light top edge, like hand-drawn pixel furniture
-const BOXES = new Map(); let boxLight = '', boxBytes = 0;
 function B(x, y, z, w, d, h, c, em, noLine) {
-  if (g === main && g.globalAlpha === 1 && R?.NX && R?.NY) {
-    if (boxLight !== lightKey) { BOXES.clear();boxBytes=0;boxLight=lightKey; }
-    const key=JSON.stringify([x,y,z,w,d,h,c,em,noLine]);let b=BOXES.get(key);
-    if(!BOXES.has(key)) {
-      b=bake(R,()=>B(x,y,z,w,d,h,c,em,noLine));const bytes=b ? b.img.width*b.img.height*4 : 0;
-      if(BOXES.size>=512 || boxBytes+bytes>8*1024*1024) { BOXES.clear();boxBytes=0; }
-      BOXES.set(key,b);boxBytes+=bytes;
-    }
-    blit(b);return;
-  }
   const col = em ? emi : lit;
   if (!noLine) polyOutline([iso(x, y, z + h), iso(x + w, y, z + h), iso(x + w, y, z), iso(x + w, y + d, z), iso(x, y + d, z), iso(x, y + d, z + h)], lit(OUT));
   poly([iso(x + w, y, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x + w, y, z + h)], col(c, .72));
@@ -912,7 +809,7 @@ function setCodexPet(p) {
       for (let yy = r * p.ch; yy < (r + 1) * p.ch; yy += 2) for (let xx = k * p.cw; xx < (k + 1) * p.cw; xx += 2) if (d[(yy * im.width + xx) * 4 + 3] > 40) return true;
       return false; };
     CPET.frames = [...Array(p.rows)].map((_, r) => { let n = 0; while (n < p.cols && filled(n, r)) n++; return Math.max(1, n); });
-    CPET.poses = new Map(); POSES.clear(); poseBytes=0;
+    CPET.poses = new Map();
     Object.assign(CPET, { img: im, cols: p.cols, rows: p.rows, cw: p.cw, ch: p.ch }); wake();
   };
   im.src = p.src;
@@ -937,23 +834,44 @@ function drawOwnPet(X, Y, sp, t, h, sleeping) {
   g.drawImage(tmp, x0, y0);
 }
 const lookOf = sp => sp.vendor === 'codex' ? (sp.small ? LOOKS.petMini : LOOKS.pet) : sp.small ? LOOKS.mini : LOOKS.clawd;
-const POSES = new Map(); let poseBytes = 0;
-function drawClawd(X, Y, sp, t) {
-  if (g !== main || g.globalAlpha !== 1 || sp.alpha !== 1 || sp.kind !== 'agent' || sp.hold || sp.fire || sp.state === 'shower' || eggLook(sp,t)) return paintClawd(X,Y,sp,t);
-  const x=Math.floor(X), y=Math.floor(Y), a=g.globalAlpha;
-  const list=main.capture(()=>{ g.globalAlpha=a;paintClawd(96+X-x,128+Y-y,sp,t); });
-  const hit=sp.hit; if(hit)sp.hit=[hit[0]+x-96,hit[1]+y-128,...hit.slice(2)];
-  const key=JSON.stringify(list.map(o=>o.key));let b=POSES.get(key);
-  if(!b) {
-    b=main.raster(list);
-    if(!b) { paintClawd(X,Y,sp,t);return; }
-    const bytes=b.img.width*b.img.height*4;
-    if(POSES.size>=192 || poseBytes+bytes>16*1024*1024) { POSES.clear();poseBytes=0; }
-    POSES.set(key,b);poseBytes+=bytes;
+const BODIES = new Map(); let bodyLight = '';
+function drawBody(left, top, cells, rows, C, bc, dark, sleeping, pet, sp, armRow, moving, t, egg) {
+  const paint = () => {
+    g.fillStyle = lit(OUT);
+    for (const [c, r] of cells) g.fillRect(left + c * C - 1, top + r * C - 1, C + 2, C + 2);
+    for (const [c, r, ch] of cells) {
+      let col = ch === 'L' ? dark : bc;
+      if (ch === 'B' && r === 0) col = mixHex(bc, '#ffffff', .2);
+      if (ch !== 'L' && r === rows.length - 1) col = mixHex(bc, '#000000', .12);
+      if (pet) col = ch === 'H' ? mixHex(bc, '#ffffff', .3) : ch === 'V' ? '#1c2350' : ch === 'T' ? '#e8f4ff' : ch === 'E' ? '#1c2350' : ch === 'A' ? mixHex(bc, '#000000', .08) : col;
+      g.fillStyle = ch === 'T' ? emi(col, .8) : lit(col); g.fillRect(left + c * C, top + r * C, C, C);
+      if (ch === 'E' && pet) { // eyes glow on the visor; asleep they turn into happy arcs
+        g.fillStyle = emi('#7ff0ff', .9);
+        if (!sleeping) g.fillRect(left + c * C, top + r * C, C, C); else { g.fillRect(left + c * C - 1, top + r * C + C - 2, C + 2, 1); g.fillRect(left + c * C, top + r * C + C - 3, C, 1); }
+      } else if (ch === 'E') {
+        if (!sleeping) { g.fillStyle = '#141018'; g.fillRect(left + c * C, top + r * C, C, C); g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(left + c * C, top + r * C, 1, 1); }
+        else { g.fillStyle = lit(mixHex(bc, '#000000', .5)); g.fillRect(left + c * C, top + r * C + C - 1, C, 1); }
+      }
+    }
+  };
+  // Flatten only opaque, ordinary bodies; fading and special effects keep their original compositing.
+  if (g.globalAlpha !== 1 || g.globalCompositeOperation !== 'source-over' || egg || sp.state === 'error') { paint(); return; }
+  if (bodyLight !== lightKey) { BODIES.clear(); bodyLight = lightKey; }
+  const key = [sp.vendor, sp.small, bc, dark, armRow, moving ? Math.floor(t / 110) % 2 : -1, sleeping].join('|');
+  let b = BODIES.get(key);
+  if (!b) {
+    const x = Math.min(...cells.map(c => c[0])) * C - 1, y = Math.min(...cells.map(c => c[1])) * C - 1;
+    const w = (Math.max(...cells.map(c => c[0])) + 1) * C - x + 1, h = (Math.max(...cells.map(c => c[1])) + 1) * C - y + 1;
+    const img = document.createElement('canvas'); img.width = w; img.height = h;
+    const saved = g; g = img.getContext('2d'); g.translate(-left - x, -top - y);
+    try { paint(); } finally { g = saved; }
+    b = { img, x, y };
+    if (BODIES.size >= 64) BODIES.clear();
+    BODIES.set(key, b);
   }
-  g.globalAlpha=1;g.drawImage(b.img,x-96+b.dx,y-128+b.dy);
+  g.drawImage(b.img, left + b.x, top + b.y);
 }
-function paintClawd(X, Y, sp, t) {
+function drawClawd(X, Y, sp, t) {
   if (sp.kind === 'cat') return drawCat(X, Y, sp, t);
   if (sp.kind === 'dog') return drawDog(X, Y, sp, t);
   const egg = eggLook(sp, t);
@@ -982,21 +900,7 @@ function paintClawd(X, Y, sp, t) {
   if (egg?.eye) eggEyes(cells, egg.eye);
   const own = pet && !egg && CPET.img; // the user's own Codex pet, from its spritesheet
   if (own) drawOwnPet(X, Y, sp, t, (rows.length + legH) * C, sleeping);
-  else { g.fillStyle = lit(OUT); for (const [c, r] of cells) g.fillRect(left + c * C - 1, top + r * C - 1, C + 2, C + 2); }
-  if (!own) for (const [c, r, ch] of cells) {
-    let col = ch === 'L' ? dark : bc;
-    if (ch === 'B' && r === 0) col = mixHex(bc, '#ffffff', .2);
-    if (ch !== 'L' && r === rows.length - 1) col = mixHex(bc, '#000000', .12);
-    if (pet) col = ch === 'H' ? mixHex(bc, '#ffffff', .3) : ch === 'V' ? '#1c2350' : ch === 'T' ? '#e8f4ff' : ch === 'E' ? '#1c2350' : ch === 'A' ? mixHex(bc, '#000000', .08) : col;
-    g.fillStyle = ch === 'T' ? emi(col, .8) : lit(col); g.fillRect(left + c * C, top + r * C, C, C);
-    if (ch === 'E' && pet) { // eyes glow on the visor; asleep they turn into happy arcs
-      g.fillStyle = emi('#7ff0ff', .9);
-      if (!sleeping) g.fillRect(left + c * C, top + r * C, C, C); else { g.fillRect(left + c * C - 1, top + r * C + C - 2, C + 2, 1); g.fillRect(left + c * C, top + r * C + C - 3, C, 1); }
-    } else if (ch === 'E') {
-      if (!sleeping) { g.fillStyle = '#141018'; g.fillRect(left + c * C, top + r * C, C, C); g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(left + c * C, top + r * C, 1, 1); }
-      else { g.fillStyle = lit(mixHex(bc, '#000000', .5)); g.fillRect(left + c * C, top + r * C + C - 1, C, 1); }
-    }
-  }
+  else drawBody(left, top, cells, rows, C, bc, dark, sleeping, pet, sp, armRow, moving, t, !!egg);
   infoOverClawd(sp, left, top, own ? [] : rows, C, bc, sleeping, t);
   if (egg?.after) eggAfter(X, Y, sp, t, left, top, w * C);
   g.globalAlpha = 1;
@@ -3865,13 +3769,13 @@ function tellAwake(on) {
   if (on === sentAwake || SCENE === 'extra') return; sentAwake = on;
   if (window.webkit?.messageHandlers?.room) try { window.webkit.messageHandlers.room.postMessage({ awake: on }); } catch (e) {}
 }
-// Ambient poses use 10 fps. A stationary pointer or working agent never pins the movement rate.
+// Autonomous animation uses 10 fps; direct manipulation and room arrivals get a short 30 fps burst.
+// Movement still integrates elapsed time in frame(), independently of paint cadence.
 function paintFps(t) {
-  const moving = t < pointerUntil || CAM.glide || CAM.follow
-    || (LIFT && LIFT.cabins.some(c => c.state !== 'idle' && c.state !== 'open'))
-    || links.some(L => L.turn) || rooms.some(r => t - r.born < 1800)
-    || [...sprites.values()].some(sp => sp.path.length || sp.onBridge || sp.fall || sp.alpha !== sp.fade);
-  return Math.max(1, Math.min(fpsCap, moving ? 30 : 10));
+  const burst = t < pointerUntil || CAM.glide || CAM.follow
+    || rooms.some(r => t - r.born < 1800)
+    || [...sprites.values()].some(sp => sp.alpha !== sp.fade);
+  return Math.max(1, Math.min(fpsCap, burst ? 30 : 10));
 }
 function scheduleFrame(t) {
   clearTimeout(frameDeadline);
@@ -3917,7 +3821,7 @@ function frame(t) {
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
-  g = main; main.beginFrame();
+  g = main;
   stepCamera(t, dt);
   drawBackground(t, d);
   eggSky(t, d);
@@ -3939,7 +3843,6 @@ function frame(t) {
   drawSceneOverlays(t);
   drawMist(t, d);
   eggOver(t);
-  main.endFrame();
   updateTip(); updateControls(d);
 }
 
