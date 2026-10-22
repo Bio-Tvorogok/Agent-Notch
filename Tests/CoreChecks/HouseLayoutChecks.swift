@@ -11,6 +11,10 @@ struct HouseLayoutChecks {
         let js = Process()
         js.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         js.arguments = ["node", "Tests/HouseChecks/layout-fixtures.mjs", "--check"]
+        // node may come from nvm (login shells only); GUI and release runs find the system copies
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (env["PATH"].map { $0 + ":" } ?? "") + "/usr/local/bin:/opt/homebrew/bin"
+        js.environment = env
         try js.run(); js.waitUntilExit()
         XCTAssertEqual(js.terminationStatus, 0, "current JS must match the committed golden fixtures")
         let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -47,6 +51,26 @@ struct HouseLayoutChecks {
         let invalid = HouseLayout.make(projects: ["😀", "Проект"], canvas: .init(width: 1440, height: 900),
                                        themes: ["😀": "bath", "Проект": "unknown"])
         XCTAssertEqual(invalid.rooms.suffix(2).map(\.theme), ["greenhouse", "library"])
+    }
+
+    /// Room seeds as the page computes them (`hashStr(key) % 97`, evaluated in node for these keys).
+    func roomSeeds() throws {
+        let keys = ["__bath", "__kitchen", "__roof", "p:Agent-Notch", "p:😀", "p:Проект"]
+        let js = Process()
+        js.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (env["PATH"].map { $0 + ":" } ?? "") + "/usr/local/bin:/opt/homebrew/bin"
+        js.environment = env
+        let code = "const hashStr = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };"
+            + "console.log(JSON.stringify(\(String(data: try JSONEncoder().encode(keys), encoding: .utf8)!).map(k => hashStr(k) % 97)))"
+        js.arguments = ["node", "-e", code]
+        let out = Pipe(); js.standardOutput = out
+        try js.run(); js.waitUntilExit()
+        XCTAssertEqual(js.terminationStatus, 0, "node evaluates hashStr")
+        let expected = try JSONDecoder().decode([Int].self, from: out.fileHandleForReading.readDataToEndOfFile())
+        let rooms = keys.map { HouseLayout.Room(key: $0, name: "", theme: "", NX: 10, NY: 8) }
+        XCTAssertEqual(rooms.map(\.seed), expected)
+        XCTAssertEqual(HouseLayout.Room(key: "__yard", name: "", theme: "", NX: 1, NY: 1).seed, 11)
     }
 
     private struct Fixture: Decodable {
