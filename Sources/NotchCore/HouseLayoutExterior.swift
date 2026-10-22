@@ -7,6 +7,7 @@ extension HouseLayoutBuilder {
         var r = H.Room(key: "__yard", name: "Двор", theme: "yard", NX: 16.6 - 0.1, NY: 7.85,
                        tower: -1, floor: -1, tz: nil, wx: nil, wy: nil)
         r.ox = rooms[0].ox; r.oy = rooms[0].oy + 6 * 2
+        r.wx = rooms[0].wx; r.wy = (rooms[0].wy ?? 0) + 6 * 2 // world position: the yard's edge is where its jumpers fall from
         let used: (String) -> Bool = { kind in self.links.contains { $0.a == "__yard" && $0.pa.kind == kind } }
         return H.Yard(on: style == .islands, room: r, YD: ["x1": 16.6, "y0": 1],
                       YW: [[8.9,6.3],[8.6,7.0],[2.6,7.0],[1.8,7.05],[1.0,7.65],[8.9,3.7],[16.0,3.6],[8.9,1.5],[9.9,0.85],

@@ -16,7 +16,7 @@ struct HouseRouteChecks {
         let dir = URL(fileURLWithPath: "Tests/Fixtures/house-routes")
         let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        XCTAssertEqual(files.map(\.lastPathComponent), ["02-islands.json", "05-islands.json", "05-towers.json", "14-islands.json"])
+        XCTAssertEqual(files.map(\.lastPathComponent), ["02-islands.json", "05-islands-frames.json", "05-islands.json", "05-towers.json", "14-islands.json"])
         var routes = 0, samples = 0
         for file in files {
             let f = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
@@ -24,7 +24,7 @@ struct HouseRouteChecks {
             let layout = HouseLayout.make(projects: input["projects"] as! [String],
                                           layout: HouseLayout.Style(rawValue: input["layout"] as! String)!,
                                           canvas: .init(width: 1440, height: 900))
-            try compare(output["catalog"]!, json(HouseRoutes.themes), at: file.lastPathComponent + ".catalog")
+            if !(output["routes"] as! [Any]).isEmpty { try compare(output["catalog"]!, json(HouseRoutes.themes), at: file.lastPathComponent + ".catalog") }
             let world = HouseSim(layout: layout)
             let origins = output["origins"] as! [[String: Any]]
             let nodes = output["nodes"] as! [Any]
@@ -38,32 +38,73 @@ struct HouseRouteChecks {
             }
             let sim = input["sim"] as! [String: Any], rng = HouseRandom(seed: UInt32(sim["seed"] as! Int))
             let moving = HouseSim(layout: layout, random: { rng.nextDouble() })
+            for si in sim["stairInit"] as? [[String: Any]] ?? [] {
+                guard let l = moving.links.first(where: { $0.geometry.id == si["id"] as? String }) else { XCTFail("no stair \(si["id"] ?? "")"); continue }
+                if let v = si["aim"] as? Int { l.aim = v }
+                if let v = si["lift"] as? Double { l.lift = v }
+                if let v = si["next"] as? Double { l.next = v }
+            }
             for item in sim["setup"] as! [[String: Any]] { _ = try spawn(item, in: moving) }
             let events = sim["events"] as! [[String: Any]]
             let trace = output["trace"] as! [[Any]], eventPaths = output["eventPaths"] as! [[Any]]
-            var eventIndex = 0
-            try compare(trace[0][1], snapshot(moving, rng), at: file.lastPathComponent + ".trace[0]")
-            for tick in stride(from: 50, through: 60000, by: 50) {
-                for e in events where e["at"] as! Int == tick {
-                    let id = e["id"] as! String
-                    if var item = e["spawn"] as? [String: Any] { item["id"] = id; _ = try spawn(item, in: moving) }
-                    let sp = moving.sprites.first { $0.id == id }!
+            var eventIndex = 0, fired = Set<Int>()
+            // The page's order: an event fires on the first tick or frame whose clock has
+            // reached its time and, with `when`, whose sprite is in that state.
+            func ready(_ when: String?, _ sp: HouseSprite) -> Bool {
+                switch when {
+                case "limbo": return sp.room == nil && sp.onBridge == nil
+                case "lift": return sp.onBridge?.kind == "lift"
+                case "bridge": return sp.onBridge != nil && sp.onBridge?.kind != "lift"
+                default: return true
+                }
+            }
+            func fire(_ clock: Double) throws {
+                for (k, e) in events.enumerated() where !fired.contains(k) && (e["at"] as! NSNumber).doubleValue <= clock {
+                    let id = e["id"] as! String, spawnItem = e["spawn"] as? [String: Any]
+                    var found = moving.sprites.first { $0.id == id }
+                    if spawnItem == nil && found == nil { continue }
+                    if let found, !ready(e["when"] as? String, found) { continue }
+                    fired.insert(k)
+                    if var item = spawnItem { item["id"] = id; found = try spawn(item, in: moving) }
+                    guard let sp = found else { continue }
                     if e["orphan"] as? Bool == true {
                         sp.onBridge = .init(kind: "bridge", pair: moving.links.first?.geometry.id ?? "orphan", u: 0.5)
                         sp.room = nil; sp.path = []
                     }
                     if let g = e["goal"] as? [String: Any] { setGoal(sp, g, in: moving) }
-                    try compare(eventPaths[eventIndex], [tick, id, try json(sp.path)], at: "\(file.lastPathComponent).eventPaths[\(eventIndex)]")
+                    try compare(eventPaths[eventIndex], [clock, id, try json(sp.path)], at: "\(file.lastPathComponent).eventPaths[\(eventIndex)]")
                     eventIndex += 1
                 }
-                moving.step(dt: 50)
-                if tick % 250 == 0 {
-                    try compare(trace[tick / 250][1], snapshot(moving, rng), at: "\(file.lastPathComponent).trace[\(tick)ms]")
-                    samples += 1
+            }
+            try compare(trace[0][1], snapshot(moving, rng), at: file.lastPathComponent + ".trace[0]")
+            if let frames = sim["frames"] as? [String: Any] {
+                // frame() of the page: advance(frame:) with the raw deltas, a negative first one and a 4 s stall.
+                let deltas = (frames["deltas"] as! [NSNumber]).map(\.doubleValue), every = frames["sample"] as! Int
+                var clock = 0.0, next = 1
+                for (i, raw) in deltas.enumerated() {
+                    clock += max(0, raw)
+                    try fire(clock)
+                    moving.advance(frame: raw)
+                    if i % every == every - 1 {
+                        try compare(trace[next][1], snapshot(moving, rng), at: "\(file.lastPathComponent).trace[frame \(i)]")
+                        next += 1; samples += 1
+                    }
+                }
+                XCTAssertEqual(next, trace.count)
+                XCTAssertTrue(deltas.first! < 0 && deltas.contains { $0 >= 4000 }, "the frame trace needs its negative first delta and its stall")
+            } else {
+                for tick in stride(from: 50, through: 60000, by: 50) {
+                    try fire(Double(tick))
+                    moving.step(dt: 50)
+                    if tick % 250 == 0 {
+                        try compare(trace[tick / 250][1], snapshot(moving, rng), at: "\(file.lastPathComponent).trace[\(tick)ms]")
+                        samples += 1
+                    }
                 }
             }
             XCTAssertEqual(eventIndex, eventPaths.count)
         }
+        try HouseRobustnessChecks().all()
         print("houseRouteGoldenFixtures: compared \(files.count) JS fixtures, \(routes) paths, \(samples) movement samples (tolerance 1e-6)")
     }
 
@@ -102,7 +143,7 @@ struct HouseRouteChecks {
             let turn: Any = l.turn.map { [$0.a0, $0.a1, $0.to, $0.t0, $0.ms] as [Any] } ?? null
             return [l.geometry.id, l.geometry.ang!, l.lift, l.aim, turn, l.next, l.since as Any? ?? null]
         }
-        return ["sprites": sprites, "cabins": cabins, "stairs": stairs, "rng": rng.state]
+        return ["clock": world.time, "sprites": sprites, "cabins": cabins, "stairs": stairs, "rng": rng.state]
     }
 
     private func json<T: Encodable>(_ value: T) throws -> Any {

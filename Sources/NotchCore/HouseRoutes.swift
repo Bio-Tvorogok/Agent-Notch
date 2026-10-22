@@ -10,8 +10,8 @@ extension HouseSim {
     // edges are visited in exactly the page's order, including disconnected stacks.
     private func roomPath(_ a: String, _ b: String) -> [RouteStep]? {
         let rooms = layout.rooms + [layout.yard.room]
-        func index(_ key: String) -> Int { rooms.firstIndex { HouseRoutes.same($0.key, key) }! }
-        let start = index(a), end = index(b)
+        func index(_ key: String) -> Int? { rooms.firstIndex { HouseRoutes.same($0.key, key) } }
+        guard let start = index(a), let end = index(b) else { return nil }
         var visited: Set<Int> = [start], queue = [start], head = 0
         var previous: [Int: (Int, RouteStep)] = [:]
         while head < queue.count {
@@ -40,7 +40,7 @@ extension HouseSim {
             if yard { next.append(RouteStep(next: "__bath", kind: "yard")) }
             else if r.key == "__bath" && layout.yard.on { next.append(RouteStep(next: "__yard", kind: "yard")) }
             for step in next {
-                let n = index(step.next)
+                guard let n = index(step.next) else { continue }
                 if visited.insert(n).inserted { previous[n] = (current, step); queue.append(n) }
             }
         }
@@ -52,26 +52,30 @@ extension HouseSim {
 
     /// routeTo: replaces only the path; setGoal also records category/spot data.
     public func route(_ sprite: HouseSprite, to key: String, point p: [Double]) {
-        var nodes: [HouseRouteNode] = [], cur = sprite.room, from = [sprite.x, sprite.y, sprite.z]
-        if sprite.onBridge != nil {
+        var nodes: [HouseRouteNode] = [], cur = sprite.room ?? sprite.homeRoom, from = [sprite.x, sprite.y, sprite.z]
+        if sprite.onBridge != nil || sprite.room == nil {
+            // Finish the crossing first. With no room and no bridge (the frame
+            // after a crossing or a lift exit, before its jump node ran) the
+            // pending jump node lands the sprite: take cur/from from it, or
+            // from the home room when nothing is pending.
             let rest = sprite.path.filter { ($0.wait ?? 0) == 0 }
-            if let k = rest.firstIndex(where: { $0.r != nil }) {
-                nodes.append(contentsOf: rest[...k]); cur = rest[k].r; from = rest[k].p!
+            if let k = rest.firstIndex(where: { $0.r != nil }), let r = rest[k].r {
+                nodes.append(contentsOf: rest[...k]); cur = r; from = rest[k].p ?? hub(r)
             } else {
-                sprite.onBridge = nil; cur = sprite.homeRoom; from = hub(cur!)
+                sprite.onBridge = nil; cur = sprite.homeRoom; from = hub(cur)
                 nodes.append(.init(r: cur, p: from, jump: true, poof: true))
             }
-        } else if let n = sprite.path.first, let q = n.p, q[2] != 0,
+        } else if let n = sprite.path.first, let q = n.p, q.count >= 3, q[2] != 0,
                   HouseRoutes.same(n.r, cur), n.jump != true {
             nodes.append(n); from = q
         } else if sprite.z > 0.5 {
-            let r = room(cur!)
+            let r = room(cur)
             nodes.append(.init(r: cur, p: [min(sprite.x + 0.2, r.NX - 0.4), min(sprite.y + 0.7, r.NY - 0.4), 0]))
         }
-        let steps = HouseRoutes.same(cur, key) ? [] : roomPath(cur!, key)
+        let steps = HouseRoutes.same(cur, key) ? [] : roomPath(cur, key)
         if let steps {
             for step in steps {
-                let current = room(cur!), next = room(step.next)
+                let current = room(cur), next = room(step.next)
                 switch step.kind {
                 case "stairs":
                     let up = next.floor > current.floor, ny = current.NY, nyn = next.NY
@@ -90,10 +94,16 @@ extension HouseSim {
                         nodes += flight(nyn).reversed().dropFirst().map { .init(r: next.key, p: $0) }
                     }
                 case "yard": yardLink(&nodes, current, next, from)
-                case "lift": liftLink(&nodes, current, next, step.trip!, from, sprite)
-                default: crossLink(&nodes, current, next, link(step.link!).geometry, from)
+                case "lift": liftLink(&nodes, current, next, step.trip ?? .init(from: -1, to: -1), from, sprite)
+                default:
+                    // The page tested `via.lift` here, which a stair's raise
+                    // fraction also satisfies; it now asks for `=== true`, so a
+                    // stair is always crossed, whatever its raise (the walker
+                    // waves it down at the call node).
+                    guard let state = step.link.flatMap(link) else { continue }
+                    crossLink(&nodes, current, next, state.geometry, from)
                 }
-                from = nodes.last!.p!; cur = next.key
+                from = nodes.last?.p ?? from; cur = next.key
             }
         } else {
             from = hub(key); cur = key
@@ -108,6 +118,10 @@ extension HouseSim {
         nodes.append(.init(r: key, p: p)); sprite.path = nodes
     }
 
+    private func gate(_ name: String) -> [Double] {
+        let yard = layout.yard
+        return yard.YW.indices.contains(yard.YGATE[name] ?? -1) ? yard.YW[yard.YGATE[name] ?? 0] : (yard.YW.first ?? [8.9, 6.3])
+    }
     private func far(_ a: [Double], _ b: [Double]) -> Bool { hypot(a[0]-b[0], a[1]-b[1]) > 2.2 }
     private func inBox(_ r: HouseLayout.Room, _ p: [Double]) -> Bool { p[0] > -0.05 && p[0] < r.NX+0.05 && p[1] > -0.05 && p[1] < r.NY+0.05 }
     private func front(_ r: HouseLayout.Room, _ p: [Double]) -> Bool { p[1] > r.NY + 0.05 }
@@ -156,16 +170,17 @@ extension HouseSim {
     private func yardWalk(_ nodes: inout [HouseRouteNode], _ from: [Double], _ to: [Double]) {
         func chain(_ start: Int) -> [Int] {
             var result: [Int] = [], i = start
-            while i >= 0 { result.append(i); i = layout.yard.YUP[i] }; return result
+            while i >= 0 && i < layout.yard.YUP.count && result.count <= layout.yard.YUP.count { result.append(i); i = layout.yard.YUP[i] }; return result
         }
-        let a = chain(yardNear(from)), b = chain(yardNear(to)), top = a.first { b.contains($0) }!
-        let path = Array(a.prefix(through: a.firstIndex(of: top)!)) + b.prefix(upTo: b.firstIndex(of: top)!).reversed()
+        let a = chain(yardNear(from)), b = chain(yardNear(to))
+        guard let top = a.first(where: { b.contains($0) }), let ai = a.firstIndex(of: top), let bi = b.firstIndex(of: top) else { return }
+        let path = Array(a.prefix(through: ai)) + b.prefix(upTo: bi).reversed()
         for i in path { nodes.append(.init(r: "__yard", p: layout.yard.YW[i] + [0])) }
     }
     private func yardLink(_ nodes: inout [HouseRouteNode], _ cur: HouseLayout.Room, _ next: HouseLayout.Room, _ from: [Double]) {
         let b = cur.key == "__yard" ? next : cur, ny = b.NY
         let way: [[Double]] = [[1,ny-0.5,0], [0.7,ny+0.7,0], [1.375,ny+1,-3]]
-        let foot = layout.yard.YW[layout.yard.YGATE["foot"]!]
+        let foot = gate("foot")
         if cur.key != "__yard" {
             if far(from,hub(b.key)) && far(from,way[0]) { nodes.append(.init(r: b.key, p: hub(b.key))) }
             nodes += way.map { .init(r: b.key, p: $0) }
@@ -179,24 +194,26 @@ extension HouseSim {
     private func crossLink(_ nodes: inout [HouseRouteNode], _ cur: HouseLayout.Room, _ next: HouseLayout.Room, _ l: HouseLayout.Link, _ from: [Double]) {
         let fw = HouseRoutes.same(l.a,cur.key), pc = fw ? l.pa : l.pb, pn = fw ? l.pb : l.pa
         if cur.key == "__yard" {
-            yardWalk(&nodes,from,layout.yard.YW[layout.yard.YGATE[pc.kind]!])
+            yardWalk(&nodes,from,gate(pc.kind))
             nodes.append(.init(r: "__yard", p: [pc.q[0],pc.q[1],0]))
         } else { walkOut(&nodes,cur,pc.q,from) }
         if l.kind == "stair" { nodes.append(.init(call: l.id, aim: 0, side: fw ? "lo" : "hi")) }
         nodes += [.init(bridge: l.id, to: fw ? 1 : 0), .init(r: next.key, p: [pn.q[0],pn.q[1],next.key == "__yard" ? 0 : -6], jump: true)]
     }
     private func liftWay(_ r: HouseLayout.Room, _ sprite: HouseSprite) -> [[Double]] {
-        let l = layout.lift!, wx = l.x0 + 0.35 + sprite.seed * (l.x1-l.x0-0.7), wy = l.y1 + 0.4
+        guard let l = layout.lift else { return [] }
+        let wx = l.x0 + 0.35 + sprite.seed * (l.x1-l.x0-0.7), wy = l.y1 + 0.4
         if r.key == "__yard" { return [[wx,wy,0]] }
-        let e = entry(r,front: false), yo = l.fl[r.floor].yoff
+        let e = entry(r,front: false), yo = l.fl.indices.contains(r.floor) ? l.fl[r.floor].yoff : 0
         return [e.i, [r.NX+0.3,e.i[1],0], [r.NX+0.3,wy-yo,0], [wx,wy-yo,0]]
     }
     private func liftLink(_ nodes: inout [HouseRouteNode], _ cur: HouseLayout.Room, _ next: HouseLayout.Room, _ trip: HouseLiftTrip, _ from: [Double], _ sprite: HouseSprite) {
-        let out = liftWay(cur,sprite), inn = liftWay(next,sprite), tower = layout.yard.YW[layout.yard.YGATE["tower"]!]
+        let out = liftWay(cur,sprite), inn = liftWay(next,sprite), tower = gate("tower")
+        guard let landing = inn.last, let first = out.first else { return }
         if cur.key == "__yard" { yardWalk(&nodes,from,tower) }
-        else if far(from,hub(cur.key)) && far(from,out[0]) { nodes.append(.init(r: cur.key, p: hub(cur.key))) }
+        else if far(from,hub(cur.key)) && far(from,first) { nodes.append(.init(r: cur.key, p: hub(cur.key))) }
         nodes += out.map { .init(r: cur.key, p: $0) }
-        nodes += [.init(lift: trip), .init(r: next.key, p: inn.last!, jump: true)]
+        nodes += [.init(lift: trip), .init(r: next.key, p: landing, jump: true)]
         if next.key == "__yard" { nodes.append(.init(r: "__yard", p: tower + [0])) }
         else { nodes += inn.dropLast().reversed().map { .init(r: next.key, p: $0) } }
     }

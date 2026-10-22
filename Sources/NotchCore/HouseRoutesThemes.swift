@@ -96,6 +96,8 @@ public enum HouseRoutes {
         ]),
     ]
 
+    /// Theme data by name; an unknown name uses the bathroom's, never traps.
+    static func theme(_ name: String) -> Theme { themes[name] ?? themes["bath"] ?? Theme(hub: [3.4, 3.2, 0], spots: [:]) }
     static func same(_ a: String?, _ b: String?) -> Bool {
         switch (a, b) {
         case let (a?, b?): return a.utf16.elementsEqual(b.utf16)

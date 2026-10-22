@@ -52,7 +52,8 @@ public final class HouseSprite {
     public struct Fall {
         public var x, y, t0, seed: Double
     }
-    public let id: String
+    public internal(set) var id: String
+    public let behaviour = HouseBehaviourSpriteState()
     public var room: String?, homeRoom: String
     public var x, y, z: Double
     public var path: [HouseRouteNode] = []
@@ -93,10 +94,11 @@ public final class HouseCabinState {
 /// units. A step runs sprites, lifts, then stairs, using the step's ending time.
 /// Goal selection belongs to the caller; this world never chooses a destination.
 public final class HouseSim {
-    public let layout: HouseLayout
-    public let links: [HouseLinkState], cabins: [HouseCabinState]
-    public private(set) var sprites: [HouseSprite] = []
-    public private(set) var time = 0.0
+    public internal(set) var layout: HouseLayout
+    public internal(set) var links: [HouseLinkState], cabins: [HouseCabinState]
+    public internal(set) var sprites: [HouseSprite] = []
+    public internal(set) var time = 0.0
+    var roomDrops: [String: Double] = [:]
     let random: () -> Double
     public convenience init(layout: HouseLayout, seed: UInt32 = 173) {
         let rng = HouseRandom(seed: seed)
@@ -108,20 +110,30 @@ public final class HouseSim {
         cabins = (layout.lift?.cabins ?? []).map(HouseCabinState.init)
     }
 
+    /// A room by key. Never traps: an unknown key (stale goal, hand-built input)
+    /// degrades to the bathroom, then to whatever room exists, then to the yard.
     public func room(_ key: String) -> HouseLayout.Room {
-        if HouseRoutes.same(key, "__yard") { return layout.yard.room }
-        guard let room = layout.rooms.first(where: { HouseRoutes.same($0.key, key) }) else {
-            preconditionFailure("Unknown house room: \(key)")
+        if HouseRoutes.same(key, "__yard") {
+            var r = layout.yard.room; r.drop = roomDrops["__bath"] ?? r.drop; return r
         }
-        return room
+        guard let room = layout.rooms.first(where: { HouseRoutes.same($0.key, key) })
+                ?? layout.rooms.first(where: { HouseRoutes.same($0.key, "__bath") }) ?? layout.rooms.first else {
+            var r = layout.yard.room; r.drop = roomDrops["__bath"] ?? r.drop; return r
+        }
+        var result = room; result.drop = roomDrops[room.key] ?? room.drop; return result
     }
-    public func hub(_ key: String) -> [Double] { HouseRoutes.themes[room(key).theme]!.hub }
-    public func spots(_ key: String) -> [String: [[Double]]] { HouseRoutes.themes[room(key).theme]!.spots }
+    func hasRoom(_ key: String) -> Bool {
+        HouseRoutes.same(key, "__yard") || layout.rooms.contains { HouseRoutes.same($0.key, key) }
+    }
+    public func hub(_ key: String) -> [Double] { HouseRoutes.theme(room(key).theme).hub }
+    public func spots(_ key: String) -> [String: [[Double]]] { HouseRoutes.theme(room(key).theme).spots }
     func roomAt(_ tower: Int, _ floor: Int) -> HouseLayout.Room? {
         layout.rooms.first { $0.tower == tower && $0.floor == floor }
     }
     func isIsland(_ r: HouseLayout.Room) -> Bool { r.floor == 0 && r.tower > 0 && layout.yard.on }
-    func link(_ id: String) -> HouseLinkState { links.first { HouseRoutes.same($0.geometry.id, id) }! }
+    /// nil for a stale id: the page keeps the dead link object alive, a value
+    /// world has nothing to point at, so callers skip or reroute.
+    func link(_ id: String) -> HouseLinkState? { links.first { HouseRoutes.same($0.geometry.id, id) } }
 
     @discardableResult
     public func spawn(id: String, room key: String, kind: String = "agent", small: Bool = false) -> HouseSprite {
@@ -138,9 +150,27 @@ public final class HouseSim {
     public func setGoal(_ sprite: HouseSprite, _ goal: HouseGoal) {
         sprite.goal = goal; route(sprite, to: goal.room, point: goal.p)
     }
+    /// dt in milliseconds. Non-finite or negative input counts as zero.
+    static func sane(_ dt: Double) -> Double { dt.isFinite ? max(0, dt) : 0 }
+    /// One fixed step at the end of dt: the contract of the golden fixtures.
     public func step(dt: Double) {
-        precondition(dt.isFinite && dt >= 0)
+        let dt = Self.sane(dt)
         time += dt
         stepSprites(dt); updateLifts(dt); updateStairs()
+    }
+    /// The page's frame(): `raw` is the frame clock's delta (rAF stamp minus the
+    /// last one). The clock follows it (never backwards), the motion it drives is
+    /// clamped to [0, 1500] ms and cut into 50 ms substeps of sprites then lifts
+    /// (lifts see the substep's own end), stairs run once per frame. Late paints
+    /// after a stall catch up at most 1.5 s of motion.
+    public func advance(frame raw: Double) {
+        let raw = raw.isFinite ? raw : 0, dt = min(1500, max(0, raw))
+        time += max(0, raw)
+        var left = dt
+        while left > 0 {
+            let step = min(50, left); left -= step
+            stepSprites(step); updateLifts(step, now: time - left)
+        }
+        updateStairs()
     }
 }
