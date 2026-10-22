@@ -14,7 +14,11 @@ extension HouseSim {
                 let r = room(sp.room!)
                 let x = r.ox + (sp.x - sp.y) * 8 * 2
                 let y = r.oy + r.drop + (sp.x + sp.y) * 4 * 2 - sp.z * 2
-                sp.fall = .init(x: x-r.ox+(r.wx ?? 0), y: y-r.oy+(r.wy ?? 0), t0: time, seed: sp.seed)
+                // YARD has no wx/wy in JS: exiting it produces NaN world
+                // coordinates and never meets drawFallers' removal threshold.
+                let wx = r.key == "__yard" ? Double.nan : (r.wx ?? 0)
+                let wy = r.key == "__yard" ? Double.nan : (r.wy ?? 0)
+                sp.fall = .init(x: x-r.ox+wx, y: y-r.oy+wy, t0: time, seed: sp.seed)
                 sp.room = nil; sp.state = "fall"; sp.moving = false; continue
             }
             sp.waving = false
@@ -59,9 +63,9 @@ extension HouseSim {
                 sp.path.removeFirst(); if n.poof == true { sp.alpha = 0 }; continue
             }
             let p = n.p!, dx = p[0]-sp.x, dy = p[1]-sp.y, dz = (p[2]-sp.z)/14
-            // JS Math.hypot scales its arguments before summing. sqrt on these
-            // finite tile distances agrees to far better than the 1e-6 contract.
-            let dist = sqrt(dx*dx + dy*dy + dz*dz)
+            // Match Math.hypot's scaled, compensated sum. A few ulps here
+            // decide which tick consumes a node at an exact-speed boundary.
+            let dist = houseBehaviourHypot([dx,dy,dz])
             if dist <= speed || dist == 0 {
                 sp.x = p[0]; sp.y = p[1]; sp.z = p[2]; sp.path.removeFirst(); sp.moving = !sp.path.isEmpty
             } else {

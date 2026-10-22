@@ -52,7 +52,8 @@ public final class HouseSprite {
     public struct Fall {
         public var x, y, t0, seed: Double
     }
-    public let id: String
+    public internal(set) var id: String
+    public let behaviour = HouseBehaviourSpriteState()
     public var room: String?, homeRoom: String
     public var x, y, z: Double
     public var path: [HouseRouteNode] = []
@@ -93,10 +94,11 @@ public final class HouseCabinState {
 /// units. A step runs sprites, lifts, then stairs, using the step's ending time.
 /// Goal selection belongs to the caller; this world never chooses a destination.
 public final class HouseSim {
-    public let layout: HouseLayout
-    public let links: [HouseLinkState], cabins: [HouseCabinState]
-    public private(set) var sprites: [HouseSprite] = []
-    public private(set) var time = 0.0
+    public internal(set) var layout: HouseLayout
+    public internal(set) var links: [HouseLinkState], cabins: [HouseCabinState]
+    public internal(set) var sprites: [HouseSprite] = []
+    public internal(set) var time = 0.0
+    var roomDrops: [String: Double] = [:]
     let random: () -> Double
     public convenience init(layout: HouseLayout, seed: UInt32 = 173) {
         let rng = HouseRandom(seed: seed)
@@ -109,11 +111,13 @@ public final class HouseSim {
     }
 
     public func room(_ key: String) -> HouseLayout.Room {
-        if HouseRoutes.same(key, "__yard") { return layout.yard.room }
+        if HouseRoutes.same(key, "__yard") {
+            var r = layout.yard.room; r.drop = roomDrops["__bath"] ?? r.drop; return r
+        }
         guard let room = layout.rooms.first(where: { HouseRoutes.same($0.key, key) }) else {
             preconditionFailure("Unknown house room: \(key)")
         }
-        return room
+        var result = room; result.drop = roomDrops[key] ?? room.drop; return result
     }
     public func hub(_ key: String) -> [Double] { HouseRoutes.themes[room(key).theme]!.hub }
     public func spots(_ key: String) -> [String: [[Double]]] { HouseRoutes.themes[room(key).theme]!.spots }

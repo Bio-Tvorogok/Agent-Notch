@@ -91,7 +91,13 @@ extension HouseSim {
                     }
                 case "yard": yardLink(&nodes, current, next, from)
                 case "lift": liftLink(&nodes, current, next, step.trip!, from, sprite)
-                default: crossLink(&nodes, current, next, link(step.link!).geometry, from)
+                default:
+                    let state = link(step.link!)
+                    // JS tests via.lift before crossLink. A raised/turning stair's
+                    // numeric lift is truthy and becomes {from:undefined,to:undefined}.
+                    // -1 is the undefined-floor sentinel; liftZ falls back to top.
+                    if state.lift != 0 { liftLink(&nodes,current,next,.init(from: -1,to: -1),from,sprite) }
+                    else { crossLink(&nodes, current, next, state.geometry, from) }
                 }
                 from = nodes.last!.p!; cur = next.key
             }
