@@ -14,7 +14,7 @@ final class RoomWallpaper: NSObject {
     private let store: Store
     private var window: NSWindow?
     private(set) var web: WKWebView?
-    /// The SpriteKit prototype (Phase 0, docs/house-spritekit-plan.md), only with `houseRenderer spritekit`.
+    /// The SpriteKit prototype (docs/house-spritekit-port.md), only with `houseRenderer spritekit`.
     private var house: SKView?
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
@@ -164,12 +164,22 @@ final class RoomWallpaper: NSObject {
         pinchTap = nil
     }
 
-    /// Phase 0: the scripted demo scene from room/atlas, without the page's agents, clicks or other screens.
+    /// The static house composed from room/atlas/parts.json by HouseScene2 (stage 1c): one room per project the agents work in,
+    /// the sky by the hour. No agents, clicks or other screens yet (stage 2b).
     private func startSpriteKit(in w: NSWindow, page: URL, screen: NSScreen) -> Bool {
-        guard let scene = HouseScene.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas")) else { return false }
+        let top = screen.frame.maxY - screen.visibleFrame.maxY, bottom = screen.visibleFrame.minY - screen.frame.minY
+        let icons = UserDefaults(suiteName: "com.apple.finder")?.object(forKey: "CreateDesktop") as? Bool ?? true
+        var seen = Set<String>(), names: [String] = []
+        for a in store.shown where seen.insert(a.project).inserted && names.count < 14 { names.append(a.project) }
+        let scale = screen.backingScaleFactor
+        let layout = HouseLayout.make(projects: names, canvas: .init(width: screen.frame.width, height: screen.frame.height, dpr: Double(scale)),
+                                      insets: .init(top: top, bottom: bottom, right: icons ? 120 : 0))
+        let unit = CGFloat(layout.view.PXD / layout.view.DPR)
+        guard let scene = HouseScene2.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas"), layout: layout, unit: unit, size: screen.frame.size) else { return false }
+        scene.followClock = true
         let view = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.ignoresSiblingOrder = true
-        view.preferredFramesPerSecond = 60
+        view.preferredFramesPerSecond = Self.fps
         w.contentView = view
         view.presentScene(scene)
         w.setFrame(screen.frame, display: true)
@@ -212,9 +222,9 @@ final class RoomWallpaper: NSObject {
     }
 
     func syncPower() {
-        if let house, let w = window, let scene = house.scene as? HouseScene {
+        if let house, let w = window, let scene = house.scene as? HouseScene2 {
             // covered: nothing drawn; on battery or in Low Power Mode: 30 fps at most
-            scene.maxFps = Self.onBattery || ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : 60
+            scene.maxFps = Self.fps
             let visible = w.occlusionState.contains(.visible)
             if visible != sentActive { sentActive = visible; if visible { scene.wake() } else { scene.hide() } }
             return

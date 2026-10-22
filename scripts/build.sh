@@ -84,8 +84,8 @@ python3 scripts/update-config.py "$APP/Contents/Info.plist"
 
 [ -f assets/AppIcon.icns ] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 mkdir -p "$APP/Contents/Resources/room" && cp room/index.html "$APP/Contents/Resources/room/index.html"
-# the SpriteKit prototype's atlas (scripts/export-house-atlas.sh), used only with `houseRenderer spritekit`
-if [ -f room/atlas/house.json ] && [ -f room/atlas/house-0.png ]; then mkdir -p "$APP/Contents/Resources/room/atlas" && cp room/atlas/house.json room/atlas/house-*.png "$APP/Contents/Resources/room/atlas/"; fi
+# the SpriteKit prototype's atlas (scripts/export-house-parts.sh), used only with `houseRenderer spritekit`
+if [ -f room/atlas/parts.json ] && [ -f room/atlas/parts-0.png ]; then mkdir -p "$APP/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$APP/Contents/Resources/room/atlas/"; fi
 # The app installs the saver from its own bundle (Settings → Desktop house).
 ditto "$SAVER" "$APP/Contents/Resources/Agent Notch House.saver"
 

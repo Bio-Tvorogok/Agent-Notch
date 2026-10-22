@@ -63,6 +63,17 @@ final class HouseScene2: SKScene {
     /// Holds the scene's clock (clouds, wisps, stars) where the page's reference frame had it, for a pixel comparison.
     var freezeClock = false
     var lastTime: TimeInterval?
+    /// The sky follows the wall clock (the app); off for the proof and for fixed-hour runs.
+    var followClock = false
+    var lastMinute = -1
+    /// The highest rate this view may run at (60 on power, 30 on battery); `fixedFps` turns off the adaptive rate.
+    var maxFps = 60 { didSet { view?.preferredFramesPerSecond = rate } }
+    var fixedFps: Int?
+    var rate = 60
+    var stillSince: TimeInterval?
+    var napTimer: Timer?
+    var counted = 0, countFrom: TimeInterval = 0
+    var deliveredFps = 0.0
     /// Frames since the last report, for measurements.
     var onFrame: ((Double) -> Void)?
 

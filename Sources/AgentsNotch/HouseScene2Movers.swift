@@ -150,9 +150,51 @@ extension HouseScene2 {
         lastTime = currentTime
         if !freezeClock { clockMillis += dt * 1000 }
         if driveSim, let sim { var left = dt * 1000; while left > 0 { let step = min(50, left); left -= step; sim.step(dt: step) } }
+        if followClock {
+            let c = Calendar.current, d = Date(), h = c.component(.hour, from: d), m = c.component(.minute, from: d)
+            if h * 60 + m != lastMinute {
+                lastMinute = h * 60 + m
+                setTime(hour: Double(h) + Double(m) / 60, day: (c.ordinality(of: .day, in: .year, for: d) ?? 1) - 1)
+            }
+            colon = Int(d.timeIntervalSince1970) % 2 == 0
+        }
         if let sim { sync(sim: sim) }
         updateClouds()
         if mistAmount > 0.02 { refreshMist() }
         onFrame?(clockMillis)
+        pace(currentTime)
     }
+
+    /// Full rate while something moves, 25 fps while agents only type, paused after 3 s of nothing and woken each minute
+    /// for the sky (the clouds drift a pixel at a time and the wisps likewise, so the idle house rests too).
+    private func pace(_ now: TimeInterval) {
+        counted += 1
+        if countFrom == 0 { countFrom = now }
+        if now - countFrom >= 5 { deliveredFps = Double(counted) / (now - countFrom); counted = 0; countFrom = now }
+        guard followClock else { return }
+        let typing = isTyping, moving = isMoving
+        let want = fixedFps ?? (moving ? maxFps : typing ? min(25, maxFps) : maxFps)
+        if want != rate { rate = want; view?.preferredFramesPerSecond = want }
+        if moving || typing || fixedFps != nil { stillSince = nil; return }
+        if stillSince == nil { stillSince = now }
+        if let s = stillSince, now - s >= 3 { sleepUntilNextMinute() }
+    }
+
+    private func sleepUntilNextMinute() {
+        view?.isPaused = true
+        napTimer?.invalidate()
+        let ms = 60 - Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 60) + 0.05
+        napTimer = Timer.scheduledTimer(withTimeInterval: ms, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let view = self.view else { return }
+                self.stillSince = (self.lastTime ?? 0) - 2.9 // one frame for the new minute, then asleep again
+                view.isPaused = false
+            }
+        }
+    }
+
+    /// Wakes a sleeping house (the host calls it when the window shows again).
+    func wake() { napTimer?.invalidate(); stillSince = nil; view?.isPaused = false }
+    /// Stops drawing until wake(), without the minute refresh (the host calls it when the window is covered).
+    func hide() { napTimer?.invalidate(); view?.isPaused = true }
 }

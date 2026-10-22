@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cuts room/index.html into sprite atlases for the SpriteKit house (HouseScene.swift): room/atlas/house-*.png,
+# Cuts room/index.html into sprite atlases for the SpriteKit house (HouseScene2.swift uses parts.json instead): room/atlas/house-*.png,
 # house.json (layers, depths, the lift, poses, routes) and reference.png (the page's own frame, to compare).
 # The JS stays the art source; rerun this after changing it. HOUR picks the light (default noon).
 set -eu
