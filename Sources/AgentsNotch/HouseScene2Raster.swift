@@ -103,6 +103,21 @@ extension HousePainter {
     }
 
     /// The page's signImage + drawSign for a room at an hour's light: the image and where its top-left lies on the canvas.
+    /// The page's r.signHit: [x, y, w, h] of a room's sign in canvas pixels (the post counts for a sign on the grass).
+    func signHit(room r: HouseLayout.Room, name: String, vi: Int) -> [Double] {
+        let S = 2, k = parts.sign.k, plaque = r.floor > 0
+        let chars = Array(Self.fitText(name))
+        let tw = chars.enumerated().reduce(0) { $0 + glyph($1.element)[0].count + ($1.offset > 0 ? 1 : 0) } * k
+        let iw = tw + 8 + 2, ih = parts.sign.rows * k + 6 + 2
+        if plaque {
+            let px = r.ox + (r.NX * 0.78 - r.NY) * 8 * Double(S), py = r.oy + (r.NX * 0.78 + r.NY) * 4 * Double(S) + parts.SLAB / 2 * Double(S)
+            return [Double(HouseLight.round(px - Double(iw) / 2)), Double(HouseLight.round(py - Double(ih) / 2)), Double(iw), Double(ih)]
+        }
+        let px = r.ox + (r.NX + 0.55 - (r.NY + 0.55)) * 8 * Double(S), py = r.oy + (r.NX + 0.55 + r.NY + 0.55) * 4 * Double(S) + parts.SLAB * Double(S)
+        let X = HouseLight.round(px), Y = HouseLight.round(py), sx = X - (iw >> 1), sy = Y - parts.sign.post - ih + 2 * S
+        return [Double(sx), Double(sy), Double(iw), Double(Y - sy)]
+    }
+
     func signImage(room r: HouseLayout.Room, name: String, vi: Int) -> (CGImage, CGPoint, CGSize) {
         let S = 2, b = parts.sign.variants[vi], plaque = r.floor > 0, board = plaque ? b.plaque : b.sign, k = parts.sign.k
         let text = Self.fitText(name)

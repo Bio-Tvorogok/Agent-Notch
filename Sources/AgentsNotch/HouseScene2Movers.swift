@@ -163,7 +163,7 @@ extension HouseScene2 {
                     c.anchorPoint = CGPoint(x: 0, y: 1)
                     c.position = CGPoint(x: Double(pose.layers[0].ax - ly.ax), y: -Double(pose.layers[0].ay - ly.ay))
                     c.zPosition = CGFloat(k) * 0.01
-                    c.shader = shaders.shader(page: r.page, flag: r.flag)
+                    shaders.apply(to: c, id: ly.sprite)
                     if ly.blend == "add" { c.blendMode = .add }
                     n.addChild(c)
                 }
@@ -180,7 +180,8 @@ extension HouseScene2 {
 
     /// True while anything moves: the view then runs at full rate; otherwise it may rest until the next minute.
     var isMoving: Bool {
-        guard let sim else { return false }
+        guard let sim else { return houseCamera?.isMoving == true }
+        if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
         return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade || $0.behaviour.handover != nil }
@@ -190,6 +191,7 @@ extension HouseScene2 {
 
     override func update(_ currentTime: TimeInterval) {
         let raw = lastTime.map { max(0, currentTime - $0) } ?? 0
+        stepInteraction(frameMs: min(1500, raw * 1000))
         let dt = min(0.1, raw)
         lastTime = currentTime
         if !freezeClock { clockMillis += dt * 1000 }

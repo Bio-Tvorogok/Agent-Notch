@@ -127,12 +127,12 @@ extension HouseScene2 {
     func buildMist() {
         let z = topZ + 40
         mistBands = (0..<8).map { _ in
-            let n = swatch([255, 255, 255], alpha: 0); n.zPosition = z; root.addChild(n); return n
+            let n = swatch([255, 255, 255], alpha: 0); n.zPosition = z; mistGroup.addChild(n); return n
         }
         mistWisps = (0..<7).map { i in
             let a = swatch([255, 255, 255], alpha: 0), b = swatch([255, 255, 255], alpha: 0)
             a.zPosition = z + 1; b.zPosition = z + 1
-            root.addChild(a); root.addChild(b)
+            mistGroup.addChild(a); mistGroup.addChild(b)
             return (a, b, i)
         }
     }

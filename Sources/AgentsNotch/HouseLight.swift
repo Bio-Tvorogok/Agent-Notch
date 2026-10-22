@@ -53,10 +53,11 @@ final class HouseShaders {
         func source(_ black: Bool) -> String {
             """
             void main() {
-                vec4 f = texture2D(u_texture, v_tex_coord);
+                vec2 tc = (floor(v_tex_coord * a_dim) + 0.5) / a_dim;
+                vec4 f = texture2D(u_texture, tc);
                 vec3 fc = f.a > 0.0 ? f.rgb / f.a : vec3(0.0);
                 \(black ? "vec3 ec = vec3(0.0); float ea = f.a;" : """
-                vec4 e = texture2D(u_e, v_tex_coord);
+                vec4 e = texture2D(u_e, tc);
                 vec3 ec = e.a > 0.0 ? e.rgb / e.a : vec3(0.0); float ea = e.a;
                 """)
                 vec3 o = clamp(ec + (fc - ec) * u_amb / \(fa), 0.0, 1.0);
@@ -68,9 +69,24 @@ final class HouseShaders {
         let u = amb, src = source(false)
         self.pages = pages; generalSource = src
         eBlack = SKShader(source: source(true), uniforms: [u])
+        eBlack.attributes = [HouseShaders.dim]
     }
 
     func set(_ a: SIMD3<Double>) { amb.vectorFloat3Value = vector_float3(Float(a.x), Float(a.y), Float(a.z)) }
+
+    static let dim = SKAttribute(name: "a_dim", type: .vectorFloat2)
+
+    /// Shades a sprite with its page's shader. A custom shader samples linearly whatever the texture's filtering says, so the shader
+    /// snaps the coordinate to the texel's centre itself (a_dim: the texels of the texture the coordinate runs over: the whole page for
+    /// a cut of a page, the sprite's own size for a sparse page's standalone texture); zoomed in, the art stays pixel art.
+    func apply(to n: SKSpriteNode, id: Int) {
+        let r = pages.rect(id)
+        guard let sh = shader(page: r.page, flag: r.flag) else { return }
+        n.shader = sh
+        let pg = pages.parts.pages[r.page]
+        let d = pages.sparsePages.contains(r.page) ? (Float(r.w), Float(r.h)) : (Float(pg.w), Float(pg.h))
+        n.setValue(SKAttributeValue(vectorFloat2: vector_float2(d.0, d.1)), forAttribute: "a_dim")
+    }
 
     /// The shader for a sprite of this page and flag; nil for a constant sprite (flag 2).
     func shader(page: Int, flag: Int) -> SKShader? {
@@ -78,6 +94,7 @@ final class HouseShaders {
         guard flag == 0 else { return nil }
         if let s = general[page] { return s }
         let s = SKShader(source: generalSource, uniforms: [amb, SKUniform(name: "u_e", texture: pages.ePage(page))])
+        s.attributes = [Self.dim]
         general[page] = s
         return s
     }

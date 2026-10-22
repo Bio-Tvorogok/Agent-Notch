@@ -148,7 +148,10 @@ final class RoomWallpaper: NSObject {
             // Esc on the desktop goes back to the overview; macOS only delivers keys here with Accessibility access
             if type == .keyDown {
                 guard e.keyCode == 53, NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder" else { return }
-                MainActor.assumeIsolated { self?.web?.evaluateJavaScript("room.resetView()") }
+                MainActor.assumeIsolated {
+                    self?.web?.evaluateJavaScript("room.resetView()")
+                    (self?.house?.scene as? HouseScene2)?.resetView()
+                }
                 return
             }
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
@@ -241,6 +244,17 @@ final class RoomWallpaper: NSObject {
             self.skStalls += 1
             self.fallBackToPage(self.skStalls > 1 ? "the atlas stalled twice" : "the textures stalled, trying again")
         } } }
+        // the pointer: the view of the window and what the hover card and a click do (HouseScene2Pointer.swift)
+        scene.installCamera(HouseCamera(layout: behaviour.layout, innerWidth: g[0], innerHeight: g[1], insets: .init(top: g[3], bottom: g[4], right: g[5])))
+        scene.onTip = { [weak self] t in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let t, let w = self.window { self.tip.show(t.payload, in: w.frame) } else { self.tip.hide() }
+            }
+        }
+        scene.onOpen = { [weak self] id in
+            MainActor.assumeIsolated { if let self, let agent = self.store.shown.first(where: { $0.id == id }) { self.store.open(agent) } }
+        }
         scene.onDelivered = { [weak self, weak behaviour] in
             guard let self, let behaviour else { return }
             self.growth.capture(from: behaviour)
@@ -514,7 +528,8 @@ final class RoomWallpaper: NSObject {
     /// The window ignores the mouse, so the cursor is read globally and passed on while nothing covers the desktop.
     /// Trackpad gestures over bare desktop drive the view: pinch zooms at the cursor, two fingers move, a double tap resets.
     private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0)) {
-        guard let w = window, let web else { return }
+        guard let w = window, web != nil || house != nil else { return }
+        let scene = house?.scene as? HouseScene2
         let now = CACurrentMediaTime()
         if type == .mouseMoved {
             guard now - lastMove > 0.04 else { return }
@@ -535,25 +550,25 @@ final class RoomWallpaper: NSObject {
             // a click, not the end of a drag across the desktop
             let click = pressed.map { hypot($0.0.x - p.x, $0.0.y - p.y) < 6 && CACurrentMediaTime() - $0.1 < 0.6 } ?? true
             pressed = nil
-            if bare, click { web.evaluateJavaScript("room.click(\(x), \(y))") }
+            if bare, click { if let web { web.evaluateJavaScript("room.click(\(x), \(y))") } else { scene?.pointerClicked(x: Double(x), y: Double(y)) } }
             return
         case .magnify:
-            if bare { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") }
+            if bare { if let web { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") } else { scene?.zoom(1 + Double(magnify), x: Double(x), y: Double(y)) } }
             else if CACurrentMediaTime() - lastPinchNote > 2 { // why a pinch did not reach the room
                 lastPinchNote = CACurrentMediaTime()
                 NSLog("agents-notch: pinch not passed on: \(w.frame.contains(p) ? "covered by \(coveringWindow(at: p) ?? "?")" : "outside the wallpaper")")
             }
             return
         case .smartMagnify:
-            if bare { web.evaluateJavaScript("room.resetView()") }
+            if bare { if let web { web.evaluateJavaScript("room.resetView()") } else { scene?.resetView() } }
             return
         case .scrollWheel:
-            if bare, scroll != (0, 0) { web.evaluateJavaScript("room.pan(\(scroll.0), \(scroll.1))") }
+            if bare, scroll != (0, 0) { if let web { web.evaluateJavaScript("room.pan(\(scroll.0), \(scroll.1))") } else { scene?.pan(dx: Double(scroll.0), dy: Double(scroll.1)) } }
             return
         default: break
         }
-        if bare { hovering = true; web.evaluateJavaScript("room.pointer(\(x), \(y))") }
-        else if hovering { hovering = false; tip.hide(); web.evaluateJavaScript("room.leave()") }
+        if bare { hovering = true; if let web { web.evaluateJavaScript("room.pointer(\(x), \(y))") } else { scene?.pointerMoved(x: Double(x), y: Double(y)) } }
+        else if hovering { hovering = false; tip.hide(); if let web { web.evaluateJavaScript("room.leave()") } else { scene?.pointerLeft() } }
     }
 
     /// Cache desktop IDs only when the windows/Space are created. AppKit's point hit test then handles
