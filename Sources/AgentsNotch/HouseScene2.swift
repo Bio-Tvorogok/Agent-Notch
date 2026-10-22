@@ -63,6 +63,8 @@ final class HouseScene2: SKScene {
     var lastLive: [Int: (SKTexture, CGPoint, CGSize)] = [:]
     /// Called on the main thread when the atlas cannot be read any more (a page is missing or corrupt): the host falls back to the page.
     var onFailure: (() -> Void)?
+    /// The textures did not preload in time (a busy GPU, not a broken atlas); nil means onFailure.
+    var onStall: (() -> Void)?
     /// Main-thread cost of applying a finished paint, ms (for measurements).
     var onApply: ((Double) -> Void)?
     var mistBands: [SKSpriteNode] = [], mistWisps: [(SKSpriteNode, SKSpriteNode, Int)] = []
@@ -210,7 +212,7 @@ final class HouseScene2: SKScene {
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
 
     func rebuild() {
-        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }

@@ -53,7 +53,7 @@ extension HouseScene2 {
     }
 
     func apply(_ r: PaintResult) {
-        if r.timedOut { NSLog("agents-notch: house textures did not preload in time"); onFailure?(); return }
+        if r.timedOut { NSLog("agents-notch: house textures did not preload in time"); (onStall ?? onFailure)?(); return }
         guard r.build == buildId else { return } // painted for a house that has been built again since
         let t0 = CACurrentMediaTime()
         for (i, item) in liveItems.enumerated() where i < r.live.count {

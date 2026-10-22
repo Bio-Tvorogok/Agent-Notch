@@ -7,6 +7,8 @@ import SpriteKit
 extension HouseScene2 {
     /// The agents as the page's `room.setAgents` takes them; applied before the next advance, only the latest delivery counts.
     func deliver(_ rows: [HouseAgentRow]) {
+        // A covered house draws nothing, but like the page it takes every delivery: an agent that comes and goes still counts for growth.
+        if covered, let b = behaviour { pendingRows = nil; b.setAgents(rows); onDelivered?(); return }
         pendingRows = rows
         stir()
     }
@@ -38,7 +40,7 @@ extension HouseScene2 {
     /// The rooms the behaviour has now (and how far each has grown) are the rooms the scene has.
     func followBehaviour(_ b: HouseBehaviour) {
         let lv = growthLevels(b)
-        guard b.projects.count != builtProjects || lv != growth else { return }
+        if b.projects.count == builtProjects { setGrowth(lv); return }
         builtProjects = b.projects.count
         growth = lv
         setLayout(b.layout)

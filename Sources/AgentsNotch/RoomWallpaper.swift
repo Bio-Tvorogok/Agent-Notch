@@ -26,6 +26,10 @@ final class RoomWallpaper: NSObject {
     private var forceWeb = false
     /// Set when the current screen cannot hold the house (too short for the Dock's inset): cleared when the screen changes.
     private var screenBlocked = false
+    /// The screen geometry that was too short for the SpriteKit house: only another one is tried again.
+    private var blockedGeometry: [Double]?
+    /// Texture preload stalls this session; the second one leaves the page in place.
+    private var skStalls = 0
     private var rendererSubs: Set<AnyCancellable> = []
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
@@ -75,7 +79,7 @@ final class RoomWallpaper: NSObject {
             } else if startSpriteKit(in: w, page: page, screen: screen) {
                 return
             } else if skFailedOnScreen {
-                screenBlocked = true
+                screenBlocked = true; blockedGeometry = skGeometry(of: screen)
                 NSLog("agents-notch: this screen cannot hold the SpriteKit house, using the page until the screen changes")
             } else {
                 forceWeb = true
@@ -220,7 +224,7 @@ final class RoomWallpaper: NSObject {
         let behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: .islands, canvas: .init(width: g[0], height: g[1], dpr: g[2]),
                                        insets: .init(top: g[3], bottom: g[4], right: g[5]), themes: themes)
         growth.seed(behaviour)
-        if let rows = currentRows() { behaviour.setAgents(rows) }
+        if let rows = currentRows() { behaviour.setAgents(rows); growth.capture(from: behaviour) }
         let env = HouseSkyEnv(innerHeight: g[1], insetBottom: g[4])
         guard HousePainter.groundRaw(layout: behaviour.layout, env: env) >= 0 else {
             NSLog("agents-notch: screen too short for the SpriteKit house"); skFailedOnScreen = true; return nil
@@ -232,6 +236,11 @@ final class RoomWallpaper: NSObject {
         if let why = scene.missingParts() { NSLog("agents-notch: the atlas has no \(why)"); return nil }
         scene.followClock = true
         scene.onFailure = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.fallBackToPage("the atlas failed to draw") } } }
+        scene.onStall = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated {
+            guard let self else { return }
+            self.skStalls += 1
+            self.fallBackToPage(self.skStalls > 1 ? "the atlas stalled twice" : "the textures stalled, trying again")
+        } } }
         scene.onDelivered = { [weak self, weak behaviour] in
             guard let self, let behaviour else { return }
             self.growth.capture(from: behaviour)
@@ -346,7 +355,7 @@ final class RoomWallpaper: NSObject {
     private func fallBackToPage(_ why: String, screen: Bool = false) {
         guard house != nil else { return }
         NSLog("agents-notch: leaving the SpriteKit house: \(why)")
-        if screen { screenBlocked = true } else if why.contains("atlas") { forceWeb = true }
+        if screen { screenBlocked = true; blockedGeometry = NSScreen.screens.first.map { skGeometry(of: $0) } } else if why.contains("atlas") { forceWeb = true }
         restart()
     }
 
@@ -426,7 +435,7 @@ final class RoomWallpaper: NSObject {
         syncInsets()
         skFitScreen()
         // the page was kept only because the last screen was too small: this one may do
-        if house == nil, screenBlocked, Self.wantsSpriteKit, !forceWeb { screenBlocked = false; restart() }
+        if house == nil, screenBlocked, Self.wantsSpriteKit, !forceWeb, skGeometry(of: screen) != blockedGeometry { screenBlocked = false; restart() }
     }
 
     // MARK: agents
