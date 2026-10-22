@@ -166,8 +166,10 @@ case "live":
         let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
         func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
         let first = samples[0].meta, ins = first["insets"] as! [String: Double], dpr = first["DPR"] as! Double
-        let behaviour = HouseBehaviour(seed: UInt32(input["seed"] as! Int), layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
-                                       insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!))
+        // live-ref.js stubs the life layer on the page, so the behaviour runs without it (no enableLife) and draws the same randoms.
+        let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
+        let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
+                                       insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
