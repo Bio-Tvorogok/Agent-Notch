@@ -1,0 +1,84 @@
+import Foundation
+
+extension HouseSim {
+    func updateLifts(_ dt: Double) {
+        guard let lift = layout.lift else { return }
+        let all = sprites
+        func inCab(_ c: HouseCabinState) -> [HouseSprite] {
+            all.filter { HouseRoutes.same($0.onBridge?.pair, c.geometry.id) }
+        }
+        let waiting = all.filter { $0.path.first?.lift != nil && $0.onBridge == nil }
+        for c in cabins {
+            if c.state == "move" {
+                let z = lift.liftZ(c.stop!), dz = z-c.z, v = dt/1000*70
+                if abs(dz) <= v { c.z = z; c.level = c.stop!; c.state = "open"; c.t = time }
+                else { c.z += (dz > 0 ? 1 : -1)*v }
+                continue
+            }
+            if c.state == "open" {
+                for sp in inCab(c) where sp.path.first?.lift?.to == c.level { sp.onBridge = nil; sp.path.removeFirst() }
+                if time-c.t > 500 {
+                    for sp in waiting {
+                        let n = sp.path[0]
+                        if sp.onBridge != nil || n.lift!.from != c.level || (n.cab != nil && !HouseRoutes.same(n.cab, c.geometry.id)) { continue }
+                        if inCab(c).count >= 3 { break }
+                        sp.onBridge = .init(kind: "lift", pair: c.geometry.id, u: 0); sp.room = nil; n.cab = c.geometry.id
+                    }
+                }
+                if time-c.t > 1700 {
+                    let on = inCab(c)
+                    if !on.isEmpty {
+                        // First on equal distances, as with JS's stable sort.
+                        let stops = on.map { $0.path[0].lift!.to }
+                        c.stop = stops.enumerated().min { a,b in
+                            let da = abs(lift.liftZ(a.element)-c.z), db = abs(lift.liftZ(b.element)-c.z)
+                            return da == db ? a.offset < b.offset : da < db
+                        }!.element
+                        c.state = "move"
+                    } else { c.state = "idle" }
+                    for sp in waiting where HouseRoutes.same(sp.path.first?.cab,c.geometry.id) && sp.onBridge == nil { sp.path[0].cab = nil }
+                }
+                continue
+            }
+            let free = waiting.filter { $0.onBridge == nil && $0.path.first?.cab == nil }.enumerated().sorted { a,b in
+                let sa = a.element.path[0].since ?? 0, sb = b.element.path[0].since ?? 0
+                return sa == sb ? a.offset < b.offset : sa < sb
+            }.map(\.element)
+            guard let first = free.first else { continue }
+            let want = first.path[0].lift!.from
+            func distance(_ other: HouseCabinState) -> Double { abs(other.z-lift.liftZ(want)) }
+            if cabins.contains(where: { $0 !== c && $0.state == "idle" && distance($0) < distance(c) }) { continue }
+            for sp in free where sp.path[0].lift!.from == want { sp.path[0].cab = c.geometry.id }
+            if distance(c) < 0.5 { c.state = "open"; c.t = time }
+            else { c.stop = want; c.state = "move" }
+        }
+    }
+
+    public func stairTurn(_ link: HouseLinkState, to: Int) {
+        link.turn = .init(a0: link.lift, a1: to == 1 ? 1 : 0, to: to, t0: time, ms: 1800); link.aim = -1
+    }
+    func updateStairs() {
+        for l in links where l.geometry.kind == "stair" {
+            if let turn = l.turn {
+                let k = min(1,(time-turn.t0)/turn.ms), e = k < 0.5 ? 2*k*k : 1-pow(2-2*k,2)/2
+                l.lift = turn.a0 + (turn.a1-turn.a0)*e
+                if k >= 1 { l.lift = turn.a1; l.aim = turn.to; l.turn = nil; l.since = time }
+                continue
+            }
+            var aboard = false, call: HouseRouteNode?
+            for sp in sprites {
+                if HouseRoutes.same(sp.onBridge?.pair,l.geometry.id) { aboard = true }
+                if let n = sp.path.first, HouseRoutes.same(n.call,l.geometry.id), n.aim != l.aim,
+                   call == nil || (n.since ?? 0) < (call!.since ?? 0) { call = n }
+            }
+            if aboard { continue }
+            if let call { stairTurn(l,to: call.aim!); continue }
+            if l.next == 0 { l.next = time + 20000 + random()*40000 }
+            let since = (l.since ?? 0) == 0 ? time : l.since!
+            if l.aim == 1 && time-since > 15000 + Double(l.geometry.id.utf16.count % 7)*2000 { stairTurn(l,to: 0) }
+            else if l.aim == 0 && time > l.next && !sprites.contains(where: { sp in
+                sp.path.contains { HouseRoutes.same($0.call,l.geometry.id) || HouseRoutes.same($0.bridge,l.geometry.id) }
+            }) { stairTurn(l,to: 1); l.next = time + 40000 + random()*40000 }
+        }
+    }
+}
