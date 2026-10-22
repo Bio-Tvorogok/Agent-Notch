@@ -69,7 +69,9 @@ final class HouseSaverView: ScreenSaverView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window == nil { tearDown() }
+        if window == nil {
+            if wasOnScreen && !isPreview { saverWillStop() } else { tearDown() }
+        }
     }
 
     /// The saver stopped: legacyScreenSaver may never call stopAnimation, so every view lets go of its page here.
@@ -96,6 +98,8 @@ final class HouseSaverView: ScreenSaverView {
         timer?.invalidate()
         timer = nil
         guard let web else { return }
+        if loaded { send("room.setActive(false)") }
+        Self.occlusionDetection(web, enabled: true)
         web.navigationDelegate = nil
         web.stopLoading()
         web.removeFromSuperview()
@@ -121,6 +125,7 @@ final class HouseSaverView: ScreenSaverView {
     private func reload() {
         guard let web else { return }
         loaded = false
+        sentActive = nil
         shown = nil
         guard let page = Bundle(for: HouseSaverView.self).url(forResource: "index", withExtension: "html", subdirectory: "room") else {
             log("room/index.html is missing from the bundle")
@@ -136,6 +141,10 @@ final class HouseSaverView: ScreenSaverView {
         let visible = onScreen
         if wasOnScreen && !visible && !isPreview { saverWillStop(); return }
         wasOnScreen = wasOnScreen || visible
+        // ScreenSaverEngine mirrors an occluded host. Only a currently presented saver may ignore that
+        // occlusion; hidden-page timer and process throttling retain WebKit's defaults throughout.
+        if sentActive != visible, let web { Self.occlusionDetection(web, enabled: !visible) }
+        if visible && !loaded && web?.isLoading == false { reload(); return }
         guard loaded else { return }
         if sentActive != visible { sentActive = visible; send("room.setActive(\(visible))") }
         guard visible else { return }
@@ -154,6 +163,13 @@ final class HouseSaverView: ScreenSaverView {
         web.evaluateJavaScript("window.room && (\(js)); true") { [weak self] _, error in
             if let error { MainActor.assumeIsolated { self?.log("page call failed: \(error.localizedDescription)") } }
         }
+    }
+
+    private static func occlusionDetection(_ web: WKWebView, enabled: Bool) {
+        let selector = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+        guard web.responds(to: selector), let method = class_getInstanceMethod(type(of: web), selector) else { return }
+        typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+        unsafeBitCast(method_getImplementation(method), to: Setter.self)(web, selector, enabled)
     }
 
     private func log(_ message: String) { NSLog("agent-notch-house: \(message)") }
@@ -184,7 +200,10 @@ extension HouseSaverView: WKNavigationDelegate {
     nonisolated func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         MainActor.assumeIsolated {
             guard webView === web else { return }
-            log("page process ended, reloading")
+            log("page process ended")
+            loaded = false
+            shown = nil
+            sentActive = nil
             if onScreen { reload() }
         }
     }

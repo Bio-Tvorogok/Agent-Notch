@@ -48,9 +48,101 @@
 
 const Q = new URLSearchParams(location.search);
 const PV = window.ROOM_PREVIEW || null;
-const cv = document.getElementById('c'), main = cv.getContext('2d');
+const cv = document.getElementById('c'), main = retainedContext(cv.getContext('2d'));
 const tip = document.getElementById('tip');
 let g = main; // drawing target: the screen, or an offscreen cache while baking
+
+// Retain the ordered paint list. Changed commands damage old and new bounds; intersecting commands
+// are replayed in their original order through one tile-union clip (including translucent overlaps).
+function retainedContext(target) {
+  let ops = [], previous = [], stack = [], path = [], state, size = '', overflow = false;
+  const ids = new WeakMap(); let nextID = 1;
+  const ident = o => { if (!ids.has(o)) ids.set(o, nextID++); return ids.get(o); };
+  const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+  const styleKey = v => typeof v === 'object' ? v.key : v;
+  const reset = () => { state = { fillStyle: '#000000', globalAlpha: 1, globalCompositeOperation: 'source-over', clips: [] }; stack = []; path = []; };
+  const bounds = p => {
+    const xs = [], ys = [];
+    for (const [name, ...a] of p) if (name === 'arc') { xs.push(a[0] - a[2], a[0] + a[2]); ys.push(a[1] - a[2], a[1] + a[2]); }
+    else if (a.length >= 2) { xs.push(a[0]); ys.push(a[1]); }
+    return xs.length ? [Math.min(...xs)-1, Math.min(...ys)-1, Math.max(...xs)+1, Math.max(...ys)+1] : [0,0,0,0];
+  };
+  const add = (type, args, b) => {
+    const fill = state.fillStyle, clips = state.clips, p = (type === 'fill' || type === 'stroke') ? path.slice() : null;
+    const key = [type, ...args.map(v => typeof v === 'object' ? ident(v) : v), styleKey(fill), state.globalAlpha,
+      state.globalCompositeOperation, JSON.stringify(clips), p ? JSON.stringify(p) : '', type === 'drawImage' ? args[0].houseVersion || 0 : 0];
+    const op = { type, args, b, fill, alpha: state.globalAlpha, composite: state.globalCompositeOperation, clips, path: p, key };
+    if (overflow) { replay(target, op); return; }
+    ops.push(op);
+    // At most two frame lists, each with 65,536 commands, even for user-supplied oversized fixtures.
+    if (ops.length >= 65536) { for (const o of ops) replay(target, o); ops = []; overflow = true; }
+  };
+  function setPath(ctx, p) { ctx.beginPath(); for (const [name, ...a] of p) ctx[name](...a); }
+  function replay(ctx, op) {
+    if (op.clips.length) { ctx.save(); for (const p of op.clips) { setPath(ctx, p); ctx.clip(); } }
+    ctx.globalAlpha = op.alpha; ctx.globalCompositeOperation = op.composite;
+    if (typeof op.fill === 'object') {
+      const f = ctx[op.fill.type](...op.fill.args); for (const stop of op.fill.stops) f.addColorStop(...stop); ctx.fillStyle = f;
+    } else ctx.fillStyle = op.fill;
+    if (op.path) setPath(ctx, op.path);
+    ctx[op.type](...op.args);
+    if (op.clips.length) ctx.restore();
+  }
+  const api = {
+    canvas: target.canvas,
+    invalidate() { size = ''; },
+    beginFrame() { ops = []; overflow = false; reset(); },
+    endFrame() {
+      if (overflow) { previous = []; size = ''; return; }
+      const W = target.canvas.width, H = target.canvas.height, tile = 64, cols = Math.ceil(W/tile), rows = Math.ceil(H/tile);
+      const dirty = new Set();
+      const damage = b => { for (let y=Math.max(0,Math.floor(b[1]/tile));y<Math.min(rows,Math.ceil(b[3]/tile));y++)
+        for(let x=Math.max(0,Math.floor(b[0]/tile));x<Math.min(cols,Math.ceil(b[2]/tile));x++)dirty.add(y*cols+x); };
+      if (size !== W+'|'+H || !previous.length) damage([0,0,W,H]);
+      else for (let i=0;i<Math.max(ops.length,previous.length);i++) {
+        const a=previous[i],b=ops[i]; if(a&&b&&same(a.key,b.key))continue;
+        if(a)damage(a.b);if(b)damage(b.b);
+      }
+      if(dirty.size) {
+        target.save(); target.beginPath();
+        for(const n of dirty)target.rect(n%cols*tile,Math.floor(n/cols)*tile,tile,tile);
+        target.clip();
+        for(const op of ops) {
+          let hit=false;
+          for(let y=Math.max(0,Math.floor(op.b[1]/tile));!hit&&y<Math.min(rows,Math.ceil(op.b[3]/tile));y++)
+            for(let x=Math.max(0,Math.floor(op.b[0]/tile));x<Math.min(cols,Math.ceil(op.b[2]/tile));x++)if(dirty.has(y*cols+x)){hit=true;break;}
+          if(hit)replay(target,op);
+        }
+        target.restore();
+      }
+      previous=ops;size=W+'|'+H;
+    },
+    capture(paint) {
+      const old=[ops,state,stack,path,overflow];ops=[];overflow=false;reset();
+      try { paint(); return ops; } finally { [ops,state,stack,path,overflow]=old; }
+    },
+    raster(list) {
+      if(!list.length || list.some(o=>o.composite!=='source-over'))return null;
+      const b=[Math.floor(Math.min(...list.map(o=>o.b[0]))),Math.floor(Math.min(...list.map(o=>o.b[1]))),Math.ceil(Math.max(...list.map(o=>o.b[2]))),Math.ceil(Math.max(...list.map(o=>o.b[3])))];
+      const c=document.createElement('canvas');c.width=Math.max(1,b[2]-b[0]);c.height=Math.max(1,b[3]-b[1]);
+      if(c.width*c.height>262144)return null;
+      const ctx=c.getContext('2d');ctx.translate(-b[0],-b[1]);for(const o of list)replay(ctx,o);
+      return {img:c,dx:b[0],dy:b[1]};
+    },
+    save(){stack.push({...state});},restore(){if(stack.length)state=stack.pop();},
+    beginPath(){path=[];},closePath(){path.push(['closePath']);},moveTo(...a){path.push(['moveTo',...a]);},lineTo(...a){path.push(['lineTo',...a]);},arc(...a){path.push(['arc',...a]);},
+    clip(){state.clips=[...state.clips,path.slice()];},
+    fill(){add('fill',[],bounds(path));},stroke(){add('stroke',[],bounds(path));},
+    fillRect(x,y,w,h){add('fillRect',[x,y,w,h],[Math.min(x,x+w)-1,Math.min(y,y+h)-1,Math.max(x,x+w)+1,Math.max(y,y+h)+1]);},
+    clearRect(x,y,w,h){add('clearRect',[x,y,w,h],[x,y,x+w,y+h]);},
+    drawImage(img,...a){const [x,y,w,h]=a.length===2?[...a,img.width,img.height]:a.slice(-4);add('drawImage',[img,...a],[x-1,y-1,x+w+1,y+h+1]);},
+  };
+  for(const type of ['createLinearGradient','createRadialGradient'])api[type]=(...args)=>{
+    const v={type,args,stops:[],key:''};v.addColorStop=(...a)=>{v.stops.push(a);v.key=JSON.stringify([type,args,v.stops]);};return v;
+  };
+  for(const key of ['fillStyle','globalAlpha','globalCompositeOperation'])Object.defineProperty(api,key,{get:()=>state[key],set:v=>{state[key]=v;}});
+  reset();return api;
+}
 
 // ---------- geometry ----------
 // S art pixels per unit: a tile is 16S x 8S, one unit of height is S pixels.
@@ -73,7 +165,7 @@ const AMBK = [
 ];
 AMBK.push([24, ...AMBK[0].slice(1)]);
 const HEX = new Map();
-const rgb = h => { let c = HEX.get(h); if (!c) { const n = parseInt(h.slice(1), 16); c = [n >> 16, n >> 8 & 255, n & 255]; HEX.set(h, c); } return c; };
+const rgb = h => { let c = HEX.get(h); if (!c) { const n = parseInt(h.slice(1), 16); c = [n >> 16, n >> 8 & 255, n & 255]; if (HEX.size >= 2048) HEX.clear(); HEX.set(h, c); } return c; };
 const css = (r, gg, b) => `rgb(${Math.min(255, r) | 0},${Math.min(255, gg) | 0},${Math.min(255, b) | 0})`;
 const mixHex = (a, b, t) => { const A = rgb(a), B = rgb(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
 const lit = (h, k = 1) => { const c = rgb(h); return css(c[0] * AMB[0] * k, c[1] * AMB[1] * k, c[2] * AMB[2] * k); };
@@ -118,6 +210,10 @@ function polyOutline(pts, fill) { // the polygon grown by one pixel: a crisp 1px
 function line(a, b, color) {
   g.fillStyle = color;
   const x0 = Math.round(a[0]), y0 = Math.round(a[1]), x1 = Math.round(b[0]), y1 = Math.round(b[1]);
+  if (x0 === x1 && y0 === y1) { rect(x0,y0,1,1);rect(x0,y0,1,1);return; }
+  if (x0 === x1 || y0 === y1) {
+    rect(Math.min(x0,x1),Math.min(y0,y1),Math.abs(x1-x0)+1,Math.abs(y1-y0)+1); return;
+  }
   const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
   for (let i = 0; i <= n; i++) rect(Math.round(x0 + (x1 - x0) * i / n), Math.round(y0 + (y1 - y0) * i / n), 1, 1);
 }
@@ -125,7 +221,18 @@ function line(a, b, color) {
 // ---------- drawing primitives in room space ----------
 const OUT = '#2a1f2e';
 // a box with a 1px dark outline and a light top edge, like hand-drawn pixel furniture
+const BOXES = new Map(); let boxLight = '', boxBytes = 0;
 function B(x, y, z, w, d, h, c, em, noLine) {
+  if (g === main && g.globalAlpha === 1 && R?.NX && R?.NY) {
+    if (boxLight !== lightKey) { BOXES.clear();boxBytes=0;boxLight=lightKey; }
+    const key=JSON.stringify([x,y,z,w,d,h,c,em,noLine]);let b=BOXES.get(key);
+    if(!BOXES.has(key)) {
+      b=bake(R,()=>B(x,y,z,w,d,h,c,em,noLine));const bytes=b ? b.img.width*b.img.height*4 : 0;
+      if(BOXES.size>=512 || boxBytes+bytes>8*1024*1024) { BOXES.clear();boxBytes=0; }
+      BOXES.set(key,b);boxBytes+=bytes;
+    }
+    blit(b);return;
+  }
   const col = em ? emi : lit;
   if (!noLine) polyOutline([iso(x, y, z + h), iso(x + w, y, z + h), iso(x + w, y, z), iso(x + w, y + d, z), iso(x, y + d, z), iso(x, y + d, z + h)], lit(OUT));
   poly([iso(x + w, y, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x + w, y, z + h)], col(c, .72));
@@ -174,6 +281,8 @@ function bookRowX(y0, y1, x, z, h, seed) {
     FX(s, y, x, z, z + hh, BOOKS[i % BOOKS.length]); y -= w + .02; i++; }
 }
 function screen(x0, x1, y, z0, z1, D, on, kind = 'code') {
+  if (g === main && g.globalAlpha === 1) { still(R, 'screen|'+[x0,x1,y,z0,z1,kind], lightKey+'|'+on+'|'+(on ? Math.floor(D.t/700)%35 : 0),
+    () => screen(x0,x1,y,z0,z1,D,on,kind)); return; }
   if (!on) { FY(x0, x1, y, z0, z1, '#1c2032'); line(iso(x0 + .1, y, z1 - 1), iso(x0 + .35, y, z1 - 1), lit('#3a4262')); return; }
   FY(x0, x1, y, z0, z1, kind === 'code' ? '#13202a' : '#1a2440', true);
   const shift = Math.floor(D.t / 700);
@@ -803,6 +912,7 @@ function setCodexPet(p) {
       for (let yy = r * p.ch; yy < (r + 1) * p.ch; yy += 2) for (let xx = k * p.cw; xx < (k + 1) * p.cw; xx += 2) if (d[(yy * im.width + xx) * 4 + 3] > 40) return true;
       return false; };
     CPET.frames = [...Array(p.rows)].map((_, r) => { let n = 0; while (n < p.cols && filled(n, r)) n++; return Math.max(1, n); });
+    CPET.poses = new Map(); POSES.clear(); poseBytes=0;
     Object.assign(CPET, { img: im, cols: p.cols, rows: p.rows, cw: p.cw, ch: p.ch }); wake();
   };
   im.src = p.src;
@@ -814,16 +924,36 @@ function drawOwnPet(X, Y, sp, t, h, sleeping) {
     : st === 'working' && /^(read|grep|glob|task|agent)/i.test(sp.agent?.activity || '') ? 8 : 0;
   const nf = CPET.frames[row] || 1, f = Math.floor(t / (sleeping ? 420 : sp.moving ? 110 : 160) + sp.seed * 7) % nf;
   const H = Math.round(h * 1.3), W = Math.round(H * CPET.cw / CPET.ch), x0 = Math.round(X - W / 2), y0 = Math.round(Y - H + H * .06);
-  const tmp = CPET.tmp || (CPET.tmp = document.createElement('canvas')), k = tmp.getContext('2d');
+  const poses=CPET.poses || (CPET.poses=new Map()), key=[row,f,W,H,lightKey].join('|');
+  if(poses.has(key)) { g.drawImage(poses.get(key),x0,y0);return; }
+  if(poses.size>=72)poses.clear();
+  const tmp = document.createElement('canvas'), k = tmp.getContext('2d');
   if (tmp.width !== W || tmp.height !== H) { tmp.width = W; tmp.height = H; }
   k.clearRect(0, 0, W, H); k.imageSmoothingEnabled = false; k.globalCompositeOperation = 'source-over';
   k.drawImage(CPET.img, f * CPET.cw, row * CPET.ch, CPET.cw, CPET.ch, 0, 0, W, H);
   k.globalCompositeOperation = 'multiply'; k.fillStyle = lit('#ffffff'); k.fillRect(0, 0, W, H); // the room's light, as on everything else
   k.globalCompositeOperation = 'destination-in'; k.drawImage(CPET.img, f * CPET.cw, row * CPET.ch, CPET.cw, CPET.ch, 0, 0, W, H);
+  poses.set(key,tmp);
   g.drawImage(tmp, x0, y0);
 }
 const lookOf = sp => sp.vendor === 'codex' ? (sp.small ? LOOKS.petMini : LOOKS.pet) : sp.small ? LOOKS.mini : LOOKS.clawd;
+const POSES = new Map(); let poseBytes = 0;
 function drawClawd(X, Y, sp, t) {
+  if (g !== main || g.globalAlpha !== 1 || sp.alpha !== 1 || sp.kind !== 'agent' || sp.hold || sp.fire || sp.state === 'shower' || eggLook(sp,t)) return paintClawd(X,Y,sp,t);
+  const x=Math.floor(X), y=Math.floor(Y), a=g.globalAlpha;
+  const list=main.capture(()=>{ g.globalAlpha=a;paintClawd(96+X-x,128+Y-y,sp,t); });
+  const hit=sp.hit; if(hit)sp.hit=[hit[0]+x-96,hit[1]+y-128,...hit.slice(2)];
+  const key=JSON.stringify(list.map(o=>o.key));let b=POSES.get(key);
+  if(!b) {
+    b=main.raster(list);
+    if(!b) { paintClawd(X,Y,sp,t);return; }
+    const bytes=b.img.width*b.img.height*4;
+    if(POSES.size>=192 || poseBytes+bytes>16*1024*1024) { POSES.clear();poseBytes=0; }
+    POSES.set(key,b);poseBytes+=bytes;
+  }
+  g.globalAlpha=1;g.drawImage(b.img,x-96+b.dx,y-128+b.dy);
+}
+function paintClawd(X, Y, sp, t) {
   if (sp.kind === 'cat') return drawCat(X, Y, sp, t);
   if (sp.kind === 'dog') return drawDog(X, Y, sp, t);
   const egg = eggLook(sp, t);
@@ -1379,7 +1509,10 @@ function drawLifts(t, f) {
     });
     // the cage on its rope
     const X0 = x0 + .14, Y0 = y0 + .14, X1 = x1 - .14, Y1 = y1 - .14, z = c.z, ch = 28;
-    const r0 = Math.max(zlo, z + ch + 2), r1 = Math.min(zhi, zt + 3); if (r1 > r0) line(iso(cx, cy, r1), iso(cx, cy, r0), lit('#3a2c20'));
+    const r0 = Math.max(zlo, z + ch + 2), r1 = Math.min(zhi, zt + 3); if (r1 > r0) {
+      const rope = () => line(iso(cx, cy, r1), iso(cx, cy, r0), lit('#3a2c20'));
+      if (c.state === 'move') rope(); else blit(bakeWorld(bk, f+'rope'+i, key+'|'+r0+'|'+r1, box, rope));
+    }
     if (inSlice(z)) {
       // a cage standing at a floor is drawn from two images, its riders between them; a moving one is drawn live
       const cage = (name, paint) => c.state === 'move' ? paint() : blit(bakeWorld(bk, f + name + i, key + '|' + z + '|' + c.state,
@@ -1469,6 +1602,7 @@ function bakeWorld(store, name, key, box, fn) {
   if (x0 < x1 && y0 < y1) { const img = document.createElement('canvas'); img.width = x1 - x0; img.height = y1 - y0;
     img.getContext('2d').drawImage(scratch, x0, y0, img.width, img.height, 0, 0, img.width, img.height);
     b = { img, dx: x0 + X0, dy: y0 + Y0 }; }
+  if (store.size >= 256 && !store.has(name)) store.clear();
   store.set(name, { key, b });
   return b;
 }
@@ -1494,6 +1628,7 @@ function blit(b) { if (b) g.drawImage(b.img, R.ox + b.dx, R.oy + R.drop + b.dy);
 // A still part of room r that changes only with `key` (the light, the time shown...): painted once, then an image.
 function still(r, name, key, paint) {
   const m = r.still || (r.still = new Map()), c = m.get(name);
+  if (m.size >= 128 && !m.has(name)) m.clear();
   if (!c || c.key !== key) m.set(name, { key, b: bake(r, paint) });
   blit(m.get(name).b);
 }
@@ -2127,9 +2262,10 @@ const BDC = new Map();
 function bdLayer(name, key, w, h, paint) { // an offscreen canvas painted once per key; `g` points at it while painting
   let c = BDC.get(name);
   if (c && c.key === key) return c.cv;
-  if (!c) { c = { cv: document.createElement('canvas'), key: '' }; BDC.set(name, c); }
+  if (!c) { if (BDC.size >= 48) BDC.clear(); c = { cv: document.createElement('canvas'), key: '' }; BDC.set(name, c); }
   w = Math.max(1, Math.ceil(w)); h = Math.max(1, Math.ceil(h));
   if (c.cv.width !== w || c.cv.height !== h) { c.cv.width = w; c.cv.height = h; } else c.cv.getContext('2d').clearRect(0, 0, w, h);
+  c.cv.houseVersion = (c.cv.houseVersion || 0) + 1;
   c.key = key; const saved = g; g = c.cv.getContext('2d');
   try { paint(g); } finally { g = saved; }
   return c.cv;
@@ -3276,11 +3412,12 @@ function drawRoom(r, t, d) {
   });
   blit(cache.B);
   if (r.theme.clock) still(r, 'clock', lk + '|' + clockText(d), () => drawClock(r.theme.clock, d));
-  if (DARK < .4 && weather !== 'rain') for (const wd of r.theme.windows) if (wd.wall === 'R' && !wd.vent) { // sunlight on the floor
+  const sunlight=()=>{ if (DARK < .4 && weather !== 'rain') for (const wd of r.theme.windows) if (wd.wall === 'R' && !wd.vent) { // sunlight on the floor
     const k = (1 - DARK / .4) * (weather === 'clouds' ? .05 : .12), a = .006, bb = .055;
     g.fillStyle = `rgba(255,244,210,${k})`; const pts = [iso(wd.a + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z0, bb * wd.z0, 0), iso(wd.b + a * wd.z1, bb * wd.z1, 0), iso(wd.a + a * wd.z1, bb * wd.z1, 0)];
-    const { y0, out } = spans(pts); out.forEach((s, i) => s && g.fillRect(s[0], y0 + i, s[1] - s[0], 1));
-  }
+    const { y0, out } = spans(pts); out.forEach((s, i) => s && rect(s[0], y0 + i, s[1] - s[0], 1));
+  } };
+  if(g.globalAlpha===1)still(r,'sunlight',lk,sunlight);else sunlight();
   const list = cache.items.map(it => ({ depth: typeof it.depth === 'function' ? it.depth() : it.depth, draw: it.dyn ? it.draw : () => blit(it.baked) }));
   for (const s of here) list.push({ depth: s.x + s.y + .55 + (s.z > 9 ? .3 : 0), draw: () => { const [X, Y] = s.room === r ? iso(s.x, s.y, s.z) : scAt(s.room, s.x, s.y, s.z); drawClawd(X, Y, s, t); } });
   if (r.floor === 0) list.push({ depth: r.NX + r.NY + 1.6, draw: () => drawSign(r, t) }); // the post on the grass at the front corner
@@ -3327,7 +3464,7 @@ const PFC = new Map(), TK = 3; // TK: canvas pixels per font pixel, so names rea
 function pfGlyph(ch) {
   let gl = PFC.get(ch); if (gl) return gl;
   const src = PFONT[ch] || PFONT[ch.toUpperCase()] || PFONT['?'];
-  gl = src.split('/'); PFC.set(ch, gl); return gl;
+  gl = src.split('/'); if (PFC.size >= 256) PFC.clear(); PFC.set(ch, gl); return gl;
 }
 const pfWidth = s => [...s].reduce((w, ch, i) => w + pfGlyph(ch)[0].length + (i ? 1 : 0), 0);
 // text at canvas pixels, k pixels per font pixel; uses rect() so baking sees it
@@ -3377,6 +3514,15 @@ const winShort = l => { if (!l) return ''; if (/нед|week/i.test(l)) return '�
   return n + ' ' + (h ? (k === 1 && kk !== 11 ? 'ЧАС' : k >= 2 && k <= 4 && (kk < 12 || kk > 14) ? 'ЧАСА' : 'ЧАСОВ') : 'МИН'); };
 INFO.tankHit = {};
 function limitTank(x, y, vendor) {
+  if (g === main && g.globalAlpha === 1) {
+    const r=R, u=INFO.usage?.[vendor], warn=INFO.usage?.warning || 80;
+    const key=lightKey+'|'+JSON.stringify(u)+'|'+warn+'|'+(u?.used>=warn ? Math.floor(D.t/500)%2 : 0);
+    still(r,'tank|'+vendor,key,()=>{
+      limitTank(x,y,vendor); const h=INFO.tankHit[vendor];
+      (r.tankLocal || (r.tankLocal={}))[vendor]=[h[0]-R.ox,h[1]-R.oy,...h.slice(2)];
+    });
+    const h=r.tankLocal[vendor];INFO.tankHit[vendor]=[h[0]+r.ox,h[1]+r.oy+r.drop,...h.slice(2)];return;
+  }
   const u = INFO.usage && INFO.usage[vendor], warn = (INFO.usage && INFO.usage.warning) || 80;
   const used = u && isFinite(u.used) ? Math.max(0, Math.min(100, u.used)) : null, left = used === null ? 0 : 100 - used;
   const tone = used === null ? '#8a8a96' : used >= warn ? '#e5534b' : used >= warn - 10 ? '#f0b030' : '#58c860';
@@ -3434,6 +3580,9 @@ function moneyText(sp) {
   const v = sp.usd; return '$' + (v >= 1000 ? Math.round(v) : v >= 100 ? v.toFixed(1) : v.toFixed(2));
 }
 function piggyBank(x, y, t) {
+  if (g === main && g.globalAlpha === 1 && !INFO.coins.length && t >= INFO.wiggle) {
+    still(R,'piggy',lightKey+'|'+JSON.stringify(INFO.spend),()=>piggyBank(x,y,t));return;
+  }
   B(x, y, 0, 1.0, .8, 6, '#a0603a'); FY(x + .1, x + .9, y + .801, 4.6, 5.2, '#7a4628');
   B(x + .45, y + .05, 6, .1, .1, 15, '#5a4028', 0, 1); // the counter's stick, behind the pig
   const wig = t < INFO.wiggle ? Math.round(Math.sin(t / 40)) * .5 : 0, z = 6 + Math.max(0, wig);
@@ -3553,7 +3702,7 @@ for (const [a, b] of [['А', 'A'], ['В', 'B'], ['Е', 'E'], ['Ё', 'E'], ['К',
 const SFC = new Map(), SK = 2, SH = 6; // SK: canvas pixels per font pixel on signs; SH: rows in a glyph
 function sfGlyph(ch) {
   let gl = SFC.get(ch); if (gl) return gl;
-  gl = (SFONT[ch] || SFONT[ch.toUpperCase()] || SFONT['?']).split('/'); SFC.set(ch, gl); return gl;
+  gl = (SFONT[ch] || SFONT[ch.toUpperCase()] || SFONT['?']).split('/'); if (SFC.size >= 256) SFC.clear(); SFC.set(ch, gl); return gl;
 }
 const sfWidth = s => [...s].reduce((w, ch, i) => w + sfGlyph(ch)[0].length + (i ? 1 : 0), 0);
 // text at canvas pixels, k per font pixel; with `edge`, a 1px outline around every letter so it reads on any background
@@ -3733,7 +3882,7 @@ function scheduleFrame(t) {
 }
 function loop(t) {
   frameRAF = 0;
-  if (!active) { looping = false; return; }
+  if (!active || document.visibilityState === 'hidden') { looping = false; return; }
   frame(t);
   if (houseAwake(t)) { stillSince = 0; tellAwake(true); }
   else if (!stillSince) stillSince = t;
@@ -3746,7 +3895,7 @@ function napUntilNextMinute() {
   nap = setTimeout(() => { if (!looping) { stillSince = performance.now() - STILL_MS - 100; wake(); } }, ms);
 }
 function wake() {
-  if (active && !looping) { looping = true; last = performance.now(); frameRAF = requestAnimationFrame(loop); }
+  if (active && document.visibilityState !== 'hidden' && !looping) { looping = true; last = performance.now(); frameRAF = requestAnimationFrame(loop); }
 }
 function setActive(on) {
   active = !!on;
@@ -3756,14 +3905,19 @@ function setActive(on) {
     clearTimeout(nap); nap = 0; looping = false;
   } else wake();
 }
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    clearTimeout(frameDeadline); frameDeadline=0;cancelAnimationFrame(frameRAF);frameRAF=0;looping=false;
+  } else wake(); // wake resets the simulation clock after WebKit's hidden-page suspension
+});
 function stir() { stillSince = 0; wake(); }
 function pointerBurst() { pointerUntil = performance.now() + 250; stir(); }
 function frame(t) {
-  const dt = Math.max(0, Math.min(1000, t - last)); last = t; // the first rAF stamp can be a little before wake()
+  const dt = Math.max(0, t - last); last = t; // the first rAF stamp can be a little before wake()
   if (fixedHour !== null && speed > 1) fixedHour = (fixedHour + dt * speed / 3600000) % 24;
   vtime = speed === 1 && fixedHour === null ? Date.now() : vtime + dt * speed; // after a pause the clock is right at once
   const d = now(); setTime(d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600);
-  g = main;
+  g = main; main.beginFrame();
   stepCamera(t, dt);
   drawBackground(t, d);
   eggSky(t, d);
@@ -3785,6 +3939,7 @@ function frame(t) {
   drawSceneOverlays(t);
   drawMist(t, d);
   eggOver(t);
+  main.endFrame();
   updateTip(); updateControls(d);
 }
 

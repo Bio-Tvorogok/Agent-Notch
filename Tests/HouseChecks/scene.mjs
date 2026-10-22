@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
-export function scene(file='room/index.html', search='?nodemo=1&hour=12&season=summer&backdrop=city') {
+export function scene(file='room/index.html', search='?nodemo=1&hour=12&season=summer&backdrop=city', canvasFactory=null) {
  let tick=0,id=1,seed=173;const timers=new Map(),rafs=new Map(),calls={main:0,offscreen:0};let counting=false;
  class Context {
   constructor(canvas){this.canvas=canvas;this.globalAlpha=1;this.globalCompositeOperation='source-over';this.states=[];}
@@ -12,7 +12,13 @@ export function scene(file='room/index.html', search='?nodemo=1&hour=12&season=s
   createLinearGradient(){return {addColorStop(){}};}createRadialGradient(){return {addColorStop(){}};}
  }
  class Element {
-  constructor(tag='div',id=''){this.tagName=tag;this.id=id;this.style={};this.dataset={};this.hidden=true;this.width=300;this.height=150;this.classList={toggle(){},add(){},remove(){},contains(){return false;}};}
+  constructor(tag='div',id=''){
+   if(tag==='canvas' && canvasFactory){
+    const c=canvasFactory(300,150);Object.assign(c,{id,style:{},addEventListener(){},dispatchEvent(){}});
+    const get=c.getContext.bind(c);let context;
+    c.getContext=()=>{if(context)return context;context=get('2d');for(const name of ['fillRect','clearRect','drawImage','fill','stroke','fillText','strokeText','putImageData']){const raw=context[name].bind(context);context[name]=(...a)=>{if(counting)calls[id==='c'?'main':'offscreen']++;return raw(...a);};}return context;};return c;
+   }
+   this.tagName=tag;this.id=id;this.style={};this.dataset={};this.hidden=true;this.width=300;this.height=150;this.classList={toggle(){},add(){},remove(){},contains(){return false;}};}
   getContext(){return this.ctx??=new Context(this);}addEventListener(){}appendChild(){}append(){}remove(){}dispatchEvent(){}
   querySelector(){return new Element();}querySelectorAll(){return [];}
  }
@@ -34,13 +40,14 @@ export function scene(file='room/index.html', search='?nodemo=1&hour=12&season=s
 export function fixture(s,mode='working',projects=2){
  s.run(`active=false;looping=false;clearTimeout(nap);demo=false;fixedHour=Number(Q.get('hour')||12);
  room.setAgents(${mode==='idle'?'[]':`DEMO_PROJECTS.slice(0,${projects}).flatMap((p,i)=>[{id:'a'+i,title:'Read',project:p,vendor:'claude',state:'working',activity:'Read · Model.swift'},{id:'b'+i,title:'Build',project:p,vendor:'codex',state:'working',activity:'Bash · swift build'}])`});`);
- for(let i=1;i<=600;i++)s.frame(i*1000/60);
  s.run(`updateResidents=()=>{};updateErrands=()=>{};updateScenes=()=>{};updateLifts=()=>{};updateStairs=()=>{};demoTick=()=>{};
  CAM.glide=CAM.follow=null;for(const r of rooms)r.born=-100000;for(const L of links)L.turn=null;if(LIFT)for(const c of LIFT.cabins)c.state="idle";
- for(const sp of sprites.values()){
-  sp.path=[];sp.onBridge=null;sp.moving=false;sp.hold=null;sp.fall=null;
-  if(sp.kind==='agent'&&sp.goal){sp.room=sp.goal.room;[sp.x,sp.y,sp.z]=sp.goal.p;sp.state='working';}
- }
- ${mode==='walking'?`const walkStep=stepSprites;stepSprites=dt=>{for(const sp of sprites.values())if(sp.kind==='agent'&&!sp.path.length){const r=sp.room;sp.path=[{r,p:[sp.x>r.NX/2?1:r.NX-1,sp.y,0]}];}walkStep(dt);};`:''}`);
+ for(const sp of [...sprites.values()]){
+  if(sp.kind!=='agent'){sprites.delete(sp.id);continue;}
+  sp.path=[];sp.onBridge=null;sp.moving=false;sp.hold=null;sp.fall=null;sp.alpha=sp.fade=1;
+  if(sp.goal){sp.room=sp.goal.room;[sp.x,sp.y,sp.z]=sp.goal.p;sp.state='working';sp.seated=sp.z>3;}
+ }`);
+ for(let i=1;i<=60;i++)s.frame(i*1000/6);
+ s.run(`${mode==='walking'?`const walkStep=stepSprites;stepSprites=dt=>{for(const sp of sprites.values())if(sp.kind==='agent'&&!sp.path.length){const r=sp.room;sp.path=[{r,p:[sp.x>r.NX/2?1:r.NX-1,sp.y,0]}];}walkStep(dt);};`:''}`);
  s.frame(10000);s.count();
 }

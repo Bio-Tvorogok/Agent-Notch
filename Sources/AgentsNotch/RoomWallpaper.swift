@@ -19,6 +19,7 @@ final class RoomWallpaper: NSObject {
     private var lastJSON = ""
     private var lastMove = 0.0
     private var hovering = false
+    private var desktopHitTargets: Set<Int> = []
     private let tip = RoomTip()
     private var powerTimer: Timer?
     private var sentActive: Bool?
@@ -65,6 +66,7 @@ final class RoomWallpaper: NSObject {
         w.orderFrontRegardless()
         window = w
         self.web = web
+        refreshDesktopHitTargets()
         observeRoomSettings()
 
         store.$agents.combineLatest(store.$hooks)
@@ -75,9 +77,16 @@ final class RoomWallpaper: NSObject {
         // A desktop-level window doesn't always follow to a new Space; bring it along when it got left behind.
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
             .sink { [weak self] _ in
+                self?.refreshDesktopHitTargets()
                 guard let w = self?.window, !w.isOnActiveSpace else { return }
                 w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
                 w.orderFrontRegardless()
+            }
+            .store(in: &subs)
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .sink { [weak self] note in
+                guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == "com.apple.finder" else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refreshDesktopHitTargets() }
             }
             .store(in: &subs)
         // Battery: nothing is drawn while the desktop is covered, and fewer frames are drawn on battery.
@@ -201,6 +210,7 @@ final class RoomWallpaper: NSObject {
     private func fitScreen() {
         guard let w = window, let screen = NSScreen.screens.first else { return }
         w.setFrame(screen.frame, display: true)
+        refreshDesktopHitTargets()
         syncScreens()
         syncInsets()
     }
@@ -275,7 +285,7 @@ final class RoomWallpaper: NSObject {
         // WindowServer queries belong to clicks and gestures, never the high-rate pointer stream.
         let inside = w.frame.contains(p) && w.occlusionState.contains(.visible)
         let bare = inside && (type == .mouseMoved
-            ? NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+            ? desktopHitTargets.contains(NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0))
             : desktopIsBare(at: p))
         let x = p.x - w.frame.minX, y = w.frame.maxY - p.y
         switch type {
@@ -305,6 +315,17 @@ final class RoomWallpaper: NSObject {
         }
         if bare { hovering = true; web.evaluateJavaScript("room.pointer(\(x), \(y))") }
         else if hovering { hovering = false; tip.hide(); web.evaluateJavaScript("room.leave()") }
+    }
+
+    /// Cache desktop IDs only when the windows/Space are created. AppKit's point hit test then handles
+    /// exposed desktop beside any frontmost app, and Finder windows covering the house, without a list per move.
+    private func refreshDesktopHitTargets() {
+        let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        desktopHitTargets = Set(list.compactMap { info in
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer < 0 else { return nil }
+            return info[kCGWindowNumber as String] as? Int
+        })
+        desktopHitTargets.insert(0) // AppKit reports no mouse target on an empty desktop with icons hidden.
     }
 
     private var lastPinchNote: CFTimeInterval = 0
