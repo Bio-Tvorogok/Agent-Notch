@@ -6,7 +6,8 @@
 // Output: files streamed to Swift with webkit.messageHandlers.out (parts.json, parts-N.png, check/*.png).
 (() => {
   'use strict';
-  const O = window.__HOUSE_EXPORT, post = (path, data) => window.webkit.messageHandlers.out.postMessage({ path, data });
+  const O = window.__HOUSE_EXPORT, posted = [];
+  const post = (path, data) => { posted.push(path); window.webkit.messageHandlers.out.postMessage({ path, data }); };
   const T = 100000; // the moment every part is cut at (and every reference frame drawn at)
   const LOG = []; const log = (...a) => LOG.push(a.join(' '));
   const only = new Set((O.only || '').split(',').filter(Boolean)); // dev: restrict the stages
@@ -14,15 +15,22 @@
 
   // ---------- quiet page: no loop, no residents, no eggs, no seasons' particles, clear weather ----------
   setActive(false);
-  weather = 'clear';
-  updateResidents = () => {}; updateErrands = () => {}; updateScenes = () => {}; eggStep = () => {};
+  weather = 'clear'; Q.set('season', 'autumn'); Q.set('moon', '.5');
+  CAM.glide = null; CAM.follow = null; VIEW.zoom = 1; mouse = null; PAR.x = PAR.y = 0;
+  CITY.lanes = [[], []]; CITY.nextCar = [Infinity, Infinity]; CITY.train = null; CITY.nextTrain = Infinity;
+  // Pin CSS geometry and DPR as well as the WebView size: layout() must not depend on the host display.
+  Object.defineProperty(window, 'innerWidth', { value: 1728, configurable: true });
+  Object.defineProperty(window, 'innerHeight', { value: 1117, configurable: true });
+  Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+  updateStairs = () => {}; updateResidents = () => {}; updateErrands = () => {}; updateScenes = () => {}; eggStep = () => {};
   eggSky = () => {}; eggOver = () => {}; eggItems = () => {}; drawSeason = () => {};
   METEORS.next = Infinity; METEORS.list = [];
   room.setInsets(O.insets);
   sprites.clear();
 
   const BUCKETS = AMBK.slice(0, 9).map(r => r[0]); // 0 5 6.5 8.5 12 16.5 18.5 20 21.5 (row 24 repeats row 0)
-  const hourDate = h => { const d = new Date(); d.setHours(Math.floor(h), Math.floor((h % 1) * 60), Math.floor((h * 3600) % 60), 0); return d; };
+  const hourDate = h => { const d = new Date(2026, 9, 15); d.setHours(Math.floor(h), Math.floor((h % 1) * 60), Math.floor((h * 3600) % 60), 0); return d; };
+  now = () => hourDate(fixedHour ?? 12); // reference frame and composer share the same calendar-dependent mist
   const setHour = h => { fixedHour = h; setTime(h); return hourDate(h); };
   // ---------- the light model: F/E renders and DARK variants ----------
   // every DARK comparison in room/index.html that reaches a room, a link, the lift or a Clawd: .2 .25 .3 .35 .4 .45 .5 .55 .6; and the
@@ -30,7 +38,9 @@
   const THRESH = [.2, .25, .3, .35, .4, .45, .5, .55, .6, .7, .8, .9];
   const EDGES = [0, ...THRESH, 1];
   const VARS = EDGES.slice(0, -1).map((lo, i) => ({ lo, hi: EDGES[i + 1], d: i === 0 ? .02 : +((lo + EDGES[i + 1]) / 2).toFixed(4) }));
-  const varOf = dark => { let i = 0; while (i < VARS.length - 1 && dark > VARS[i].hi) i++; return i; };
+  // .3 has both > and >= tests on the page; sample equality itself instead of choosing either neighbour.
+  const boundary30 = VARS.length; VARS.push({ lo: .3, hi: .3, d: .3, exact: true });
+  const varOf = dark => { if (dark === .3) return boundary30; let i = 0; while (i < boundary30 - 1 && dark > VARS[i].hi) i++; return i; };
   const DSLOPE = .004; // a third cut at DARK + DSLOPE measures how each glow's alpha moves with DARK (k = a + b * DARK)
   const FA = .5; // F is cut at AMB = FA (not 1): lit() clamps at 255, so a colour with k > 1 would clamp in an AMB = 1 cut; at .5 nothing clamps
   let LM = 'F';
@@ -53,6 +63,8 @@
 
   // ---------- capture machinery: a proxied canvas that knows when something was drawn on it ----------
   const CW = 1000, CH = 1400, OX = 500, OY = 700, WOX = 500, WOY = 1000; // room origin and the bathroom's (world) origin on it
+  // bake() only grows scratch on demand; the bathroom yard extends beyond its initial room-sized allocation.
+  scratch.width = Math.max(scratch.width, CW); scratch.height = Math.max(scratch.height, CH);
   const cap = document.createElement('canvas'); cap.width = CW; cap.height = CH;
   const raw = cap.getContext('2d', { willReadFrequently: true });
   let dirty = false;
@@ -77,7 +89,7 @@
   const withG = (ctx, fn) => { const saved = [g, R]; g = ctx; try { return fn(); } finally { [g, R] = saved; } };
 
   // ---------- sprites: every distinct image pair (F, E) once, packed at the end ----------
-  // flag: 0 = general (out = E + (F - E) * AMB), 1 = E is black (out = F * AMB), 2 = constant (E is not stored; F is drawn as is)
+  // flag: 0 = general (out = E + (F - E) * AMB / FA), 1 = E is black (out = F * AMB / FA), 2 = constant (E is not stored; F is drawn as is)
   const frames = [], byHash = new Map();
   const words = c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; return { d, u: new Uint32Array(d.buffer) }; };
   const hashU = u => { let a = 2166136261, b = 0; for (let i = 0; i < u.length; i++) { a = Math.imul(a ^ u[i], 16777619) >>> 0; b = (b + u[i] * (i % 251 + 1)) >>> 0; } return a + ':' + b; };
@@ -104,7 +116,8 @@
   const ph = img => { CTX.imgs.push(img); return { ph: CTX.imgs.length - 1 }; };
   function dual(d, fn, slope) {
     const run = (mode, dd) => { CTX = { imgs: [] }; setLight(mode, dd); const res = fn(); const imgs = CTX.imgs; CTX = null; return [res, imgs]; };
-    const [res, fi] = run('F', d), [, ei] = run('E', d), r3 = slope ? run('F', d + DSLOPE)[0] : null;
+    const step = d === .3 ? -DSLOPE : DSLOPE; // stay on the same side of strict > .3 light tests
+    const [res, fi] = run('F', d), [, ei] = run('E', d), r3 = slope ? run('F', d + step)[0] : null;
     if (fi.length !== ei.length) throw new Error('F and E cut a different number of images: ' + fi.length + ' vs ' + ei.length);
     const ids = fi.map((img, i) => addPair(img, ei[i]));
     const walk = (o, o3) => {
@@ -112,7 +125,7 @@
       if (o && typeof o === 'object') {
         if ('ph' in o && Object.keys(o).length === 1) return ids[o.ph];
         const out = {}; for (const k of Object.keys(o)) out[k] = walk(o[k], o3 && o3[k]);
-        if (slope && o3 && typeof o.k === 'number' && 'r' in o) { const b = (o3.k - o.k) / DSLOPE; out.b = +b.toFixed(4); out.a = +(o.k - b * d).toFixed(4); delete out.k; }
+        if (slope && o3 && typeof o.k === 'number' && 'r' in o) { const b = (o3.k - o.k) / step; out.b = +b.toFixed(4); out.a = +(o.k - b * d).toFixed(4); delete out.k; }
         return out;
       }
       return o;
@@ -158,9 +171,9 @@
       layers.push({ kind: cur.kind, depth: cur.depth, tag: curTag || undefined, sprite: ph(b.img), x: b.dx, y: b.dy });
     };
     still = (rr, name, key, paint) => { curTag = name; try { return real.still(rr, name, key, paint); } finally { curTag = null; } };
-    pane = (pts, t, seed) => { flush(); layers.push({ kind: 'pane', pts: pts.map(q => [Math.round(q[0]) - OX, Math.round(q[1]) - OY]), seed }); };
+    pane = (pts, t, seed) => { flush(); layers.push({ kind: 'pane', pts: pts.map(q => [q[0] - OX, q[1] - OY]), fixedSeed: r.theme.pattern === 'glass' ? seed : undefined }); };
     drawSign = rr => { flush(); layers.push({ kind: 'sign', depth: rr.floor === 0 ? round1(rr.NX + rr.NY + 1.6) : null, variant: rr.floor === 0 ? 'post' : 'plaque' }); };
-    drawLifts = (tt, f) => { flush(); layers.push({ kind: 'lift', floor: f, depth: round1(LIFT.x0 + LIFT.y1 - LIFT.fl[f].yoff) }); };
+    drawLifts = (tt, f) => { flush(); layers.push({ kind: 'lift', room: 'self', depth: round1(LIFT.x0 + LIFT.y1 - LIFT.fl[f].yoff) }); };
     glow = (x, y, rad, color, k) => {
       flush(); // a glow inside a dynamic item is a light too (it is added, not painted over)
       lights.push({ sprite: glowSprite(color, rad), r: Math.max(1, Math.round(rad)), x: x - OX, y: y - OY, k, inItem: inItem || undefined });
@@ -177,7 +190,7 @@
   }
   const roomMeta = r => ({ growth: r.theme.shared ? undefined : growthLevel(r), clock: r.theme.clock || undefined, theme: themeOf(r), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, hub: r.theme.hub, lowH: r.theme.lowH, shared: !!r.theme.shared, open: !!r.theme.open });
 
-  const result = { version: 3, S, WH, SLAB, FLOOR_STEP, buckets: BUCKETS, ambk: AMBK.slice(0, 9).map(r => ({ hour: r[0], amb: r[1], sky: [r[2], r[3]], dark: r[4] })) };
+  const result = { version: 4, S, WH, SLAB, FLOOR_STEP, buckets: BUCKETS, ambk: AMBK.slice(0, 9).map(r => ({ hour: r[0], amb: r[1], sky: [r[2], r[3]], dark: r[4] })) };
   const parts = result.rooms = {};
   if (want('rooms')) {
     const jobs = []; // [variant id, fixture projects, room key]
@@ -188,12 +201,24 @@
     for (const j of jobs) { const k = JSON.stringify(j.fx); if (!byFx.has(k)) byFx.set(k, []); byFx.get(k).push(j); }
     for (const [, list] of byFx) {
       fixture(list[0].fx);
-      for (const j of list) { const r = roomByKey.get(j.key); parts[j.id] = { ...roomMeta(r), variants: [] }; }
+      for (const j of list) { const r = roomByKey.get(j.key);
+        if (j.gl !== undefined) growth[r.name] = { n: GROWTH_STEPS[j.gl], ids: [] };
+        parts[j.id] = { ...roomMeta(r), variants: [] };
+        if (j.gl !== undefined) delete growth[r.name];
+      }
       VARS.forEach((v, vi) => {
         fixedHour = 12;
         for (const j of list) { const r = roomByKey.get(j.key); if (j.gl !== undefined) growth[r.name] = { n: GROWTH_STEPS[j.gl], ids: [] }; parts[j.id].variants[vi] = dual(v.d, () => { r.cache = null; r.still = null; return cutRoom(r); }, true); if (j.gl !== undefined) delete growth[r.name]; }
       });
     }
+    // The first shell must have the same silhouette as every later light cut (regression: clipped yard corner).
+    const silhouettes = parts['bath/g0'].variants.map(v => {
+      const f = frames[v.layers[0].sprite], { d } = words(f.img);
+      return { w: f.w, h: f.h, mask: Array.from({ length: f.w * f.h }, (_, i) => d[i * 4 + 3] > 0 ? 1 : 0) };
+    });
+    const first = silhouettes[0];
+    result.firstCutProof = { opaquePixels: silhouettes.map(s => s.mask.reduce((n, a) => n + a, 0)), sameSilhouette: silhouettes.every(s => s.w === first.w && s.h === first.h && s.mask.every((a, i) => a === first.mask[i])) };
+    if (!result.firstCutProof.sameSilhouette) throw new Error('bath/g0 first cut silhouette differs across light variants');
     log('rooms', Object.keys(parts).length);
   }
 
@@ -318,11 +343,20 @@
 
   // ---------- Clawd and the residents: every pose, cut around its feet; ax, ay = the feet's offset inside the sprite ----------
   const poses = result.poses = { anchors: 'sprite drawn at (X - ax, Y - ay) where (X, Y) is the point drawClawd was given (the feet, iso of the spot)' };
+  const poseProofJobs = [];
   if (want('poses')) {
     const fr = {}; // a stand-in room
     const base = (vendor, small, o) => ({ kind: 'agent', vendor, small, state: 'working', path: [], alpha: 1, moving: false, seated: false, waving: false, toss: 0, onBridge: null,
       seed: .3, goal: null, hold: null, fire: null, room: null, agent: { id: 'x', activity: 'Bash · ls' }, ...o });
-    const cut = (draw) => { reset(raw); dirty = false; withG(cx, draw); dirty = false; const c = cropRaw(100, 120, 400, 460); reset(raw); return c && { sprite: ph(c.img), ax: 300 - c.x, ay: 400 - c.y }; };
+    const cut = draw => {
+      const layers = [];
+      const flush = blend => { const c = cropRaw(100, 120, 400, 460); reset(raw); dirty = false;
+        if (c) layers.push({ sprite: ph(c.img), ax: 300 - c.x, ay: 400 - c.y, blend }); };
+      reset(raw); dirty = false;
+      glow = (...args) => { flush('normal'); withG(cx, () => real.glow(...args)); flush('add'); };
+      try { withG(cx, draw); flush('normal'); } finally { glow = real.glow; }
+      return layers.length ? { layers } : null;
+    };
     const list = []; // [name, makeSprite, t]
     const add = (name, mk, ts) => (Array.isArray(ts) ? ts : [ts]).forEach((t, i) => list.push([ts.length > 1 || Array.isArray(ts) ? `${name}.${i}` : name, mk, t]));
     const frames_ = (n, period) => Array.from({ length: n }, (_, i) => Math.round(i * period / n));
@@ -357,7 +391,9 @@
       [0, 260, 520, 780].forEach((t, i) => jobs.push([`dog/bark.${f}.${i}`, () => pet('dog', face, { pose: 'bark' }), t]));
       frames_(4, 1900).forEach((t, i) => jobs.push([`dog/nap.${f}.${i}`, () => pet('dog', face, { pose: 'nap' }), t]));
     }
+    for (const name of ['claude/stand.0', 'claude/walk.1', 'claude/work.1', 'claude/fire.1']) poseProofJobs.push(jobs.find(j => j[0] === name));
     poses.names = jobs.map(j => j[0]);
+    poses.composition = 'Draw layers in order at (X-ax,Y-ay); blend normal = source-over, add = additive (SpriteKit .add). Fire glow is a separate add layer between the body and flames.';
     poses.variants = VARS.map(v => dual(v.d, () => { const out = {};
       for (const [name, mk, t] of jobs) { const sp = mk(); const c = cut(() => drawClawd(300, 400, sp, t)); if (c) out[name] = c; }
       return out; }));
@@ -393,7 +429,7 @@
   // ---------- the proof: compose frames from the parts alone, as the renderer will, and compare with the page's own frame ----------
   // The composer takes from the page only the layout (rooms' ox/oy and tower/floor, links, LIFT, the draw order) and the uniforms the
   // renderer owns: AMB, DARK, SKY of the hour (setTime). Every room, link, lift, sign, glow and pane is drawn from the manifest and the
-  // packed pages: lit sprites as out = E + (F - E) * AMB per channel (alpha: Ea + (Fa - Ea) * AMB[0]), the variant of the hour's DARK.
+  // packed pages: lit sprites as out = E + (F - E) * AMB / FA per channel (alpha: Ea + (Fa - Ea) * AMB[0] / FA), the variant of the hour's DARK.
   const proof = result.proof = [];
   const readPage = (c, x, y, w, h) => c.getContext('2d').getImageData(x, y, w, h);
   let SH_CACHE = new Map(); // sprite id -> shaded canvas for the current AMB
@@ -446,12 +482,13 @@
       for (const ch of text) { const f = FONT[ch]; for (let r = 0; r < 5; r++) for (let k = 0; k < 3; k++) if (f[r * 3 + k] === '1') { const [px, py] = at(col + k, r); rect(Math.round(px), Math.round(py), S, S); } col += ch === ':' || ch === ' ' ? 3 : 4; }
       R = saved; });
   }
+  const seedForRoom = key => { let h = 7; for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return key === '__yard' ? 11 : h % 97; };
   function drawPaneParts(ctx, room, l) { // the page's pane(): the sky outside (SKY uniform), stars when DARK > .55, a soft reflection; clear weather
-    const pts = l.pts.map(q => [q[0] + room.ox, q[1] + room.oy]);
-    ctx.save(); ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])); ctx.closePath(); ctx.clip();
+    const pts = l.pts.map(q => [q[0] + room.ox, q[1] + room.oy]), seed = l.fixedSeed ?? seedForRoom(room.key);
+    ctx.save(); ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(Math.round(q[0]), Math.round(q[1])) : ctx.moveTo(Math.round(q[0]), Math.round(q[1]))); ctx.closePath(); ctx.clip();
     const ys = pts.map(q => q[1]), xs = pts.map(q => q[0]), top = Math.min(...ys), bot = Math.max(...ys), lft = Math.min(...xs), rgt = Math.max(...xs);
     const gr = ctx.createLinearGradient(0, top, 0, bot); gr.addColorStop(0, SKY[0]); gr.addColorStop(1, SKY[1]); ctx.fillStyle = gr; ctx.fillRect(lft, top, rgt - lft, bot - top);
-    if (DARK > .55) for (let i = 0; i < (rgt - lft) / 4; i++) { const x = lft + ((i * 37 + room.seed) % (rgt - lft)), y = top + ((i * 53 + room.seed) % (bot - top)); ctx.fillStyle = `rgba(255,255,255,${.5 + .4 * Math.sin(T / 1500 + i)})`; ctx.fillRect(Math.round(x), Math.round(y), S, S); }
+    if (DARK > .55) for (let i = 0; i < (rgt - lft) / 4; i++) { const x = lft + ((i * 37 + seed) % (rgt - lft)), y = top + ((i * 53 + seed) % (bot - top)); ctx.fillStyle = `rgba(255,255,255,${.5 + .4 * Math.sin(T / 1500 + i)})`; ctx.fillRect(Math.round(x), Math.round(y), S, S); }
     ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(lft + (rgt - lft) * .15, top, 3, bot - top);
     ctx.restore();
   }
@@ -479,7 +516,7 @@
     const v = roomPartOf(r).variants[vi]; let lit_ = false;
     for (const l of v.layers) {
       if (l.kind === 'sign' && l.variant === 'plaque' && !lit_) { glows(ctx, v.lights, r.ox, r.oy); lit_ = true; }
-      if (l.kind === 'lift') drawLiftSlice(ctx, wf, l.floor, vi);
+      if (l.kind === 'lift') drawLiftSlice(ctx, wf, village.lift['n' + LIFT.fl.length].fl.findIndex(q => q.room === r.key), vi);
       else if (l.kind === 'sign') drawSignParts(ctx, r, vi);
       else if (l.kind === 'pane') drawPaneParts(ctx, r, l);
       else if (l.tag === 'clock') drawClockParts(ctx, r, vi);
@@ -515,7 +552,7 @@
     return { c, vi };
   }
   const grab = c => c.getContext('2d').getImageData(0, 0, c.width, c.height);
-  if (want('proof')) for (const [n, hour] of [[2, 12], [5, 12], [2, 19.25], [5, 19.25], [2, 20], [5, 20], [2, 21], [5, 21], [2, 5.5], [5, 5.5], [14, 19.25]]) {
+  if (want('proof')) for (const [n, hour] of [0, 1, 2, 3, 5, 14].flatMap(n => [0, 6.5, 10, 12, 19.25, 20, 21, 23].map(h => [n, h]))) {
     const exact = BUCKETS.includes(hour);
     fixture(natural(n)); for (const r of rooms) r.born = -1e9;
     const bgc = document.createElement('canvas'); bgc.width = cv.width; bgc.height = cv.height; const realBG = drawBackground;
@@ -525,6 +562,15 @@
     const bg = bgc;
     const ownSky = !exact || cv.width !== sky.W || cv.height !== sky.H;
     OWNBG = bgc; const { c: ours, vi } = composeFrame(hour, ownSky);
+    const poseCase = n === 2 && hour === 20;
+    if (poseCase) {
+      const reference = ref.getContext('2d'), ctx = ours.getContext('2d'), r = roomByKey.get('__bath');
+      poseProofJobs.forEach(([name, mk, t], i) => {
+        const X = r.ox - 100 + i * 65, Y = r.oy + 110;
+        withG(reference, () => drawClawd(X, Y, mk(), t));
+        for (const l of poses.variants[vi][name].layers) { ctx.save(); ctx.globalCompositeOperation = l.blend === 'add' ? 'lighter' : 'source-over'; drawSpr(ctx, l.sprite, X - l.ax, Y - l.ay); ctx.restore(); }
+      });
+    }
     const a = grab(ref).data, b = grab(ours).data, k = grab(bg).data, W = cv.width, H = cv.height, out = new ImageData(W, H);
     let diff = 0, house = 0, houseDiff = 0; const cells = new Map();
     for (let i = 0; i < a.length; i += 4) {
@@ -535,22 +581,23 @@
     const dc = document.createElement('canvas'); dc.width = W; dc.height = H; dc.getContext('2d').putImageData(out, 0, 0);
     const tag = `n${n}-h${hour}`;
     post(`check/${tag}-page.png`, ref.toDataURL('image/png')); post(`check/${tag}-parts.png`, ours.toDataURL('image/png')); post(`check/${tag}-diff.png`, dc.toDataURL('image/png'));
-    proof.push({ projects: n, hour, dark: +DARK.toFixed(3), variant: vi, sky: ownSky ? "the page's own" : 'from parts', pixels: W * H, diffOver24: diff, pctWhole: +(100 * diff / (W * H)).toFixed(4),
+    proof.push({ projects: n, hour, poses: poseCase ? poseProofJobs.map(j => j[0]) : undefined, dark: +DARK.toFixed(3), variant: vi, sky: ownSky ? "the page's own" : 'from parts', pixels: W * H, diffOver24: diff, pctWhole: +(100 * diff / (W * H)).toFixed(4),
       housePixels: house, houseDiffOver24: houseDiff, hot: [...cells.values()].sort((p, q) => q.n - p.n).slice(0, 8), pctHouse: +(100 * houseDiff / Math.max(1, house)).toFixed(4) });
     log(tag, 'var', vi, 'house', houseDiff + '/' + house, (100 * houseDiff / Math.max(1, house)).toFixed(4) + '%', 'whole', (100 * diff / (W * H)).toFixed(4) + '%');
   }
-  result.proofNote = 'diff = pixels whose largest channel difference is > 24 against the page\'s own frame at t=100000 (no agents, no residents, clear weather); house = pixels the house changed against the sky-only frame. The sky is the page\'s own except at the bucket hours 12 and 20 (sky parts).';
+  result.proofNote = 'diff = pixels whose largest channel difference is > 24 against the page\'s own frame at t=100000 (no residents, clear weather; n2 h20 adds stand/walk/work/fire agents over the house); house = pixels the house changed against the sky-only frame. The sky is the page\'s own except at the bucket hours 12 and 20 (sky parts).';
 
   result.light = {
-    model: 'out.rgb = clamp(E.rgb + (F.rgb - E.rgb) * AMB.rgb / FA) per channel; out.a = Ea + (Fa - Ea) * AMB.r / FA (only glass differs in alpha); FA = .5 (see fA). F = the piece cut with AMB = FA,FA,FA, E = with AMB = 0,0,0 (same DARK), same atlas rect in parts-N.png (F) and parts-N-e.png (E). Sprite flag (atlas[id][5]): 0 general, 1 E is black (out = F * AMB: no E sample), 2 constant (E not stored: draw F as is; glows, sky).',
+    model: 'out.rgb = clamp(E.rgb + (F.rgb - E.rgb) * AMB.rgb / FA) per channel; out.a = Ea + (Fa - Ea) * AMB.r / FA (only glass differs in alpha); FA = .5 (see fA). F = the piece cut with AMB = FA,FA,FA, E = with AMB = 0,0,0 (same DARK), same atlas rect in parts-N.png (F) and parts-N-e.png (E). Sprite flag (atlas[id][5]): 0 general, 1 E is black (out.rgb = F.rgb * AMB.rgb / FA, alpha = Fa: no E sample), 2 constant (E not stored: draw F as is; glows, sky).',
     ambAt: 'AMB, DARK and SKY for an hour come from ambk by linear interpolation between rows (setTime): AMB, SKY and DARK are mixed with t = (hour - a.hour)/(b.hour - a.hour); row 24 repeats row 0. DARK is ambk[].dark.',
-    thresholds: THRESH, variants: VARS, variantOf: 'variant i is the first with DARK <= variants[i].hi; every layer list, light list, sign colour pair, lift colour and pose set is cut once per variant at DARK = variants[i].d',
+    alpha: 'Textures store straight alpha. The light formula applies to unpremultiplied RGB, clamped to [0,1]. For a premultiplied renderer, unpremultiply the inputs, evaluate, then multiply by output alpha and clamp RGB to [0,alpha].',
+    thresholds: THRESH, variants: VARS, variantOf: 'At DARK == .3 select the variant marked exact (the page mixes > .3 and >= .3); otherwise variant i is the first non-exact with DARK <= variants[i].hi; every layer list, light list, sign colour pair, lift colour and pose set is cut once per variant at DARK = variants[i].d',
     fA: FA,
     fWhy: 'F is cut at AMB = .5, not 1: lit() clamps at 255, so colours with k > 1 clamp in an AMB = 1 cut and come out up to 25/255 too dark at dusk. At .5 nothing clamps; the shader multiplies by AMB / fA (= 2 AMB) and the final clamp is the page\'s.',
-    glows: 'a light is drawn with blend add at alpha min(1, a + b * DARK) (a, b measured by cutting at DARK and DARK + .004), sprite = unit glow of its colour and radius, at (origin + x, origin + y) - r',
+    glows: 'a light is drawn with blend add at alpha min(1, a + b * DARK) (a, b measured by cutting at DARK and DARK + .004 (-.004 at the exact .3 boundary)), sprite = unit glow of its colour and radius, at (origin + x, origin + y) - r',
     clock: 'the clock face is the layer tagged "clock": cut at 12:00 (drawClock draws clockText(d)); the renderer re-draws the digits for another time',
     sunlight: 'the layer tagged "sunlight" is a floor patch of rgba(255,244,210,k), k = (1 - DARK/.4) * .12 (.05 clouds) while DARK < .4: baked at the variant DARK (error under 3/255)',
-    pane: 'layer kind "pane" is a window glass polygon (pts relative to the room origin, rounded like the page); the renderer draws it live: vertical gradient SKY[0] -> SKY[1] over the polygon bounds, stars when DARK > .55 (rgba(255,255,255,.5+.4*sin(t/1500+i)) for i < width/4 at x = lft + (i*37+seed) % w, y = top + (i*53+seed) % h, size S), then a 3 px reflection rgba(255,255,255,.18) at lft + .15*w. SKY is the sky colours of the hour (a uniform), not AMB-linear.',
+    pane: 'layer kind "pane" is a window glass polygon (unrounded pts relative to the room origin; round only the clipping path, use raw bounds for gradient/stars/reflection); the renderer draws it live: vertical gradient SKY[0] -> SKY[1] over the polygon bounds, stars when DARK > .55 (rgba(255,255,255,.5+.4*sin(t/1500+i)) for i < width/4 at x = lft + (i*37+seed) % w, y = top + (i*53+seed) % h, size S), then a 3 px reflection rgba(255,255,255,.18) at lft + .15*w. SKY is the sky colours of the hour (a uniform), not AMB-linear. Window seed comes from rules.seed; glass walls use their exported fixedSeed (7 left, 3 right), matching drawGlassWalls().',
     nonLinear: [
       { line: 'room/index.html:145,150', what: 'glass alpha .28 + .1 * AMB[0]', handle: 'alpha mixes with AMB[0] via Fa/Ea (above); colour is constant; the remaining quadratic term is under 6/255' },
       { line: 'room/index.html:512,2757,2772,2782,3214,4363', what: "emi(c, .7 + .3 * AMB[0]) and similar: brightness follows AMB[0] on every channel", handle: 'F/E interpolation uses AMB[c] per channel; error is (AMB[c] - AMB[0]) * .3 * c, under 12/255 at dusk, on small props' },
@@ -558,21 +605,27 @@
       { line: 'room/index.html:3322-3323', what: 'sunlight k = (1 - DARK / .4) * .12 while DARK < .4', handle: 'baked per variant; layer tagged sunlight; error under 3/255' },
       { line: 'room/index.html:3337,1248,1323,1963,4083', what: 'glow alpha .06 + .26 * DARK, (.1 + .25 * DARK) * e, .1 + .3 * DARK...', handle: 'uniform: a + b * DARK per light in the manifest' },
       { line: 'room/index.html:604-608', what: 'pane(): SKY[0]/SKY[1] gradient and stars (DARK > .55) over time', handle: 'drawn by the renderer from the SKY and DARK uniforms (layer kind pane)' },
-      { line: 'room/index.html:79,3313', what: 'lit() truncates (| 0) and clamps at 255; F is cut at AMB = 1 so a colour with k > 1 clamps in F', handle: 'error is the clamped excess times AMB, under 4/255' },
+      { line: 'room/index.html:79,3313', what: 'lit() truncates (| 0) and clamps at 255; F is cut at AMB = .5 to avoid clamping colours with k > 1', handle: 'scale by AMB / .5, then clamp the final output' },
       { line: 'room/index.html:2179 (haze), 2290, 2402', what: 'sky and backdrop mix SKY[1] into colours (haze), alpha .82 - DARK * .4', handle: 'not part of any room piece: the sky is cut per AMBK bucket (sky.buckets), the renderer interpolates or owns it' },
       { line: 'room/index.html:577', what: 'clock text from the time', handle: 'layer tagged clock (see light.clock)' },
     ],
   };
   result.rules = {
+    seed: "seed = key == '__yard' ? 11 : hashStr(key) % 97; hashStr(s): let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h (iterate Unicode code points, use their first UTF-16 code unit).",
+    rounding: 'Use JavaScript Math.round(x), equivalent to floor(x + .5) (ignoring signed zero). Swift rounded() defaults to ties away from zero: -1.5 becomes -2 instead of JS -1; use floor(x + .5) for parity.',
+    capture: { season: 'autumn', width: 1728, height: 1117, dpr: 2, insets: O.insets, date: '2026-10-15 (local calendar)', moon: .5, traffic: 'cars and train disabled' },
     bridge: 'Bridges are exported as concrete configurations (village.links, plan prefix of 13 links, valid for 0..14 projects). Rules for a renderer that wants to repeat them: planks n = Math.max(3, Math.round((s1 - s0) / .3)), plank colour ["#c48c58","#b88250","#cc965e"][(i*2 + (i>>2)) % 3], seam line at each plank i>0 in #7a4a2a, nail on odd i; posts m = Math.max(1, Math.round((s1 - s0 - .3) / 1.0)) at s0+.15+(s1-s0-.3)*i/m, rope 6 segments per span with sag 6.6 - sin(u*PI)*1.6; lanterns at s0+.15 and s1-.15 (lit when DARK > .3, glow 20*S #ffc870). Source: room/index.html drawLink.',
     stair: 'Stairs are concrete (13 steps, W=.5, rope posts every 3rd step, lantern at the foot); the swing (L.lift) is only exported down/up. Source: room/index.html drawStair.',
-    lift: 'The lift is exported per floor count (3 for 0 projects, 4 for >=1): shaft slices plus cage; pulleys are static. Source: room/index.html drawLifts.',
+    lift: 'Room layers with kind lift refer to room=self; find that room key in the selected lift.fl list (never reuse a cut-time absolute floor). The lift is exported per floor count (3 for 0 projects, 4 for >=1): shaft slices plus cage; pulleys are static. Source: room/index.html drawLifts.',
   };
-  result.limits = ['one season (autumn), clear weather only', 'island layout only', 'dynamic items frozen at t=100000, the clock at 12:00', 'stair swing only down/up, pulleys static', 'pose frames are sampled', 'sky cut for a ' + sky.W + 'x' + sky.H + ' canvas at the AMBK bucket hours; other sizes and hours need the page sky / the renderer\'s own formulas'];
+  result.limits = ['one season (autumn), clear weather only', 'island layout only', 'no-yard (yardOn false) and other screens not covered', 'dynamic items frozen at t=100000, the clock at 12:00', 'stair swing only down/up, pulleys static', 'pose frames are sampled', 'sky cut for a ' + sky.W + 'x' + sky.H + ' canvas at the AMBK bucket hours; other sizes and hours need the page sky / the renderer\'s own formulas'];
   result.counts = { rooms: Object.keys(result.rooms).length, sprites: atlas.length };
 
   result.sprites = atlas; // [page, x, y, w, h, flag] by sprite id
   result.note = { sprites: '[page, x, y, w, h, flag] in the F page parts-N.png; the E page parts-N-e.png has the same rect (flag 0 and 1 only)', pad: PAD };
+  result.proofGate = { maxPctHouse: .1, channelDifference: 24 };
   post('parts.json', JSON.stringify(result));
-  return `parts: ${frames.length} sprites on ${pages.length} pages (flags ${flags.join('/')}); ${LOG.join('; ')}`;
+  const failed = proof.filter(p => p.houseDiffOver24 / Math.max(1, p.housePixels) > .001);
+  if (failed.length) throw new Error('parts proof exceeds 0.1%: ' + failed.map(p => `n${p.projects} h${p.hour}: ${p.pctHouse}%`).join('; '));
+  return JSON.stringify({ files: posted, summary: `parts: ${frames.length} sprites on ${pages.length} pages (flags ${flags.join('/')}); ${LOG.join('; ')}` });
 })();
