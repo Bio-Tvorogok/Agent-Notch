@@ -121,6 +121,7 @@ public struct HouseLayout: Encodable, Sendable {
     }
     public struct Frame: Codable, Sendable {
         public let ox, oy, drop: Double
+        public init(ox: Double, oy: Double, drop: Double) { self.ox = ox; self.oy = oy; self.drop = drop }
         public func iso(_ x: Double, _ y: Double, _ z: Double) -> [Double] {
             [ox + (x - y) * 8 * 2, oy + drop + (x + y) * 4 * 2 - z * 2]
         }

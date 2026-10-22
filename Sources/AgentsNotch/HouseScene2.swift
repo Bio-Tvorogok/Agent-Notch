@@ -1,0 +1,335 @@
+import AppKit
+import NotchCore
+import SpriteKit
+import simd
+
+/// The agents' house drawn by SpriteKit from room/atlas/parts.json for ANY project list: the static house is composed from
+/// `HouseLayout` (rooms, links, lift, yard, draw order) and the cut parts, lit by the hour with one SKShader, and the moving
+/// sprites come from `HouseSim`. Stage 1c of docs/house-spritekit-port.md.
+///
+/// Everything sits in canvas ("art") pixels of the page (y down) under `world`, which is scaled by `unit` points per art pixel.
+/// Depth is an explicit `zPosition` (the view runs with ignoresSiblingOrder): every drawn piece takes the next z in the page's
+/// own draw order, spaced so that moving sprites can sit between two pieces of a room.
+final class HouseScene2: SKScene {
+    struct Slot { var depth: Double; var z: CGFloat; var fixture: Bool }
+    struct RoomInfo { var slots: [Slot] = []; var endZ: CGFloat = 0 }
+    struct LinkInfo { var down: [SKNode] = [], up: [SKNode] = []; var backZ: CGFloat = 0, stepsZ: CGFloat = 0, frontZ: CGFloat = 0 }
+    /// One piece of a lift cage in one floor's slice, shown while the cabin is inside that slice.
+    struct CagePiece { let node: SKSpriteNode; let cabin: Int; let floor: Int; let part: String; let cage: HouseParts.LiftCage?; let zlo, zhi: Double; let rope: Bool }
+
+    let parts: HouseParts, pages: HousePages, shaders: HouseShaders
+    private(set) var layout: HouseLayout
+    let unit: CGFloat
+    var canvasW: Int { Int(layout.view.width) }
+    var canvasH: Int { Int(layout.view.height) }
+    let world = SKNode()
+    var root = SKNode()
+    var movers = SKNode()
+
+    // time and light
+    var light: HouseLightState
+    var hour = 12.0
+    var day = 0
+    var clockHM = (12, 0)
+    /// The clock face's colon: the page blinks it with the seconds; the proof freezes it blank (seconds = 0).
+    var colon = true
+    /// The scene's own time in ms (clouds, mist wisps, pane stars, poses).
+    var clockMillis = 100_000.0
+    var growth: [String: Int] = [:]
+
+    // built state
+    var nextZ: CGFloat = 0
+    var topZ: CGFloat = 0
+    var roomInfo: [String: RoomInfo] = [:]
+    var linkInfo: [String: LinkInfo] = [:]
+    var glows: [(SKSpriteNode, HouseParts.Light)] = []
+    var refreshers: [() -> Void] = []
+    var cagePieces: [CagePiece] = []
+    var riderZ: [Int: [Int: CGFloat]] = [:] // cabin -> floor -> z between the cage's back and front
+    var cabinState: [(z: Double, state: String)] = []
+    var skyGroup = SKNode()
+    var clouds: [(HouseParts.Cloud, SKSpriteNode)] = []
+    var mistBands: [SKSpriteNode] = [], mistWisps: [(SKSpriteNode, SKSpriteNode, Int)] = []
+    var builtVariant = -1, builtKey = ""
+    var wf: HouseLayout.Frame { layout.worldFrame }
+
+    // moving sprites
+    var sim: HouseSim?
+    var driveSim = false
+    var look: (HouseSprite) -> HouseLook = { _ in HouseLook() }
+    var moverNodes: [String: SKSpriteNode] = [:]
+    var lastPos: [String: (Double, Double)] = [:]
+    var faceMemory: [String: Int] = [:]
+    /// Holds the scene's clock (clouds, wisps, stars) where the page's reference frame had it, for a pixel comparison.
+    var freezeClock = false
+    var lastTime: TimeInterval?
+    /// Frames since the last report, for measurements.
+    var onFrame: ((Double) -> Void)?
+
+    init(parts: HouseParts, pages: HousePages, layout: HouseLayout, unit: CGFloat, size: CGSize) {
+        self.parts = parts; self.pages = pages; self.layout = layout; self.unit = unit
+        shaders = HouseShaders(pages: pages, fa: parts.light.fA)
+        light = HouseLight.state(parts, hour: 12)
+        super.init(size: size)
+        scaleMode = .resizeFill
+        backgroundColor = .black
+        anchorPoint = .zero
+        addChild(world)
+        world.setScale(unit)
+        world.position = CGPoint(x: 0, y: size.height)
+        world.addChild(root)
+        world.addChild(movers)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Loads parts.json and the pages from a folder (the app's Resources/room/atlas, or the repo's room/atlas).
+    static func load(from dir: URL, layout: HouseLayout, unit: CGFloat, size: CGSize) -> HouseScene2? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("parts.json")) else { return nil }
+        let parts: HouseParts
+        do { parts = try JSONDecoder().decode(HouseParts.self, from: data) } catch { NSLog("parts.json: \(error)"); return nil }
+        guard let pages = HousePages(parts: parts, dir: dir) else { NSLog("parts pages missing in \(dir.path)"); return nil }
+        return HouseScene2(parts: parts, pages: pages, layout: layout, unit: unit, size: size)
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) { world.position = CGPoint(x: 0, y: size.height) }
+
+    // MARK: public control
+
+    /// A new project list: the layout changes, the house is built again.
+    func setLayout(_ l: HouseLayout) { layout = l; builtKey = ""; rebuild() }
+
+    /// The hour (and the day, for the morning mist). A new variant (DARK crossed a threshold) rebuilds the tree; otherwise
+    /// only uniforms, glow alphas and the live parts change.
+    func setTime(hour: Double, day: Int) {
+        self.hour = hour; self.day = day
+        let h = floor(hour), m = floor((hour.truncatingRemainder(dividingBy: 1)) * 60)
+        clockHM = (Int(h), Int(m))
+        light = HouseLight.state(parts, hour: hour)
+        shaders.set(light.amb)
+        if builtVariant != light.variant || builtKey != layoutKey { rebuild() } else { refreshLight() }
+    }
+
+    var layoutKey: String { layout.rooms.map(\.key).joined(separator: ",") + "|" + growth.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",") }
+
+    // MARK: building
+
+    func next() -> CGFloat { nextZ += 8; return nextZ }
+
+    @discardableResult
+    func sprite(_ id: Int, x: Double, y: Double, z: CGFloat, parent: SKNode? = nil, blend: String? = nil) -> SKSpriteNode {
+        let r = pages.rect(id)
+        let n = SKSpriteNode(texture: pages.texture(id), size: CGSize(width: r.w, height: r.h))
+        n.anchorPoint = CGPoint(x: 0, y: 1)
+        n.position = CGPoint(x: x, y: -y)
+        n.zPosition = z
+        if let sh = shaders.shader(page: r.page, flag: r.flag) { n.shader = sh }
+        if blend == "add" { n.blendMode = .add }
+        (parent ?? root).addChild(n)
+        return n
+    }
+
+    /// An image painted on the CPU; `refresh` repaints it when the minute (the light, the clock) changes.
+    func live(z: CGFloat, make: @escaping () -> (SKTexture, CGPoint, CGSize)?) {
+        let n = SKSpriteNode()
+        n.anchorPoint = CGPoint(x: 0, y: 1)
+        n.zPosition = z
+        root.addChild(n)
+        let paint = { [unowned self, weak n] in
+            guard let n else { return }
+            _ = self
+            if let (t, p, s) = make() { n.texture = t; n.size = s; n.position = CGPoint(x: p.x, y: -p.y); n.isHidden = false } else { n.isHidden = true }
+        }
+        paint()
+        refreshers.append(paint)
+    }
+
+    func partsKey(_ r: HouseLayout.Room) -> String {
+        if r.key == "__bath" { return "bath/g\(layout.links.filter { $0.a == "__yard" }.count)" }
+        if r.key == "__kitchen" { return "kitchen" }
+        if r.key == "__roof" { return "roof" }
+        return "\(r.theme)/\(r.tower == 0 ? "tower" : "island")/g\(growth[r.key] ?? 0)"
+    }
+
+    static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
+
+    func rebuild() {
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]
+        root = SKNode(); world.insertChild(root, at: 0)
+        nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; refreshers = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
+        cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
+        let vi = light.variant
+        builtVariant = vi; builtKey = layoutKey
+        skyGroup = SKNode(); root.addChild(skyGroup)
+        buildSkyNodes()
+        let rooms = Dictionary(uniqueKeysWithValues: layout.rooms.map { ($0.key, $0) })
+        let links = Dictionary(uniqueKeysWithValues: layout.links.map { ($0.id, $0) })
+        for item in layout.drawOrder {
+            if let r = rooms[item.key] { buildRoom(r, vi: vi) } else if let l = links[item.key] { buildLink(l, vi: vi) }
+        }
+        nextZ += 16
+        for r in layout.rooms {
+            guard let pr = parts.rooms[partsKey(r)], vi < pr.variants.count else { continue }
+            for o in pr.variants[vi].overlay { sprite(o.sprite, x: r.ox + o.x, y: r.oy + o.y, z: next()) }
+        }
+        topZ = next() + 8
+        buildMist()
+        applyCabins()
+        refreshLight()
+        if let sim { sync(sim: sim) }
+    }
+
+    private func addLights(_ list: [HouseParts.Light], ox: Double, oy: Double) {
+        for l in list {
+            let n = sprite(l.sprite, x: Double(HouseLight.round(ox + l.x) - l.r), y: Double(HouseLight.round(oy + l.y) - l.r), z: next(), blend: "add")
+            n.blendMode = .add
+            n.alpha = 0
+            glows.append((n, l))
+        }
+    }
+
+    func buildRoom(_ r: HouseLayout.Room, vi: Int) {
+        guard let pr = parts.rooms[partsKey(r)], vi < pr.variants.count else { return }
+        let v = pr.variants[vi]
+        var info = RoomInfo(), litDone = false
+        for l in v.layers {
+            if l.kind == "sign" && l.variant == "plaque" && !litDone {
+                info.endZ = nextZ + 4
+                addLights(v.lights, ox: r.ox, oy: r.oy); litDone = true
+            }
+            let first = nextZ + 8
+            switch l.kind {
+            case "lift": buildLiftSlice(floor: l.floor ?? r.floor, vi: vi, depth: l.depth, info: &info)
+            case "sign":
+                let name = r.theme == "bath" || r.theme == "kitchen" || r.theme == "roof" ? (Self.sharedNames[r.key] ?? r.name) : r.name
+                live(z: next()) { [unowned self] in self.signImage(room: r, name: name, vi: self.light.variant) }
+            case "pane":
+                live(z: next()) { [unowned self] in self.paneImage(room: r, layer: l) }
+            default:
+                if l.tag == "clock", let c = pr.clock {
+                    live(z: next()) { [unowned self] in self.clockImage(room: r, clock: c, vi: self.light.variant) }
+                } else if let id = l.sprite {
+                    sprite(id, x: r.ox + (l.x ?? 0), y: r.oy + (l.y ?? 0), z: next(), blend: l.blend)
+                }
+            }
+            if let d = l.depth { info.slots.append(Slot(depth: d, z: first, fixture: l.kind == "sign" || l.kind == "lift")) }
+            if l.kind == "sign" && l.variant == "plaque" { /* the plaque follows the lights */ }
+        }
+        if !litDone { info.endZ = nextZ + 4; addLights(v.lights, ox: r.ox, oy: r.oy) }
+        roomInfo[r.key] = info
+    }
+
+    func buildLink(_ l: HouseLayout.Link, vi: Int) {
+        guard let pl = parts.village.links.first(where: { $0.kind == l.kind && Self.same($0.A, l.A) && Self.same($0.B, l.B) }), vi < pl.variants.count else { return }
+        let v = pl.variants[vi]
+        var info = LinkInfo()
+        func add(_ p: HouseParts.Part) -> (nodes: [SKNode], back: CGFloat, steps: CGFloat, front: CGFloat) {
+            var out: [SKNode] = [], back: CGFloat = 0, steps: CGFloat = 0, front: CGFloat = 0
+            for ly in p.layers {
+                guard let id = ly.sprite else { continue }
+                let z = next()
+                if ly.tag == "back" { back = z } else if ly.tag == "steps" { steps = z } else if ly.tag == "front" { front = z }
+                out.append(sprite(id, x: wf.ox + (ly.x ?? 0), y: wf.oy + (ly.y ?? 0), z: z, blend: ly.blend))
+            }
+            let saved = glows.count
+            addLights(p.lights, ox: wf.ox, oy: wf.oy)
+            for i in saved..<glows.count { out.append(glows[i].0) }
+            return (out, back, steps, front)
+        }
+        if l.kind == "stair", let down = v.down, let up = v.up {
+            let start = nextZ
+            let d = add(down)
+            let end = nextZ
+            nextZ = start
+            let u = add(up) // both flights share one z span
+            nextZ = max(end, nextZ)
+            info.down = d.nodes; info.up = u.nodes
+            info.backZ = d.back; info.stepsZ = d.steps; info.frontZ = d.front
+            let lifted = (sim?.links.first(where: { $0.geometry.id == l.id })?.lift ?? 0) >= 0.5
+            for n in lifted ? info.down : info.up { n.isHidden = true }
+        } else if let ls = v.layers {
+            let d = add(HouseParts.Part(layers: ls, lights: v.lights ?? []))
+            info.down = d.nodes; info.backZ = d.back; info.frontZ = d.front
+        }
+        linkInfo[l.id] = info
+    }
+
+    static func same(_ a: [Double], _ b: [Double]) -> Bool { a.count == b.count && zip(a, b).allSatisfy { abs($0 - $1) < 1e-9 } }
+
+    // MARK: lift
+
+    var liftParts: HouseParts.Lift? { layout.lift.flatMap { parts.village.lift["n\($0.fl.count)"] } }
+
+    func buildLiftSlice(floor f0: Int, vi: Int, depth: Double?, info: inout RoomInfo) {
+        guard let lf = liftParts, vi < lf.variants.count, !lf.variants[vi].floors.isEmpty else { return }
+        // parts.json keys the room layers by absolute floor of the 4-floor house; the 3-floor lift (0 projects) has no floor 3:
+        // the roof is its top slice.
+        let f = min(f0, lf.variants[vi].floors.count - 1)
+        let v = lf.variants[vi], fl = v.floors[f]
+        var items: [(Double, (CGFloat) -> Void)] = []
+        for p in fl.pieces { items.append((p.key, { [unowned self] z in self.sprite(p.sprite, x: self.wf.ox + p.x, y: self.wf.oy + p.y, z: z) })) }
+        for i in 0..<(layout.lift?.cabins.count ?? 0) {
+            items.append((Double(i) * 0.01 + 0.001, { [unowned self] z in
+                let n = SKSpriteNode(color: .black, size: CGSize(width: 1, height: 1))
+                n.anchorPoint = CGPoint(x: 0, y: 1); n.zPosition = z; self.root.addChild(n)
+                self.cagePieces.append(CagePiece(node: n, cabin: i, floor: f, part: "rope", cage: nil, zlo: fl.zlo, zhi: fl.zhi, rope: true))
+            }))
+            for cg in v.cages where cg.shaft == i {
+                items.append((cg.key, { [unowned self] z in
+                    let n = self.sprite(cg.sprite, x: self.wf.ox + cg.x, y: self.wf.oy + cg.y, z: z)
+                    self.cagePieces.append(CagePiece(node: n, cabin: i, floor: f, part: cg.part, cage: cg, zlo: fl.zlo, zhi: fl.zhi, rope: false))
+                    if cg.part == "back" { self.riderZ[i, default: [:]][f] = z + 4 }
+                }))
+            }
+        }
+        for it in items.sorted(by: { $0.0 < $1.0 }) { it.1(next()) }
+    }
+
+    /// Cabins at their z: each cage piece shows in the slice that holds the cabin, open or closed.
+    func applyCabins() {
+        guard let lf = liftParts else { return }
+        let S = 2.0
+        let v = lf.variants[min(light.variant, lf.variants.count - 1)]
+        for p in cagePieces {
+            guard p.cabin < cabinState.count else { continue }
+            let c = cabinState[p.cabin], z = c.z
+            if p.rope {
+                let sh = lf.shafts[p.cabin], r0 = max(p.zlo, z + lf.cageH + 2), r1 = min(p.zhi, lf.top + 3)
+                if r1 > r0 {
+                    let ya = wf.oy + (sh.cx + sh.cy) * 4 * S - r1 * S, yb = wf.oy + (sh.cx + sh.cy) * 4 * S - r0 * S
+                    let x = wf.ox + (sh.cx - sh.cy) * 8 * S
+                    let ra = HouseLight.round(ya), rb = HouseLight.round(yb)
+                    p.node.isHidden = false
+                    p.node.position = CGPoint(x: HouseLight.round(x), y: -min(ra, rb))
+                    p.node.size = CGSize(width: 1, height: abs(rb - ra) + 1)
+                } else { p.node.isHidden = true }
+                continue
+            }
+            guard let cg = p.cage else { continue }
+            let inSlice = z >= p.zlo && z < p.zhi
+            let want = c.state == "open" ? cg.part != "front" : cg.part != "frontOpen"
+            p.node.isHidden = !(inSlice && want)
+            if inSlice { p.node.position = CGPoint(x: wf.ox + cg.x, y: -(wf.oy + cg.y - Double(HouseLight.round((z - lf.cageZ) * S)))) }
+        }
+        _ = v
+        refreshRopes()
+    }
+
+    func refreshRopes() {
+        guard let lf = liftParts else { return }
+        let v = lf.variants[min(light.variant, lf.variants.count - 1)], c = HouseLight.mix(v.rope, light.amb, fa: parts.light.fA)
+        let col = NSColor(srgbRed: CGFloat(c[0]) / 255, green: CGFloat(c[1]) / 255, blue: CGFloat(c[2]) / 255, alpha: 1)
+        for p in cagePieces where p.rope { p.node.color = col }
+    }
+
+    // MARK: per-minute refresh
+
+    func refreshLight() {
+        shaders.set(light.amb)
+        for (n, l) in glows { n.alpha = CGFloat(max(0, min(1, l.a + l.b * light.dark))) }
+        for r in refreshers { r() }
+        refreshRopes()
+        refreshSky()
+        refreshMist()
+    }
+}
