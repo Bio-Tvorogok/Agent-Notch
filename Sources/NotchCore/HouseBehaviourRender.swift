@@ -5,6 +5,10 @@ import Foundation
 /// belong to the renderer. Agent art is front-facing (facing = 1 in the page).
 public struct HouseBehaviourFrame: Sendable {
     public let id: String, room: String?, vendor: String, small: Bool
+    public let kind: String
+    public let scene: String?, prop: String?, carryingBall: Bool, wagging: Bool
+    public let propFacing: Int, pouring: Bool
+    public let fireSince: Double?, foamedAt: Double?, spraying: Bool, sprayTarget: String?, tossAt: Double?
     public let pose: String, facing: Int, animationTime: Double
     public let position, localPosition: [Double], alpha: Double
     public let parachutePhase: String?, parachuteOpen: Double
@@ -42,7 +46,8 @@ extension HouseBehaviour {
             let fall = parachute(sp), b = sp.behaviour
             let position = (fall?.position ?? worldPosition(sp)).map { $0.isFinite ? $0 : 0 }
             let pose: String
-            if sp.state == "fall" { pose = "fall" }
+            if sp.kind == "cat" || sp.kind == "dog" { pose = sp.moving ? "walk" : sp.life.pose ?? "sit" }
+            else if sp.state == "fall" { pose = "fall" }
             else if sp.moving { pose = "walk" }
             else if sp.state == "shower" || sp.state == "dry" { pose = sp.state ?? "stand" }
             else if sp.state == "done" || sp.state == "idle-sleep" { pose = "sleep" }
@@ -50,7 +55,7 @@ extension HouseBehaviour {
             else if sp.state == "error" { pose = "error" }
             else if sp.state == "working" && sp.seated == true { pose = "work" }
             else { pose = "stand" }
-            return .init(id: sp.id,room: sp.room,vendor: b.vendor,small: sp.small,pose: pose,facing: 1,
+            return .init(id: sp.id,room: sp.room,vendor: b.vendor,small: sp.small,kind: sp.kind,scene: sp.life.scene,prop: lifeProp(sp),carryingBall: sp.life.ball,wagging: sp.life.wag,propFacing: sp.life.hold?.dir ?? 1,pouring: sp.kind == "home" && sp.life.scene == "water" && scArrived(sp) && sp.goal?.cat == "water",fireSince: sp.life.fire?.t0,foamedAt: sp.life.fire?.foamed,spraying: sp.life.hold?.spraying ?? false,sprayTarget: sp.life.hold?.target,tossAt: sp.life.toss,pose: pose,facing: sp.kind == "cat" || sp.kind == "dog" ? sp.life.face : 1,
                          animationTime: (sp.context ?? 0) >= 0.9 ? time*0.5 : time,position: position,
                          localPosition: [sp.x,sp.y,sp.z].map { $0.isFinite ? $0 : 0 },alpha: sp.alpha,parachutePhase: fall?.phase,
                          parachuteOpen: fall?.open ?? 0,seated: sp.seated ?? false,waving: sp.waving ?? false,towelUntil: b.towel)
