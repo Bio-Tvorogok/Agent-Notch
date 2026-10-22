@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import IOKit.ps
 import NotchCore
+import SpriteKit
 import SwiftUI
 import WebKit
 
@@ -13,6 +14,8 @@ final class RoomWallpaper: NSObject {
     private let store: Store
     private var window: NSWindow?
     private(set) var web: WKWebView?
+    /// The SpriteKit prototype (Phase 0, docs/house-spritekit-plan.md), only with `houseRenderer spritekit`.
+    private var house: SKView?
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
     private var pinchTap: CFMachPort?
@@ -53,6 +56,11 @@ final class RoomWallpaper: NSObject {
         w.backgroundColor = .black
         w.hasShadow = false
         w.isReleasedWhenClosed = false
+
+        if UserDefaults.standard.string(forKey: "houseRenderer") == "spritekit" {
+            if startSpriteKit(in: w, page: page, screen: screen) { return }
+            NSLog("agents-notch: no SpriteKit house atlas next to \(page.path), using the page")
+        }
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(MessageProxy(self), name: "room")
@@ -156,6 +164,29 @@ final class RoomWallpaper: NSObject {
         pinchTap = nil
     }
 
+    /// Phase 0: the scripted demo scene from room/atlas, without the page's agents, clicks or other screens.
+    private func startSpriteKit(in w: NSWindow, page: URL, screen: NSScreen) -> Bool {
+        guard let scene = HouseScene.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas")) else { return false }
+        let view = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        view.ignoresSiblingOrder = true
+        view.preferredFramesPerSecond = 60
+        w.contentView = view
+        view.presentScene(scene)
+        w.setFrame(screen.frame, display: true)
+        w.orderFrontRegardless()
+        window = w
+        house = view
+        syncPower()
+        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: w)
+            .merge(with: NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange).receive(on: RunLoop.main))
+            .sink { [weak self] _ in self?.syncPower() }
+            .store(in: &subs)
+        powerTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.syncPower() }
+        }
+        return true
+    }
+
     func stop() {
         activityTimer?.invalidate()
         activityTimer = nil
@@ -173,12 +204,21 @@ final class RoomWallpaper: NSObject {
         web?.configuration.userContentController.removeScriptMessageHandler(forName: "room")
         window?.orderOut(nil)
         window = nil
+        house?.presentScene(nil)
+        house = nil
         tip.hide()
         web = nil
         lastJSON = ""
     }
 
     func syncPower() {
+        if let house, let w = window, let scene = house.scene as? HouseScene {
+            // covered: nothing drawn; on battery or in Low Power Mode: 30 fps at most
+            scene.maxFps = Self.onBattery || ProcessInfo.processInfo.isLowPowerModeEnabled ? 30 : 60
+            let visible = w.occlusionState.contains(.visible)
+            if visible != sentActive { sentActive = visible; if visible { scene.wake() } else { scene.hide() } }
+            return
+        }
         guard let w = window, let web else { return }
         let visible = w.occlusionState.contains(.visible)
         if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
