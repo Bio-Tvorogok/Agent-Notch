@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreGraphics
 import NotchCore
 
 /// «Дом на рабочем столе»: the agents' house as the desktop wallpaper.
@@ -7,6 +8,7 @@ struct SettingsHouse: View {
     @State private var projects: [String] = []
     @State private var saver = RoomSaverInstall.state
     @State private var saverError: String?
+    @State private var pinchAllowed = CGPreflightListenEventAccess()
 
     var body: some View {
         Form {
@@ -21,6 +23,16 @@ struct SettingsHouse: View {
                 Picker(selection: $settings.room.screens) {
                     ForEach(RoomPrefs.Screens.allCases, id: \.self) { Text(HouseText.screens($0)).tag($0) }
                 } label: { SettingsLabel(HouseText.screensTitle, hint: HouseText.screensHelp) }
+                LabeledContent {
+                    if pinchAllowed { Text(HouseText.pinchEnabled).foregroundStyle(.secondary) }
+                    else {
+                        Button(HouseText.enablePinchZoom) {
+                            _ = CGRequestListenEventAccess()
+                            pinchAllowed = CGPreflightListenEventAccess()
+                            NotificationCenter.default.post(name: RoomWallpaper.pinchPermissionChanged, object: nil)
+                        }
+                    }
+                } label: { SettingsLabel(HouseText.pinchZoom, hint: HouseText.pinchHelp) }
             }
             Section {
                 if projects.isEmpty { Text(HouseText.noProjects).foregroundStyle(.secondary) }
@@ -49,7 +61,11 @@ struct SettingsHouse: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            pinchAllowed = CGPreflightListenEventAccess()
+        }
         .onAppear {
+            pinchAllowed = CGPreflightListenEventAccess()
             // Projects on screen now, and the ones that already have a room chosen.
             saver = RoomSaverInstall.state
             projects = Array(Set(RoomProjects.shared.current + settings.room.themes.keys))
@@ -88,7 +104,7 @@ enum HouseText {
         }
     }
     static var frameRateTitle: String { Loc.t("Frame rate", "Частота кадров") }
-    static var frameRateHelp: String { Loc.t("Auto: 60 on power, 30 on battery", "Авто: 60 от сети, 30 от батареи") }
+    static var frameRateHelp: String { Loc.t("Ambient: 10 fps; movement: up to 30 fps, within the selected cap", "Фон: 10 кадров/с; движение: до 30 кадров/с в пределах выбранного лимита") }
     static func frameRate(_ f: RoomPrefs.FrameRate) -> String {
         switch f {
         case .auto: Loc.t("Auto", "Авто")
@@ -104,6 +120,10 @@ enum HouseText {
         case .all: Loc.t("All screens", "Все экраны")
         }
     }
+    static var pinchZoom: String { Loc.t("Pinch zoom", "Масштаб жестом") }
+    static var enablePinchZoom: String { Loc.t("Enable pinch zoom", "Включить масштаб жестом") }
+    static var pinchEnabled: String { Loc.t("Enabled", "Включено") }
+    static var pinchHelp: String { Loc.t("Allow Input Monitoring to zoom the house with trackpad pinches", "Разрешите мониторинг ввода для масштабирования дома жестом на трекпаде") }
     static var rooms: String { Loc.t("Project rooms", "Комнаты проектов") }
     static var roomsHelp: String { Loc.t("Auto keeps a project's room when others come and go", "«Авто» не меняет комнату, когда появляются другие проекты") }
     static var noProjects: String { Loc.t("Projects appear here once their agents show up in the notch.", "Проекты появятся здесь, когда их агенты будут в чёлке.") }

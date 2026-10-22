@@ -105,6 +105,10 @@ final class RoomWallpaper: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in self?.fitScreen() }
             .store(in: &subs)
+        NotificationCenter.default.publisher(for: Self.pinchPermissionChanged)
+            .merge(with: NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
+            .sink { [weak self] _ in self?.startPinchTap() }
+            .store(in: &subs)
         startPinchTap()
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
             let type = e.type
@@ -119,25 +123,14 @@ final class RoomWallpaper: NSObject {
         }
     }
 
+    static let pinchPermissionChanged = Notification.Name("AgentsNotch.housePinchPermissionChanged")
+
     /// A global monitor is never sent trackpad pinches (they go to the app under the cursor, Finder on the desktop),
-    /// so they are read from a listen-only event tap on the session. macOS only feeds that tap with Input Monitoring
-    /// allowed: without it the app asks once, and the tap is made again as soon as the permission is given.
-    private var pinchTapAllowed = false
-    private var pinchWatch: Timer?
+    /// so they are read from a listen-only event tap after Input Monitoring has already been granted.
+    /// Only Settings' explicit enable action requests access. A denied tap has no polling timer.
     private func startPinchTap() {
-        pinchTapAllowed = CGPreflightListenEventAccess()
-        if !pinchTapAllowed {
-            _ = CGRequestListenEventAccess()
-            pinchWatch?.invalidate()
-            pinchWatch = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] t in
-                MainActor.assumeIsolated {
-                    guard let self, CGPreflightListenEventAccess() else { return }
-                    t.invalidate(); self.pinchWatch = nil
-                    if let old = self.pinchTap { CGEvent.tapEnable(tap: old, enable: false); CFMachPortInvalidate(old); self.pinchTap = nil }
-                    self.startPinchTap()
-                }
-            }
-        }
+        guard CGPreflightListenEventAccess() else { stopPinchTap(); return }
+        guard pinchTap == nil else { return }
         let callback: CGEventTapCallBack = { _, type, event, ref in
             guard let ref else { return Unmanaged.passUnretained(event) }
             let me = Unmanaged<RoomWallpaper>.fromOpaque(ref).takeUnretainedValue()
@@ -158,6 +151,11 @@ final class RoomWallpaper: NSObject {
         pinchTap = tap
     }
 
+    private func stopPinchTap() {
+        if let pinchTap { CGEvent.tapEnable(tap: pinchTap, enable: false); CFMachPortInvalidate(pinchTap) }
+        pinchTap = nil
+    }
+
     func stop() {
         activityTimer?.invalidate()
         activityTimer = nil
@@ -168,9 +166,7 @@ final class RoomWallpaper: NSObject {
         sentFps = 0
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        if let pinchTap { CGEvent.tapEnable(tap: pinchTap, enable: false); CFMachPortInvalidate(pinchTap) }
-        pinchTap = nil
-        pinchWatch?.invalidate(); pinchWatch = nil
+        stopPinchTap()
         subs.removeAll()
         removeExtras()
         info.stop()
