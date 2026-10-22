@@ -29,13 +29,8 @@ public struct HouseLayout: Encodable, Sendable {
         /// JS `r.seed`: hashStr(key) % 97 (the yard's is fixed at 11); windows and lights read it.
         public var seed: Int { key == "__yard" ? 11 : Int(HouseLayout.hashStr(key) % 97) }
     }
-    /// JS hashStr: `for (const ch of s)` walks code points but adds `ch.charCodeAt(0)`,
-    /// so a character outside the BMP contributes only its high surrogate.
-    static func hashStr(_ s: String) -> UInt32 {
-        var h: UInt32 = 7
-        for ch in s.unicodeScalars { h = h &* 31 &+ UInt32(String(ch).utf16.first!) }
-        return h
-    }
+    /// JS hashStr; one implementation, in HouseRoutes.
+    static func hashStr(_ s: String) -> UInt32 { HouseRoutes.hashStr(s) }
     public struct Port: Codable, Sendable {
         public let kind: String
         public let q: [Double]

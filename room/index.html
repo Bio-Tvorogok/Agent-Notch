@@ -979,6 +979,17 @@ function layout() {
     if (L) { sp.onBridge.pair = L; for (const n of sp.path) { if (n.bridge === o) n.bridge = L; if (n.call === o) n.call = L; } }
     else { const to = sp.path.find(n => n.r)?.r || sp.homeRoom; sp.onBridge = null; sp.room = to; [sp.x, sp.y] = to.theme.hub; sp.z = 0; sp.path = []; if (sp.goal) setGoal(sp, sp.goal); }
   }
+  // everyone else keeps path nodes that point at the old link and cabin objects: rebind them by id, so a walker bound
+  // for a stair or a cage keeps calling the live one; a node whose link is gone replans (or is dropped without a goal)
+  for (const sp of sprites.values()) if (sp.path.length) { // (one still crossing keeps going: only its later nodes are rebound or dropped)
+    const gone = n => (n.bridge && !links.some(l => l.id === n.bridge.id)) || (n.call && !links.some(l => l.id === n.call.id));
+    if (sp.path.some(gone)) { if (sp.goal && !sp.onBridge) setGoal(sp, sp.goal); else sp.path = sp.path.filter(n => !gone(n)); continue; }
+    for (const n of sp.path) {
+      if (n.bridge) n.bridge = links.find(l => l.id === n.bridge.id);
+      if (n.call) n.call = links.find(l => l.id === n.call.id);
+      if (n.cab) { const c = LIFT?.cabins.find(h => h.id === n.cab.id); if (c) n.cab = c; else delete n.cab; }
+    }
+  }
   const W = 18 * 8 * S, F = FLOOR_STEP * S;
   // where each stack's ground room stands, before centering
   const base = stack.map((s, t) => {
@@ -1604,7 +1615,7 @@ function roomPath(a, b) {
 const far = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) > 2.2;
 function routeTo(sp, room, p) {
   const nodes = []; let cur = sp.room, from = [sp.x, sp.y, sp.z];
-  if (sp.onBridge) { // finish crossing first; one sitting on the steps gets up
+  if (sp.onBridge || !sp.room) { // finish crossing first (or land the pending jump: the frame after a crossing has no room yet); one sitting on the steps gets up
     const rest = sp.path.filter(n => !n.wait), k = rest.findIndex(n => n.r);
     if (k < 0) { sp.onBridge = null; cur = sp.homeRoom; nodes.push({ r: cur, p: cur.theme.hub, jump: true, poof: true }); from = cur.theme.hub; }
     else { nodes.push(...rest.slice(0, k + 1)); cur = rest[k].r; from = rest[k].p; }
@@ -1623,7 +1634,7 @@ function routeTo(sp, room, p) {
       else { const Yn = NYn; nodes.push({ r: cur, p: [1.0, NY - .5, 0] }, { r: cur, p: [.7, NY + .7, 0] }, { r: cur, p: [1.4, NY + 1.0, 0] }, { r: next, p: [1.4, Yn + 1.0, FLOOR_STEP], jump: true });
         up_(Yn).reverse().slice(1).forEach(q => nodes.push({ r: next, p: q })); }
     } else if (via === 'yard') yardLink(nodes, cur, next, from);
-    else if (via.lift) liftLink(nodes, cur, next, via, from, sp);
+    else if (via.lift === true) liftLink(nodes, cur, next, via, from, sp);
     else crossLink(nodes, cur, next, via, from);
     from = nodes[nodes.length - 1].p; cur = next;
   }
@@ -1815,7 +1826,9 @@ const YARD_THEME = {
 const YARD = { key: '__yard', name: 'Двор', theme: YARD_THEME, NX: YD.x1 - .1, NY: 7.85, tower: -1, floor: -1, tx: 0, ty: 0, seed: 11, born: 0, swinger: null,
   get ox() { const b = roomByKey.get('__bath'); return b ? b.ox : 0; },
   get oy() { const b = roomByKey.get('__bath'); return b ? b.oy + SLAB * S : 0; },
-  get drop() { const b = roomByKey.get('__bath'); return b ? b.drop : 0; } };
+  get drop() { const b = roomByKey.get('__bath'); return b ? b.drop : 0; },
+  get wx() { const b = roomByKey.get('__bath'); return b ? b.wx : 0; }, // world position, so a jumper leaving the yard falls from its edge
+  get wy() { const b = roomByKey.get('__bath'); return b ? b.wy + SLAB * S : 0; } };
 function yardOn() { return LAYOUT === 'islands' && !(PV && !PV.house) && SCENE !== 'extra' && rooms.includes(roomByKey.get('__bath')); }
 // the ground block, L-shaped: the old island plus the yard; baked into the bath's shell (true = drawn here)
 function yardGround(r) {
@@ -3537,7 +3550,9 @@ let growth = {};
 try { growth = JSON.parse(localStorage.getItem(GROWTH_KEY) || '{}') || {}; } catch (e) { growth = {}; }
 let growthSave = 0;
 function growthNote(a) {
-  const p = a.project || '—', e = growth[p] || (growth[p] = { n: 0, ids: [] });
+  const p = a.project || '—'; // own keys only: a project called "constructor" or "__proto__" is a project
+  let e = Object.prototype.hasOwnProperty.call(growth, p) ? growth[p] : null;
+  if (!e) { e = { n: 0, ids: [] }; Object.defineProperty(growth, p, { value: e, enumerable: true, writable: true, configurable: true }); }
   if (e.ids.includes(a.id)) return;
   e.ids.push(a.id); if (e.ids.length > 150) e.ids.shift(); e.n++;
   if (demo) return;
@@ -3546,7 +3561,7 @@ function growthNote(a) {
 function growthLevel(r) {
   if (r.theme.shared) return 0;
   if (Q.has('grow')) return Math.max(0, Math.min(3, Number(Q.get('grow')) || 0));
-  const n = (growth[r.name] || {}).n || 0; let l = 0; GROWTH_STEPS.forEach((s, i) => { if (n >= s) l = i; }); return l;
+  const n = (Object.prototype.hasOwnProperty.call(growth, r.name) ? growth[r.name] : {}).n || 0; let l = 0; GROWTH_STEPS.forEach((s, i) => { if (n >= s) l = i; }); return l;
 }
 const GROW_AT = { bedroom: { at: [8.7, 6.3], poster: ['R', 4.75, 5.65, 26, 38] }, server: { at: [8.5, 6.6], poster: ['R', 7.0, 8.2, 30, 42] },
   library: { at: [1.45, 6.3] }, greenhouse: { at: [8.0, 6.8] }, arcade: { at: [8.6, 6.5], poster: ['R', 1.3, 2.5, 22, 36] } };
