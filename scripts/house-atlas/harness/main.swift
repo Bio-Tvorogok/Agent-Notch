@@ -99,6 +99,7 @@ case "proof":
         scene.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
         scene.freezeClock = true; scene.clockMillis = meta["T"] as! Double; scene.colon = false
         scene.setTime(hour: hour, day: meta["day"] as! Int)
+        if ProcessInfo.processInfo.environment["PROOF_BREAK"] != nil { scene.root.position.x += 2 } // deliberate defect: proves the gate fails
         let ours = render(scene, view: view)
         let tag = m.dropFirst(4).dropLast(5)
         let ref = pixels(load(refDir.appendingPathComponent("ref-\(tag).png"))), sky = pixels(load(refDir.appendingPathComponent("ref-\(tag)-sky.png"))), mineRaw = pixels(ours)

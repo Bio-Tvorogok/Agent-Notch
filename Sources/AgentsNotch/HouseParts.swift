@@ -96,27 +96,68 @@ struct HouseParts: Decodable {
     }
 }
 
-/// The packed pages as SpriteKit textures: F pages, the matching E pages, and one sub-texture per sprite id.
+/// The packed pages as SpriteKit textures, loaded on first use: an F page when a sprite on it is first drawn, an E page only for
+/// a page that holds flag-0 sprites (flag 1 shades against black, flag 2 is constant, so their E pages are never read).
+/// The decoded image is not kept: only the texture holds the pixels.
 final class HousePages {
     let parts: HouseParts
-    let f: [SKTexture], e: [SKTexture]
+    let dir: URL
+    private var f: [Int: SKTexture] = [:], e: [Int: SKTexture] = [:]
     private var subs: [Int: SKTexture] = [:]
+    /// Pages with at least one flag-0 sprite: the only ones whose E page is ever loaded.
+    let needsE: Set<Int>
+    private let sparsePages: Set<Int>
+    private var unusedSky = Set<Int>()
+    private var cutPages = Set<Int>()
+    /// For measurements: the pages loaded so far.
+    var loaded: (f: [Int], e: [Int]) { (f.keys.sorted(), e.keys.sorted()) }
 
     init?(parts: HouseParts, dir: URL) {
-        self.parts = parts
-        func load(_ name: String) -> SKTexture? {
+        self.parts = parts; self.dir = dir
+        needsE = Set(parts.sprites.filter { $0[5] == 0 }.map { $0[0] })
+        // The sky pieces cut into the parts (backdrops, celestials, clouds) are drawn natively now: never requested.
+        var unused = Set<Int>()
+        defer { unusedSky = unused }
+        for b in parts.sky.buckets {
+            if let x = b.backdrop { unused.insert(x.sprite) }
+            if let x = b.celestial { unused.insert(x.sprite) }
+            for c in b.clouds { unused.insert(c.sprite) }
+        }
+        // A page that is mostly such pieces is not kept whole: its other sprites are cut out into small textures.
+        var sparse = Set<Int>()
+        for (i, p) in parts.pages.enumerated() where !needsE.contains(i) {
+            let used = parts.sprites.enumerated().filter { $0.element[0] == i && !unused.contains($0.offset) }.reduce(0) { $0 + $1.element[3] * $1.element[4] }
+            if Double(used) < 0.4 * Double(p.w * p.h) { sparse.insert(i) }
+        }
+        sparsePages = sparse
+        for p in parts.pages {
+            guard FileManager.default.fileExists(atPath: dir.appendingPathComponent(p.file).path),
+                  FileManager.default.fileExists(atPath: dir.appendingPathComponent(p.fileE).path) else { return nil }
+        }
+    }
+
+    private func load(_ name: String) -> SKTexture? {
+        autoreleasepool {
             guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(name) as CFURL, nil),
                   let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
             let t = SKTexture(cgImage: img)
             t.filteringMode = .nearest
             return t
         }
-        var f: [SKTexture] = [], e: [SKTexture] = []
-        for p in parts.pages {
-            guard let a = load(p.file), let b = load(p.fileE) else { return nil }
-            f.append(a); e.append(b)
-        }
-        self.f = f; self.e = e
+    }
+
+    func fPage(_ i: Int) -> SKTexture {
+        if let t = f[i] { return t }
+        let t = load(parts.pages[i].file) ?? SKTexture()
+        f[i] = t
+        return t
+    }
+
+    func ePage(_ i: Int) -> SKTexture {
+        if let t = e[i] { return t }
+        let t = load(parts.pages[i].fileE) ?? SKTexture()
+        e[i] = t
+        return t
     }
 
     func rect(_ id: Int) -> (page: Int, x: Int, y: Int, w: Int, h: Int, flag: Int) {
@@ -124,12 +165,29 @@ final class HousePages {
         return (s[0], s[1], s[2], s[3], s[4], s[5])
     }
 
+    /// Decodes a sparse page once, cuts every sprite that is not an unused sky piece into its own texture and drops the page.
+    private func cutOut(page i: Int) {
+        guard cutPages.insert(i).inserted else { return }
+        autoreleasepool {
+            guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(parts.pages[i].file) as CFURL, nil),
+                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return }
+            for (id, s) in parts.sprites.enumerated() where s[0] == i && !unusedSky.contains(id) {
+                guard let c = img.cropping(to: CGRect(x: s[1], y: s[2], width: s[3], height: s[4])) else { continue }
+                let t = SKTexture(cgImage: c)
+                t.filteringMode = .nearest
+                subs[id] = t
+            }
+        }
+    }
+
     /// The sprite's rectangle of its F page (nearest filtering, y up in texture space).
     func texture(_ id: Int) -> SKTexture {
         if let t = subs[id] { return t }
-        let s = rect(id), pg = parts.pages[s.page], pw = Double(pg.w), ph = Double(pg.h)
+        let s = rect(id)
+        if sparsePages.contains(s.page) { cutOut(page: s.page); if let t = subs[id] { return t } }
+        let pg = parts.pages[s.page], pw = Double(pg.w), ph = Double(pg.h)
         let t = SKTexture(rect: CGRect(x: Double(s.x) / pw, y: 1 - Double(s.y + s.h) / ph, width: Double(s.w) / pw, height: Double(s.h) / ph),
-                          in: f[s.page])
+                          in: fPage(s.page))
         t.filteringMode = .nearest
         subs[id] = t
         return t

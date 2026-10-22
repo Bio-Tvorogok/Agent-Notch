@@ -14,6 +14,7 @@ guard args.count >= 5, let hour = Double(args[4]) else {
 let page = URL(fileURLWithPath: args[1]).standardizedFileURL.absoluteURL, script = try String(contentsOfFile: args[2], encoding: .utf8)
 let out = URL(fileURLWithPath: args[3], isDirectory: true).absoluteURL
 let partsMode = args.count >= 6 && args[5] == "parts"
+let refOnly = ProcessInfo.processInfo.environment["HOUSE_REF_ONLY"] == "1"
 let checkDir = URL(fileURLWithPath: args.count >= 7 ? args[6] : ".build/parts-check", isDirectory: true).absoluteURL
 let timeout = Double(ProcessInfo.processInfo.environment["HOUSE_TIMEOUT"] ?? "") ?? (partsMode ? 900 : 60)
 try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
@@ -39,6 +40,11 @@ final class Sink: NSObject, WKScriptMessageHandler {
     var summary = ""
     func finishIfReady() {
         guard let expected, expected.isSubset(of: received) else { return }
+        if refOnly { // a check-only script (harness/ref.js): every promised file arrived, no atlas to validate
+            guard received == expected else { fputs("unexpected output files\n", stderr); exit(1) }
+            print(summary); print("wrote \(written) files; pinned viewport 1728x1117, DPR 2, autumn")
+            exit(0)
+        }
         guard received == expected,
               let data = try? Data(contentsOf: out.appendingPathComponent("parts.json")),
               let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

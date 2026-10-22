@@ -45,7 +45,8 @@ enum HouseLight {
 /// One uniform per scene, shared by every shader, so a new AMB is one assignment.
 final class HouseShaders {
     let amb = SKUniform(name: "u_amb", vectorFloat3: vector_float3(1, 1, 1))
-    private(set) var general: [SKShader] = []
+    private var general: [Int: SKShader] = [:]
+    private let pages: HousePages, generalSource: String
     let eBlack: SKShader
 
     init(pages: HousePages, fa: Double) {
@@ -65,7 +66,7 @@ final class HouseShaders {
             """
         }
         let u = amb, src = source(false)
-        general = pages.e.map { SKShader(source: src, uniforms: [u, SKUniform(name: "u_e", texture: $0)]) }
+        self.pages = pages; generalSource = src
         eBlack = SKShader(source: source(true), uniforms: [u])
     }
 
@@ -73,6 +74,11 @@ final class HouseShaders {
 
     /// The shader for a sprite of this page and flag; nil for a constant sprite (flag 2).
     func shader(page: Int, flag: Int) -> SKShader? {
-        flag == 0 ? general[page] : flag == 1 ? eBlack : nil
+        if flag == 1 { return eBlack }
+        guard flag == 0 else { return nil }
+        if let s = general[page] { return s }
+        let s = SKShader(source: generalSource, uniforms: [amb, SKUniform(name: "u_e", texture: pages.ePage(page))])
+        general[page] = s
+        return s
     }
 }

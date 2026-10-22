@@ -2,6 +2,7 @@
 // for every fixture [projects, hour] the whole frame, the sky-only frame (the page's drawBackground), and the numbers the
 // Swift side needs to build the same layout (canvas size, PXD, DPR, insets, every room's origin, the mist's day).
 // window.__REF_FIXTURES = [[n, hour], ...] is prepended by scripts/house-atlas/scene-proof.sh.
+// Run with HOUSE_REF_ONLY=1 (export.swift then expects exactly the files returned in the manifest).
 // Output (through webkit.messageHandlers.out, "check/" goes to the check dir): ref-n{n}-h{hour}.png / -sky.png / .json
 (() => {
   'use strict';
@@ -22,7 +23,7 @@
     for (const [n, th] of projects) ensureRoom('p:' + n, n, th || undefined);
     for (const r of rooms) { r.born = -1e9; r.drop = 0; r.cache = null; }
   }
-  const out = [];
+  const out = [], files = [];
   for (const [n, hour] of window.__REF_FIXTURES) {
     fixture(NAMES.slice(0, n).map(x => [x, null]));
     const bgc = document.createElement('canvas'); bgc.width = cv.width; bgc.height = cv.height; const realBG = drawBackground;
@@ -33,10 +34,10 @@
     const meta = { n, hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T,
       rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
       world: worldFrame(), links: links.map(L => L.id) };
-    post('check/ref-' + tag + '.png', cv.toDataURL('image/png'));
-    post('check/ref-' + tag + '-sky.png', bgc.toDataURL('image/png'));
-    post('check/ref-' + tag + '.json', JSON.stringify(meta));
+    for (const [f, data] of [['.png', cv.toDataURL('image/png')], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {
+      post('check/ref-' + tag + f, data); files.push('check/ref-' + tag + f);
+    }
     out.push(tag);
   }
-  return 'ref frames: ' + out.join(' ');
+  return JSON.stringify({ files, summary: 'ref frames: ' + out.join(' ') });
 })();
