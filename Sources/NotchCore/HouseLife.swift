@@ -115,7 +115,7 @@ extension HouseBehaviour {
             else if (a.parentId ?? "").isEmpty, let since = l.workSince, since != 0, time-since > 8000 { startCelebrate(sp) }
         }
         if a.state == "done" { l.workSince = nil }
-        let git = a.state == "working" && (a.activity ?? "").range(of: #"\bgit\s+(commit|push)\b"#, options: [.regularExpression,.caseInsensitive]) != nil
+        let git = a.state == "working" && (a.activity ?? "").range(of: #"(?<![A-Za-z0-9_])git\s+(commit|push)(?![A-Za-z0-9_])"#, options: [.regularExpression,.caseInsensitive]) != nil
         if !git { l.mailAct = nil }
         else if !hasHold(sp), !HouseRoutes.same(a.activity,l.mailAct), (layout.yard.on || shared("kitchen") != nil), sp.room != nil, sp.onBridge == nil, sp.alpha > 0.5 {
             l.mailAct = a.activity; startMail(sp)

@@ -18,7 +18,7 @@ extension HouseBehaviour {
         let b = sp.behaviour
         guard let h = b.handover else { return }
         b.handover = nil
-        if let a = b.agent {
+        if sp.kind == "agent", let a = b.agent {
             sp.state = a.state
             if let e = h.errand, a.state == "done" { b.errand = e; e.until = max(e.until,time+8000) }
             let (room,cat) = b.errand.map { ($0.room,$0.cat) } ?? placeFor(sp)

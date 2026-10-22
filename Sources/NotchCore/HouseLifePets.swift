@@ -100,7 +100,7 @@ extension HouseBehaviour {
         guard bl.to.count >= 2, bl.to.allSatisfy(\.isFinite) else { return [0, 0, 0] }
         if bl.held { return bl.to }
         let ground = [bl.to[0], bl.to[1], 0]
-        // The page divides 0/0 on the first fetch frame, before a throw.
+        // A zero-length throw lands at once (the page uses k = 1).
         guard bl.ms.isFinite, bl.ms > 0, t.isFinite, bl.t0.isFinite,
               bl.from.count >= 2, bl.from.allSatisfy(\.isFinite) else { return ground }
         let k = min(1, (t - bl.t0) / bl.ms)

@@ -106,7 +106,8 @@ public final class HouseSim {
         self.init(layout: layout, random: { rng.nextDouble() })
     }
     public init(layout: HouseLayout, random: @escaping () -> Double) {
-        self.layout = layout; self.random = random
+        // An injected generator outside [0, 1) would trap the Int conversions downstream.
+        self.layout = layout; self.random = { let v = random(); return v.isFinite ? min(max(v, 0), 0.9999999999999999) : 0 }
         links = layout.links.map(HouseLinkState.init)
         cabins = (layout.lift?.cabins ?? []).map(HouseCabinState.init)
     }
