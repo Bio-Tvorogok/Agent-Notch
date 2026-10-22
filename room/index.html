@@ -857,7 +857,7 @@ function drawBody(left, top, cells, rows, C, bc, dark, sleeping, pet, sp, armRow
   // Flatten only opaque, ordinary bodies; fading and special effects keep their original compositing.
   if (g.globalAlpha !== 1 || g.globalCompositeOperation !== 'source-over' || egg || sp.state === 'error') { paint(); return; }
   if (bodyLight !== lightKey) { BODIES.clear(); bodyLight = lightKey; }
-  const key = [sp.vendor, sp.small, bc, dark, armRow, moving ? Math.floor(t / 110) % 2 : -1, sleeping].join('|');
+  const key = [sp.vendor, sp.small, bc, dark, armRow, moving ? Math.floor(t / 110) % 2 : -1, sleeping, ...AMB].join('|');
   let b = BODIES.get(key);
   if (!b) {
     const x = Math.min(...cells.map(c => c[0])) * C - 1, y = Math.min(...cells.map(c => c[1])) * C - 1;
