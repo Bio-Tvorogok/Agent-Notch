@@ -7,3 +7,27 @@ cd "$(dirname "$0")/.."
 mkdir -p .build/house-atlas .build/parts-check
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
 .build/house-atlas/export room/index.html scripts/house-atlas/parts.js room/atlas "${HOUR:-12}" parts .build/parts-check
+# Check the persisted manifest and file set as well as the in-page gate.
+python3 - <<'PY'
+import json
+from pathlib import Path
+out = Path('room/atlas')
+m = json.loads((out / 'parts.json').read_text())
+expected = {'parts.json'} | {p[k] for p in m['pages'] for k in ('file', 'fileE')}
+actual = {'parts.json'} | {p.name for p in out.glob('parts-*.png')}
+assert actual == expected, f'parts file set mismatch: {actual ^ expected}'
+assert all((out / name).stat().st_size > 0 for name in expected), 'empty output'
+counts, hours = [0, 1, 2, 3, 5, 14], [0, 6.5, 10, 12, 19.25, 20, 21, 23]
+proof = {(p['projects'], p['hour']): p for p in m['proof']}
+assert len(m['proof']) == 48 and set(proof) == {(n, h) for n in counts for h in hours}, 'incomplete proof matrix'
+assert all(p['housePixels'] > 0 and p['houseDiffOver24'] / p['housePixels'] <= .001 for p in proof.values()), 'parts proof exceeds 0.1%'
+assert m['firstCutProof']['sameSilhouette'] and len(set(m['firstCutProof']['opaquePixels'])) == 1, 'clipped first cut'
+assert proof[2, 20]['poses'] == ['claude/stand.0', 'claude/walk.1', 'claude/work.1', 'claude/fire.1'], 'missing pose proof'
+print('House pixels off by >24 (%); gate <= 0.1%')
+print('n/hour  ' + ' '.join(f'{h:>8}' for h in hours))
+for n in counts:
+    print(f'{n:>6}  ' + ' '.join(f"{proof[n,h]['pctHouse']:8.4f}" for h in hours))
+# The proof numbers move with the page's live frame; keep them out of the renderer's manifest so reruns are byte-identical.
+Path('.build/parts-check/proof.json').write_text(json.dumps({k: m.pop(k) for k in ('proof', 'proofNote', 'proofGate', 'firstCutProof')}, indent=1))
+(out / 'parts.json').write_text(json.dumps(m, separators=(',', ':'), ensure_ascii=False, sort_keys=True))
+PY
