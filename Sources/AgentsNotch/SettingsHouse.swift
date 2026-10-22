@@ -9,6 +9,7 @@ struct SettingsHouse: View {
     @State private var saver = RoomSaverInstall.state
     @State private var saverError: String?
     @State private var pinchAllowed = CGPreflightListenEventAccess()
+    @State private var pinchSettingsOpened = false
 
     var body: some View {
         Form {
@@ -27,12 +28,12 @@ struct SettingsHouse: View {
                     if pinchAllowed { Text(HouseText.pinchEnabled).foregroundStyle(.secondary) }
                     else {
                         Button(HouseText.enablePinchZoom) {
-                            _ = CGRequestListenEventAccess()
-                            pinchAllowed = CGPreflightListenEventAccess()
-                            NotificationCenter.default.post(name: RoomWallpaper.pinchPermissionChanged, object: nil)
+                            pinchAllowed = HousePinchPermission.enable()
+                            pinchSettingsOpened = !pinchAllowed
                         }
                     }
-                } label: { SettingsLabel(HouseText.pinchZoom, hint: HouseText.pinchHelp) }
+                } label: { SettingsLabel(HouseText.pinchZoom, hint: pinchSettingsOpened && !pinchAllowed ? HouseText.pinchOpenSettingsHelp : HouseText.pinchHelp) }
+                .onAppear { refreshPinchPermission() }
             }
             Section {
                 if projects.isEmpty { Text(HouseText.noProjects).foregroundStyle(.secondary) }
@@ -62,15 +63,21 @@ struct SettingsHouse: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            pinchAllowed = CGPreflightListenEventAccess()
+            refreshPinchPermission()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            refreshPinchPermission()
         }
         .onAppear {
-            pinchAllowed = CGPreflightListenEventAccess()
             // Projects on screen now, and the ones that already have a room chosen.
             saver = RoomSaverInstall.state
             projects = Array(Set(RoomProjects.shared.current + settings.room.themes.keys))
                 .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
         }
+    }
+
+    private func refreshPinchPermission() {
+        pinchAllowed = HousePinchPermission.refresh()
     }
 
     private func installSaver() {
@@ -123,6 +130,7 @@ enum HouseText {
     static var pinchZoom: String { Loc.t("Pinch zoom", "Масштаб жестом") }
     static var enablePinchZoom: String { Loc.t("Enable pinch zoom", "Включить масштаб жестом") }
     static var pinchEnabled: String { Loc.t("Enabled", "Включено") }
+    static var pinchOpenSettingsHelp: String { Loc.t("Input Monitoring settings opened. Enable Agent Notch there, then return here.", "Открыты настройки мониторинга ввода. Разрешите доступ для Agent Notch и вернитесь сюда.") }
     static var pinchHelp: String { Loc.t("Allow Input Monitoring to zoom the house with trackpad pinches", "Разрешите мониторинг ввода для масштабирования дома жестом на трекпаде") }
     static var rooms: String { Loc.t("Project rooms", "Комнаты проектов") }
     static var roomsHelp: String { Loc.t("Auto keeps a project's room when others come and go", "«Авто» не меняет комнату, когда появляются другие проекты") }
@@ -137,4 +145,26 @@ enum HouseText {
               "Выберите «Agent Notch House» в «Заставке». Чтобы дом был на экране блокировки, в «Экране блокировки» поставьте «Запрашивать пароль после начала заставки» — «Сразу».")
     }
     static func auto(_ theme: RoomTheme) -> String { Loc.t("Auto (\(theme.title))", "Авто (\(theme.title))") }
+}
+
+/// Permission requests belong to the explicit button; passive checks also restart or stop the event tap.
+@MainActor enum HousePinchPermission {
+    static func refresh(preflight: () -> Bool = { CGPreflightListenEventAccess() },
+                        changed: @MainActor () -> Void = { NotificationCenter.default.post(name: RoomWallpaper.pinchPermissionChanged, object: nil) }) -> Bool {
+        let allowed = preflight()
+        changed()
+        return allowed
+    }
+
+    static func enable(request: () -> Bool = { CGRequestListenEventAccess() },
+                       preflight: () -> Bool = { CGPreflightListenEventAccess() },
+                       openSettings: (URL) -> Void = { NSWorkspace.shared.open($0) },
+                       changed: @MainActor () -> Void = { NotificationCenter.default.post(name: RoomWallpaper.pinchPermissionChanged, object: nil) }) -> Bool {
+        _ = request()
+        let allowed = refresh(preflight: preflight, changed: changed)
+        if !allowed, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+            openSettings(url)
+        }
+        return allowed
+    }
 }

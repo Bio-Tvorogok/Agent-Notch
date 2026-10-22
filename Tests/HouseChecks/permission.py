@@ -11,9 +11,10 @@ class PinchPermissionChecks(unittest.TestCase):
     def test_settings_has_explicit_enable_action(self):
         source = Path('Sources/AgentsNotch/SettingsHouse.swift').read_text()
         self.assertIn('Button(HouseText.enablePinchZoom)', source)
-        self.assertEqual(source.count('CGRequestListenEventAccess()'), 1)
-        action = source[source.index('Button(HouseText.enablePinchZoom)'):]
-        self.assertLess(action.index('CGRequestListenEventAccess()'), action.index('}'))
+        self.assertIn('HousePinchPermission.enable()', source)
+        self.assertIn('NSApplication.didBecomeActiveNotification', source)
+        self.assertIn('NSWindow.didBecomeKeyNotification', source)
+        self.assertIn('.onAppear { refreshPinchPermission() }', source)
 
 if __name__ == '__main__':
     unittest.main()
