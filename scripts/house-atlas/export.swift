@@ -3,13 +3,19 @@ import WebKit
 
 // Loads room/index.html in a WKWebView sized like the main screen (the same engine and size as the wallpaper),
 // runs export.js in it and writes the atlas pages, house.json and the page's own reference frame.
-// usage: export <room/index.html> <export.js> <out dir> <hour>
+// usage: export <room/index.html> <export.js> <out dir> <hour> [parts <check dir>]
+// With "parts" (scripts/house-atlas/parts.js) the script streams its files to Swift with
+// webkit.messageHandlers.out.postMessage({ path, data: dataURL | text }) and returns only a short summary line;
+// a path starting with "check/" goes to the check dir. Without it the script returns the phase-0 JSON object.
 let args = CommandLine.arguments
 guard args.count >= 5, let hour = Double(args[4]) else {
     FileHandle.standardError.write("usage: export <index.html> <export.js> <out dir> <hour>\n".data(using: .utf8)!); exit(2)
 }
 let page = URL(fileURLWithPath: args[1]).standardizedFileURL.absoluteURL, script = try String(contentsOfFile: args[2], encoding: .utf8)
 let out = URL(fileURLWithPath: args[3], isDirectory: true).absoluteURL
+let partsMode = args.count >= 6 && args[5] == "parts"
+let checkDir = URL(fileURLWithPath: args.count >= 7 ? args[6] : ".build/parts-check", isDirectory: true).absoluteURL
+let timeout = Double(ProcessInfo.processInfo.environment["HOUSE_TIMEOUT"] ?? "") ?? (partsMode ? 900 : 60)
 try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
 let app = NSApplication.shared
@@ -22,7 +28,25 @@ let insets: [String: Double] = ["top": top, "bottom": bottom, "right": icons ? 1
 
 let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
 w.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1) // under the desktop picture: never seen
-let web = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: WKWebViewConfiguration())
+let conf = WKWebViewConfiguration()
+final class Sink: NSObject, WKScriptMessageHandler {
+    var written = 0
+    func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        guard let d = m.body as? [String: String], let path = d["path"], let body = d["data"] else { return }
+        let isCheck = path.hasPrefix("check/")
+        let url = (isCheck ? checkDir.appendingPathComponent(String(path.dropFirst(6))) : out.appendingPathComponent(path))
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if body.hasPrefix("data:"), let comma = body.firstIndex(of: ","), let bytes = Data(base64Encoded: String(body[body.index(after: comma)...])) { try! bytes.write(to: url) }
+        else { try! body.data(using: .utf8)!.write(to: url) }
+        written += 1
+    }
+}
+let sink = Sink()
+if partsMode { // pages of an earlier export with more of them must not linger
+    for f in (try? FileManager.default.contentsOfDirectory(atPath: out.path)) ?? [] where f.hasPrefix("parts-") && f.hasSuffix(".png") { try? FileManager.default.removeItem(at: out.appendingPathComponent(f)) }
+}
+conf.userContentController.add(sink, name: "out")
+let web = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: conf)
 w.contentView = web
 w.orderFrontRegardless()
 
@@ -49,6 +73,15 @@ loader.done = {
     DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
         web.evaluateJavaScript("window.__HOUSE_EXPORT = \(optJSON);\n" + script) { result, error in
             if let error { fputs("export failed: \(error)\n", stderr); exit(1) }
+            if partsMode {
+                // the posted files may still be in flight behind the result: let them land
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    print((result as? String) ?? "parts exported")
+                    print("wrote \(sink.written) files; screen \(Int(screen.frame.width))x\(Int(screen.frame.height)) @\(screen.backingScaleFactor)x")
+                    exit(0)
+                }
+                return
+            }
             guard let text = result as? String, var json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
                   let pages = json["pages"] as? [[String: Any]], let reference = json["reference"] as? String
             else { fputs("export returned no data\n", stderr); exit(1) }
@@ -74,5 +107,5 @@ loader.done = {
         }
     }
 }
-DispatchQueue.main.asyncAfter(deadline: .now() + 60) { fputs("export timed out\n", stderr); exit(1) }
+DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { fputs("export timed out\n", stderr); exit(1) }
 app.run()
