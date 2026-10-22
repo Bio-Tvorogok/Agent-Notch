@@ -3556,8 +3556,20 @@ function growthNote(a) {
   if (e.ids.includes(a.id)) return;
   e.ids.push(a.id); if (e.ids.length > 150) e.ids.shift(); e.n++;
   if (demo) return;
-  clearTimeout(growthSave); growthSave = setTimeout(() => { try { localStorage.setItem(GROWTH_KEY, JSON.stringify(growth)); } catch (e) {} }, 2000);
+  clearTimeout(growthSave); growthSave = setTimeout(() => { try { localStorage.setItem(GROWTH_KEY, JSON.stringify(growth)); } catch (e) {} growthPost(); }, 2000);
 }
+// The app keeps the one count both renderers share: the page posts it when it saves (and once on load) and takes the app's at start.
+function growthPost() { try { window.webkit?.messageHandlers?.room?.postMessage({ growth }); } catch (e) {} }
+function growthSeed(o) { // per project the larger count wins
+  if (!o || typeof o !== 'object') return;
+  for (const [p, e] of Object.entries(o)) {
+    if (!e || !Number.isFinite(e.n) || e.n < 0 || !Array.isArray(e.ids)) continue;
+    const mine = Object.prototype.hasOwnProperty.call(growth, p) ? growth[p] : null;
+    if (!mine || e.n > mine.n) Object.defineProperty(growth, p, { value: { n: e.n, ids: e.ids.filter(i => typeof i === 'string').slice(-150) }, enumerable: true, writable: true, configurable: true });
+  }
+  growthPost();
+}
+growthPost();
 function growthLevel(r) {
   if (r.theme.shared) return 0;
   if (Q.has('grow')) return Math.max(0, Math.min(3, Number(Q.get('grow')) || 0));
@@ -5124,6 +5136,7 @@ window.room = {
   setActive,
   setUsage: u => { if (!INFO.real) INFO.spend = null; INFO.real = true; setUsage(u); },
   setCodexPet: p => setCodexPet(p),
+  setGrowth: o => growthSeed(o),
   setFps: n => { fpsCap = n; },
   setInsets: o => { INSETS = { top: +o.top || 0, bottom: +o.bottom || 0, right: +o.right || 0 }; layout(); },
   setBackdrop, backdrops: () => Object.keys(BACKDROPS), shootingStar: () => shootingStar(performance.now(), { W: cv.width, ground: bdGround(cv.height) }),

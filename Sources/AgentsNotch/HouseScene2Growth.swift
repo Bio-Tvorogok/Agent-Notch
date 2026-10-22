@@ -1,12 +1,13 @@
 import Foundation
+import NotchCore
 
-/// How far each project's room has grown, by the same rules as the page (room/index.html growthNote / growthLevel): every
-/// distinct agent id a project has ever had counts once, and the room's level is the last GROWTH_STEPS entry the count reaches.
-/// The page keeps its numbers in its own WebKit localStorage, which cannot be read without loading the page, so the SpriteKit
-/// house keeps its own count here (UserDefaults) and starts it from zero.
+/// How far each project's room has grown: one count for both renderers. Native is the source of truth: the page's own count
+/// (room/index.html, WebKit localStorage) is seeded from here when it loads and posts its count back when it saves, and the
+/// SpriteKit house's HouseBehaviour is seeded from here and written back after its agents changed. The rules are the page's
+/// (growthNote / growthLevel): every distinct agent id a project has ever had counts once (the last 150 are remembered) and the
+/// room's level is the last GROWTH_STEPS entry [0, 2, 6, 15] the count reaches. The JSON is the page's `{project: {n, ids}}`.
 final class HouseGrowthStore {
     static let steps = [0, 2, 6, 15]
-    static let maxIds = 150
     struct Entry: Codable, Equatable { var n = 0; var ids: [String] = [] }
 
     private let defaults: UserDefaults, key: String
@@ -17,39 +18,52 @@ final class HouseGrowthStore {
         entries = (defaults.data(forKey: key).flatMap { try? JSONDecoder().decode([String: Entry].self, from: $0) }) ?? [:]
     }
 
-    /// Counts the agents' ids; true when some project's level changed.
-    @discardableResult
-    func note(_ agents: [(id: String, project: String)]) -> Bool {
-        var changed = false, levelChanged = false
-        for a in agents {
-            let p = a.project.isEmpty ? "—" : a.project
-            var e = entries[p] ?? Entry()
-            if e.ids.contains(a.id) { continue }
-            let before = Self.level(e.n)
-            e.ids.append(a.id)
-            if e.ids.count > Self.maxIds { e.ids.removeFirst() }
-            e.n += 1
-            entries[p] = e
-            changed = true
-            if Self.level(e.n) != before { levelChanged = true }
-        }
-        if changed, let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: key) }
-        return levelChanged
-    }
-
     static func level(_ n: Int) -> Int {
         var l = 0
         for (i, s) in steps.enumerated() where n >= s { l = i }
         return l
     }
 
-    /// The scene's growth map: room key ("p:" + project) → level, for the levels above zero.
-    func levels(projects: [String]) -> [String: Int] {
-        var out: [String: Int] = [:]
-        for p in projects {
-            let l = Self.level(entries[p.isEmpty ? "—" : p]?.n ?? 0)
-            if l > 0 { out["p:" + p] = l }
+    /// The count of this project (a project without a name is "—", as on the page).
+    func level(project: String) -> Int { Self.level(entries[project.isEmpty ? "—" : project]?.n ?? 0) }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(entries) { defaults.set(data, forKey: key) }
+    }
+
+    /// The behaviour starts from the stored counts.
+    func seed(_ b: HouseBehaviour) {
+        b.growth = entries.sorted { $0.key < $1.key }.map { .init(project: $0.key, n: $0.value.n, ids: $0.value.ids) }
+    }
+
+    /// Stores the behaviour's counts; true when something changed.
+    @discardableResult
+    func capture(from b: HouseBehaviour) -> Bool {
+        var e: [String: Entry] = [:]
+        for g in b.growth { e[g.project] = Entry(n: g.n, ids: g.ids) }
+        guard e != entries else { return false }
+        entries = e
+        save()
+        return true
+    }
+
+    /// The page's count (`{project: {n, ids}}`, as it posts it): per project the larger count wins. True when something changed.
+    @discardableResult
+    func merge(page: Any?) -> Bool {
+        guard let dict = page as? [String: Any] else { return false }
+        var changed = false
+        for (project, raw) in dict {
+            guard let o = raw as? [String: Any], let n = (o["n"] as? NSNumber)?.intValue, n >= 0 else { continue }
+            let ids = ((o["ids"] as? [Any]) ?? []).compactMap { $0 as? String }.suffix(150)
+            if n > (entries[project]?.n ?? -1) { entries[project] = Entry(n: n, ids: Array(ids)); changed = true }
         }
-        return out
+        if changed { save() }
+        return changed
+    }
+
+    /// What `room.setGrowth(...)` takes.
+    var pageJSON: String {
+        guard let data = try? JSONEncoder().encode(entries), let s = String(data: data, encoding: .utf8) else { return "{}" }
+        return s
     }
 }

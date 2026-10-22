@@ -1,0 +1,72 @@
+// Runs inside room/index.html (export.swift in "parts" mode, HOUSE_REF_ONLY=1) and records the page's OWN frames for the live-agents
+// proof of the SpriteKit scene: every case replays a behaviour fixture's rows timeline (Tests/Fixtures/house-behaviour/*.json, the
+// same timeline HouseBehaviour is driven with) through the page's real setAgents and 50 ms steps, with the fixtures' seeded
+// Math.random and a clock that is the timeline's, then draws the page's frame at each sample time. Per sample: the whole frame, the
+// frame without any agent drawn (the mask of the agents' pixels), the sky-only frame, and the numbers the Swift side needs.
+// window.__LIVE_CASES = [{name, seed, hour, samples: [ms...], events: [{at, rows}]}] is prepended by scripts/house-atlas/live-proof.sh.
+// Output: live-<case>-t<ms>.png / -bare.png / -sky.png / .json
+(() => {
+  'use strict';
+  const O = window.__HOUSE_EXPORT, post = (path, data) => window.webkit.messageHandlers.out.postMessage({ path, data });
+  setActive(false);
+  weather = 'clear';
+  // The stage-2c life (residents, the cat and dog, scenes, eggs), the speech bubbles over waiting agents and the scene overlays
+  // (puffs, papers) are not drawn by the SpriteKit house yet: the page does not draw them either, here.
+  updateResidents = () => false; startCelebrate = () => false; startMail = () => false; dogGreet = () => false; updateScenes = () => false;
+  eggStep = () => {}; eggSky = () => {}; eggOver = () => {}; eggItems = () => {}; drawSeason = () => {};
+  drawChats = () => {}; drawSceneOverlays = () => {};
+  // the context battery and the status marks over a Clawd (the "!" bubble, the Zs, the error smoke) are stage 2c too: the page skips them
+  // between the body and drawBathing; a stationary waiting/sleeping pose carries its mark in the atlas, so proof samples avoid those
+  { const realBathing = drawBathing; let muted = false; const fr = g.fillRect.bind(g);
+    infoOverClawd = () => { muted = true; };
+    g.fillRect = (...a) => { if (!muted) fr(...a); };
+    drawBathing = (...a) => { muted = false; return realBathing(...a); }; }
+  METEORS.next = Infinity; METEORS.list = [];
+  room.setInsets(O.insets);
+  sprites.clear();
+  let bt = 0;
+  performance.now = () => bt;
+  const real = { drawClawd, drawBackground };
+  { const rc = drawClawd; drawClawd = (X, Y, sp, t) => rc(X, Y, sp, bt); real.drawClawd = drawClawd; const rb = drawBackground; real.drawBackground = (t, d) => rb(bt, d); const rf = drawFallers; drawFallers = () => rf(bt); }
+  const out = [], files = [];
+  for (const c of window.__LIVE_CASES) {
+    // a fresh house: the three shared rooms, no project, no growth, the fixture's random numbers
+    for (const r of rooms) r.label.remove();
+    rooms.length = 0; roomByKey.clear(); sprites.clear(); links = []; LIFT = null; PLAN = { hulls: [] };
+    growth = {};
+    ensureRoom('__bath', 'Ванная', 'bath'); ensureRoom('__kitchen', 'Кухня', 'kitchen'); ensureRoom('__roof', 'Крыша', 'roof');
+    for (const r of rooms) { r.born = -1e9; r.drop = 0; r.cache = null; }
+    let bs = c.seed;
+    Math.random = () => { bs = (Math.imul(bs, 1664525) + 1013904223) >>> 0; return bs / 4294967296; };
+    fixedHour = c.hour;
+    const end = Math.max(...c.samples);
+    for (bt = 0; bt <= end; bt += 50) {
+      for (const e of c.events.filter(e => e.at === bt)) if (e.rows) room.setAgents(e.rows);
+      if (bt) {
+        updateResidents(bt); updateErrands(bt); stepSprites(50); updateLifts(bt, 50);
+        updateYard(bt); for (const sp of [...sprites.values()]) if (sp.hold?.kind === 'handover') stepHold(sp, bt); updateStairs(bt);
+        for (const r of rooms) r.drop = Math.round(-Math.pow(1 - Math.min(1, Math.max(0, (bt - r.born) / 900)), 3) * 140);
+        drawFallers(bt);
+      }
+      if (!c.samples.includes(bt)) continue;
+      const bgc = document.createElement('canvas'); bgc.width = cv.width; bgc.height = cv.height;
+      const draw = () => { last = 100000; performance.now = () => 100000; try { frame(100000); } finally { performance.now = () => bt; } }; // the atlas cut the room's animated items at t=100000; the Clawds keep the sample time (drawClawd below)
+      drawBackground = (t, d) => { real.drawBackground(t, d); bgc.getContext('2d').drawImage(cv, 0, 0); };
+      try { draw(); } finally { drawBackground = real.drawBackground; }
+      const full = cv.toDataURL('image/png');
+      drawClawd = () => {};
+      try { draw(); } finally { drawClawd = real.drawClawd; }
+      const bare = cv.toDataURL('image/png');
+      const d = now(), tag = `${c.name}-t${bt}`;
+      const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
+      const meta = { case: c.name, t: bt, hour: c.hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt,
+        rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
+        agents: [...sprites.values()].filter(sp => sp.kind === 'agent').length, falling: [...sprites.values()].filter(sp => sp.fall).length, links: links.map(L => L.id + ':' + L.kind + ':' + (L.lift ?? '') + ':' + (L.aim ?? '')), sprites: [...sprites.values()].map(sp => [sp.id, sp.kind, sp.state || '', (sp.room && sp.room.key) || sp.room || '-', Math.round(sp.x), Math.round(sp.y), Math.round(sp.alpha * 100), sp.moving ? 'mv' : 'st', sp.seated ? 'seat' : '-', sp.waving ? 'wave' : '-'].join('|')), cabins: LIFT ? LIFT.cabins.map(c => [Math.round(c.z * 10) / 10, c.state]) : [] };
+      for (const [f, data] of [['.png', full], ['-bare.png', bare], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {
+        post('check/live-' + tag + f, data); files.push('check/live-' + tag + f);
+      }
+      out.push(tag);
+    }
+  }
+  return JSON.stringify({ files, summary: 'live ref frames: ' + out.join(' ') });
+})();

@@ -1,0 +1,31 @@
+#!/bin/sh
+# Proves the real agents of the SpriteKit house against the page: replays behaviour fixtures (Tests/Fixtures/house-behaviour) through
+# the page (real setAgents, the fixtures' seed and 50 ms steps) and through HouseBehaviour + HouseScene2, and compares the frames at a
+# few sample times with the same gates as scene-proof.sh plus gates on the agents' own pixels.
+# Output: .build/scene-proof/live-ref (page frames), .build/scene-proof/live-out (<case>-t<ms>-side.png / -diff.png / -scene.png).
+# Exit status: the harness exits 3 when any sample is over a gate.
+set -eu
+cd "$(dirname "$0")/../.."
+P=.build/scene-proof
+mkdir -p .build/house-atlas "$P/obj" "$P/live-out" "$P/live-ref" "$P/junk"
+xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
+# case:hour:sample times (ms); the page and the scene both stop at every sample
+CASES=${LIVE_CASES:-'03-projects:12:3500,9500,14000,46000 subagents-return:20:5000,8000,17500 churn-growth:12:5500,8200,10500,20000'}
+python3 - "$CASES" > "$P/live-cases.js" <<'PY'
+import json, sys
+cases = []
+for spec in sys.argv[1].split():
+    name, hour, samples = spec.split(':')
+    d = json.load(open('Tests/Fixtures/house-behaviour/%s.json' % name))['input']
+    cases.append({'name': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')],
+                  'events': [{'at': e['at'], 'rows': e['rows']} for e in d['events'] if 'rows' in e]})
+print('window.__LIVE_CASES = ' + json.dumps(cases) + ';')
+PY
+cat "$P/live-cases.js" scripts/house-atlas/harness/live-ref.js > "$P/live-run.js"
+rm -f "$P"/live-ref/live-*
+HOUSE_REF_ONLY=1 .build/house-atlas/export room/index.html "$P/live-run.js" "$P/junk" 12 parts "$P/live-ref"
+xcrun swiftc -O -target arm64-apple-macos14.0 -parse-as-library -module-name NotchCore -emit-module \
+  -emit-module-path "$P/obj/NotchCore.swiftmodule" -emit-library -static -o "$P/obj/libNotchCore.a" Sources/NotchCore/*.swift
+xcrun swiftc -O -target arm64-apple-macos14.0 -I "$P/obj" -L "$P/obj" -lNotchCore -o "$P/harness" \
+  scripts/house-atlas/harness/main.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift
+"$P/harness" live room/atlas "$P/live-ref" Tests/Fixtures/house-behaviour "$P/live-out"

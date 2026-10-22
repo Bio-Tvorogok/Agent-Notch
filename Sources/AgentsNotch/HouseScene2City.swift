@@ -323,7 +323,8 @@ extension HousePainter {
             } else { cF(p, out, x - 2, y - 2, d.w + 4, 3); cF(p, roof, x - 1, y - 1, d.w + 2, 1) }
             for w in d.wins {
                 let wy = T - w.y - w.h
-                cF(p, frame, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x, wy, 1, 1); cF(p, frame, w.x + 1, wy, 1, w.h)
+                if w.frame { cF(p, frame, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x, wy, 1, 1); cF(p, frame, w.x + 1, wy, 1, w.h) }
+                else { cF(p, out, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x + 1, wy, w.w - 2, 1) }
             }
             let dx = d.shop ? x + d.w - 6 : x + (d.w >> 1) - 1
             cF(p, out, dx - 1, T - 7, 4, 7); cF(p, door, dx, T - 6, 2, 6); cF(p, haze("#e8c060", a), dx + 1, T - 3, 1, 1)

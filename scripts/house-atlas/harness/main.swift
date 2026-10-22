@@ -69,11 +69,13 @@ func makeScene(atlas: URL, layout: HouseLayout) -> (HouseScene2, SKView) {
     let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 } // whole points whose pixels are whole too
     let size = CGSize(width: even(W), height: even(H)) // points: the snapshot is W x H pixels, one art pixel each
     guard let scene = HouseScene2.load(from: atlas, layout: layout, unit: CGFloat(1 / texScale), size: size) else { print("no parts.json / parts pages in \(atlas.path)"); exit(1) }
+    scene.followsLayoutScale = false
     let view = SKView(frame: NSRect(origin: .zero, size: size))
     view.ignoresSiblingOrder = true
     return (scene, view)
 }
 
+let GATE_AGENT24 = 12.0, GATE_AGENT6 = 12.0 // the agents' own pixels; the one known gap is the arms of a waiting Clawd that is still walking (no such pose in the atlas)
 let GATE_PCT6 = 0.3, GATE_MAE = 1.0, GATE_FRAME24 = 0.15, GATE_FRAME6 = 0.2 // clean run: <= 0.13, 0.57, 0.063, 0.067; the probes AMB=0.93 and CITYSHIFT=6 are far above
 switch mode {
 case "proof":
@@ -143,6 +145,108 @@ case "proof":
     print(failed ? "PROOF: FAILED (a fixture is over a gate)" : "PROOF: all fixtures within the gates")
     exit(failed ? 3 : 0)
 
+case "live":
+    // live <atlas> <ref dir> <fixture dir> <out dir>: replays each behaviour fixture of the page frames in <ref dir> (live-ref.js) through
+    // HouseBehaviour + HouseScene2 and compares at every sample, with the proof's gates and gates on the agents' own pixels
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), refDir = URL(fileURLWithPath: args[3], isDirectory: true)
+    let fixDir = URL(fileURLWithPath: args[4], isDirectory: true), out = URL(fileURLWithPath: args[5], isDirectory: true)
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let metas = try FileManager.default.contentsOfDirectory(atPath: refDir.path).filter { $0.hasPrefix("live-") && $0.hasSuffix(".json") }
+    var byCase: [String: [(t: Int, file: String, meta: [String: Any])]] = [:]
+    for m in metas {
+        let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent(m))) as! [String: Any]
+        byCase[meta["case"] as! String, default: []].append((meta["t"] as! Int, String(m.dropFirst(5).dropLast(5)), meta))
+    }
+    var failed = false
+    print("sample                 var  house px  %house24  %house6  MAE/ch | frame%24 frame%6 | agent px  %agent24  %agent6 | sprites")
+    for name in byCase.keys.sorted() {
+        let samples = byCase[name]!.sorted { $0.t < $1.t }
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixDir.appendingPathComponent(name + ".json"))) as! [String: Any]
+        let input = fixture["input"] as! [String: Any]
+        let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
+        func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
+        let first = samples[0].meta, ins = first["insets"] as! [String: Double], dpr = first["DPR"] as! Double
+        let behaviour = HouseBehaviour(seed: UInt32(input["seed"] as! Int), layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
+                                       insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!))
+        var scene: HouseScene2?, view: SKView?
+        var bt = 0
+        for s in samples {
+            // the same timeline as the page: rows at their time, 50 ms steps in between
+            while bt <= s.t {
+                let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
+                if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
+                bt += 50
+            }
+            let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
+            let pxd = meta["PXD"] as! Double
+            let lay = behaviour.layout
+            guard Int(lay.view.width) == W, Int(lay.view.height) == H else { print("\(s.file): canvas \(lay.view.width)x\(lay.view.height) vs the page's \(W)x\(H)"); exit(1) }
+            for r in meta["rooms"] as! [[String: Any]] {
+                guard let mine = lay.rooms.first(where: { $0.key == r["key"] as! String }) else { print("\(s.file): room \(r["key"]!) missing"); exit(1) }
+                if mine.ox != r["ox"] as! Double || mine.oy != r["oy"] as! Double { print("\(s.file): room \(mine.key) origin differs"); exit(1) }
+            }
+            let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 }
+            let size = CGSize(width: even(Double(W)), height: even(Double(H)))
+            if scene == nil {
+                guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
+                sc.followsLayoutScale = false; sc.freezeClock = true; sc.freezeSim = true; sc.colon = false
+                sc.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
+                sc.attach(behaviour)
+                let v = SKView(frame: NSRect(origin: .zero, size: size)); v.ignoresSiblingOrder = true
+                scene = sc; view = v
+                sc.setTime(hour: hour, day: meta["day"] as! Int)
+                v.presentScene(sc)
+            }
+            let sc = scene!, v = view!
+            sc.followBehaviour(behaviour) // a project that joined relays the house out (the app does it in update)
+            if sc.size != size { sc.size = size; v.frame = NSRect(origin: .zero, size: size) }
+            sc.clockMillis = Double(s.t)
+            sc.setTime(hour: hour, day: meta["day"] as! Int)
+            sc.repaint(sync: true)
+            if let sim = sc.sim { sc.sync(sim: sim) }
+            spin(0.8)
+            if let sim = sc.sim { sc.sync(sim: sim) }
+            var img = v.texture(from: sc)!.cgImage()
+            spin(0.3)
+            img = v.texture(from: sc)!.cgImage()
+            let ref = pixels(load(refDir.appendingPathComponent("live-\(s.file).png"))), sky = pixels(load(refDir.appendingPathComponent("live-\(s.file)-sky.png")))
+            let bare = pixels(load(refDir.appendingPathComponent("live-\(s.file)-bare.png"))), mineRaw = pixels(img)
+            guard mineRaw.w >= ref.w, mineRaw.h >= ref.h, mineRaw.w - ref.w <= 8, mineRaw.h - ref.h <= 8 else { print("size mismatch \(mineRaw.w)x\(mineRaw.h) vs \(ref.w)x\(ref.h)"); exit(1) }
+            let mine = crop(mineRaw, ref.w, ref.h)
+            var house = 0, off24 = 0, off6 = 0, sumAbs = 0, frame24 = 0, frame6 = 0, agent = 0, aOff24 = 0, aOff6 = 0
+            var diff = [UInt8](repeating: 255, count: ref.w * ref.h * 4)
+            var side = [UInt8](repeating: 255, count: ref.w * 2 * ref.h * 4)
+            for p in 0..<(ref.w * ref.h) {
+                let i = p * 4
+                var mx = 0, dBare = 0, dSky = 0
+                for c in 0..<3 {
+                    mx = max(mx, abs(Int(ref.data[i + c]) - Int(mine.data[i + c])))
+                    dBare += abs(Int(ref.data[i + c]) - Int(bare.data[i + c])); dSky += abs(Int(ref.data[i + c]) - Int(sky.data[i + c]))
+                }
+                let isHouse = dSky > 0, isAgent = dBare > 0
+                if mx > 24 { frame24 += 1 }
+                if mx > 6 { frame6 += 1 }
+                if isHouse { house += 1; sumAbs += (0..<3).reduce(0) { $0 + abs(Int(ref.data[i + $1]) - Int(mine.data[i + $1])) }; if mx > 24 { off24 += 1 }; if mx > 6 { off6 += 1 } }
+                if isAgent { agent += 1; if mx > 24 { aOff24 += 1 }; if mx > 6 { aOff6 += 1 } }
+                for c in 0..<3 { diff[i + c] = mx > 24 ? (c == 0 ? 255 : 0) : ref.data[i + c] >> 2 }
+                let y = p / ref.w, x = p % ref.w
+                for c in 0..<4 { side[(y * ref.w * 2 + x) * 4 + c] = ref.data[i + c]; side[(y * ref.w * 2 + ref.w + x) * 4 + c] = mine.data[i + c] }
+            }
+            save(diff, ref.w, ref.h, to: out.appendingPathComponent("\(s.file)-diff.png"))
+            save(side, ref.w * 2, ref.h, to: out.appendingPathComponent("\(s.file)-side.png"))
+            save(mine.data, mine.w, mine.h, to: out.appendingPathComponent("\(s.file)-scene.png"))
+            let h = Double(max(1, house)), a = Double(max(1, agent)), f = Double(ref.w * ref.h)
+            let p24 = 100 * Double(off24) / h, p6 = 100 * Double(off6) / h, mae = Double(sumAbs) / (h * 3)
+            let f24 = 100 * Double(frame24) / f, f6 = 100 * Double(frame6) / f, a24 = 100 * Double(aOff24) / a, a6 = 100 * Double(aOff6) / a
+            let tag = "\(name)@\(s.t)"
+            print(String(format: "%-22@ %3d %9d %8.4f %8.4f %7.4f | %7.4f %7.4f | %8d %8.3f %8.3f | %d agents, %d falling", tag as NSString, sc.light.variant, house, p24, p6, mae, f24, f6, agent, a24, a6,
+                         meta["agents"] as! Int, meta["falling"] as! Int))
+            if p24 > 0.1 || p6 > GATE_PCT6 || mae > GATE_MAE || f24 > GATE_FRAME24 || f6 > GATE_FRAME6 || a24 > GATE_AGENT24 || a6 > GATE_AGENT6 { failed = true; print("    ^ over a gate") }
+        }
+    }
+    print(failed ? "LIVE PROOF: FAILED (a sample is over a gate)" : "LIVE PROOF: all samples within the gates")
+    exit(failed ? 3 : 0)
+
 case "selftest":
     // selftest <atlas>: the atlas guards (exact variant, short arrays, corrupt page) and the growth store; exits 1 on the first failure
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true)
@@ -172,12 +276,17 @@ case "selftest":
     let suite = "house-selftest-\(getpid())", ud = UserDefaults(suiteName: suite)!
     ud.removePersistentDomain(forName: suite)
     let g = HouseGrowthStore(defaults: ud)
-    var changed = g.note([("a", "p"), ("b", "p"), ("a", "p")])
-    check(changed && g.levels(projects: ["p", "q"]) == ["p:p": 1], "two ids make level 1, a repeat does not count")
-    changed = g.note((0..<4).map { ("x\($0)", "p") })
-    check(changed && g.levels(projects: ["p"]) == ["p:p": 2], "six ids make level 2")
-    check(!g.note([("x1", "p")]), "a known id changes nothing")
-    check(HouseGrowthStore(defaults: ud).levels(projects: ["p"]) == ["p:p": 2], "the count survives a restart")
+    let beh = HouseBehaviour(seed: 1)
+    beh.setAgents([HouseAgentRow(id: "a", project: "p"), HouseAgentRow(id: "b", project: "p"), HouseAgentRow(id: "c", project: "")])
+    check(g.capture(from: beh) && g.level(project: "p") == 1 && g.level(project: "") == 0, "capture: two ids make level 1, the nameless project is \"—\"")
+    check(!g.capture(from: beh), "capture: unchanged counts change nothing")
+    let other = HouseBehaviour(seed: 1)
+    g.seed(other)
+    check(other.growth.first { $0.project == "p" }?.n == 2, "seed: a behaviour starts from the stored counts")
+    check(g.merge(page: ["p": ["n": 7, "ids": ["x"]], "q": ["n": 1, "ids": []]]) && g.level(project: "p") == 2, "merge: the page's larger count wins")
+    check(!g.merge(page: ["p": ["n": 3, "ids": []]]) && g.level(project: "p") == 2, "merge: a smaller one does not")
+    check(HouseGrowthStore(defaults: ud).level(project: "p") == 2, "the count survives a restart")
+    check(g.merge(page: "junk") == false && g.merge(page: ["z": ["n": -4]]) == false, "merge: junk is ignored")
     ud.removePersistentDomain(forName: suite)
     print(bad == 0 ? "SELFTEST: ok" : "SELFTEST: \(bad) failed")
     exit(bad == 0 ? 0 : 1)

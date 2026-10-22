@@ -21,6 +21,22 @@ extension HouseScene2 {
     private func idx(_ n: Int, _ period: Double, _ t: Double) -> Int { Int(floor(t.truncatingRemainder(dividingBy: period) / period * Double(n))) % n }
 
     /// The pose sprite name for a sprite at time t (ms), per parts.json poses.names and poses.timing.
+    static func propFor(_ act: String) -> String? {
+        let a = act.lowercased()
+        if a.hasPrefix("bash"), a.range(of: #"\b(test|tests|jest|pytest|vitest|mocha|rspec|xctest|phpunit|unittest)\b"#, options: .regularExpression) != nil { return "flask" }
+        if a.range(of: #"^(edit|write|multiedit|notebookedit)\b"#, options: .regularExpression) != nil { return "hammer" }
+        if a.range(of: #"^(websearch|webfetch|web)"#, options: .regularExpression) != nil { return "binoculars" }
+        if a.range(of: #"^(read|grep|glob)\b"#, options: .regularExpression) != nil { return "book" }
+        return nil
+    }
+
+    /// The page's onLaptop: seated at a desk of the room it is in (the library's candle stool has no screen: a laptop there).
+    func onLaptop(_ sp: HouseSprite) -> Bool {
+        guard let gl = sp.goal, let room = sp.room, gl.room == room else { return false }
+        if gl.cat == "seat" || gl.cat == "cowork" { return true }
+        return gl.cat == "work" && gl.i == 1 && layout.rooms.first { $0.key == room }?.theme == "library"
+    }
+
     func poseName(_ sp: HouseSprite, look: HouseLook, face: Int, t: Double) -> String {
         let tick = { (ms: Double) in Int(floor(t / ms)) % 2 }
         let st = sp.state ?? ""
@@ -44,14 +60,23 @@ extension HouseScene2 {
             if st == "waiting" { return p + "/waiting.\(idx(6, 1634, t))" }
             if st == "error" { return p + "/error.\(idx(4, 1885, t))" }
             if st == "done" || st == "idle-sleep" { return p + "/sleep.\(idx(4, 1400, t))" }
-            if sp.seated == true {
-                let a = look.activity
-                if a.hasPrefix("Bash") && a.contains("test") { return p + "/flask.\(idx(4, 3200, t))" }
-                if a.hasPrefix("Edit") || a.hasPrefix("Write") { return p + "/hammer.\(tick(190))" }
-                if a.hasPrefix("WebSearch") || a.hasPrefix("WebFetch") { return p + "/binoculars.\(tick(600))" }
-                if a.hasPrefix("Read") || a.hasPrefix("Grep") { return p + "/book.\(tick(600))" }
-                return p + "/work.\(tick(160))"
+            // the page's drawProps: a working Clawd that stands still and has nowhere to walk holds the laptop it sits at, or what its tool suggests
+            if st == "working" && sp.path.isEmpty {
+                if onLaptop(sp) {
+                    // three glow phases of sin(t/900 + seed*9), cut at 0, 700, 1400 ms with the seed .3
+                    let g = sin(t / 900 + sp.seed * 9)
+                    let k = (0..<3).min { abs(sin(Double($0) * 700 / 900 + 2.7) - g) < abs(sin(Double($1) * 700 / 900 + 2.7) - g) }!
+                    return p + "/laptop.\(k)"
+                }
+                switch Self.propFor(look.activity) {
+                case "flask": return p + "/flask.\(idx(4, 800, t + sp.seed * 800))"
+                case "hammer": return p + "/hammer.\(Int(floor(t / 190 + sp.seed * 3)) % 2)"
+                case "binoculars": return p + "/binoculars.\((t / 1700 + 3).truncatingRemainder(dividingBy: 1) < 0.15 ? 1 : 0)"
+                case "book": return p + "/book.\((t / 2600 + sp.seed).truncatingRemainder(dividingBy: 1) < 0.12 ? 1 : 0)"
+                default: break
+                }
             }
+            if sp.seated == true && st == "working" { return p + "/work.\(tick(160))" }
             return p + "/stand.0"
         }
     }
@@ -111,13 +136,20 @@ extension HouseScene2 {
         var seen = Set<String>()
         for sp in sim.sprites {
             seen.insert(sp.id)
-            guard sp.alpha > 0.001, let at = place(sp, sim: sim) else { moverNodes[sp.id]?.isHidden = true; continue }
+            var fallen: HouseParachute?
+            let spot: (x: Double, y: Double, z: CGFloat)?
+            if sp.fall != nil, let f = fallPlace(sp) { spot = (f.x, f.y, f.z); fallen = f.p } else { spot = place(sp, sim: sim) }
+            guard sp.alpha > 0.001, let at = spot else { moverNodes[sp.id]?.isHidden = true; canopyNodes[sp.id]?.isHidden = true; continue }
+            if let f = fallen, let c = canopy(x: at.x, y: at.y, open: f.open, vendor: sp.behaviour.vendor) {
+                let cn = canopyNodes[sp.id] ?? { let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); movers.addChild(m); canopyNodes[sp.id] = m; return m }()
+                cn.texture = c.0; cn.size = c.2; cn.position = CGPoint(x: c.1.x, y: -c.1.y); cn.zPosition = at.z - 0.5; cn.alpha = CGFloat(sp.alpha); cn.isHidden = false
+            } else { canopyNodes[sp.id]?.isHidden = true }
             let last = lastPos[sp.id], sx = (sp.x - sp.y)
             var face = 1
             if let last { let d = sx - (last.0 - last.1); face = abs(d) > 1e-6 ? (d > 0 ? 1 : -1) : faceMemory[sp.id] ?? 1 }
             faceMemory[sp.id] = face
             lastPos[sp.id] = (sp.x, sp.y)
-            let name = poseName(sp, look: look(sp), face: face, t: clockMillis)
+            let name = poseName(sp, look: look(sp), face: face, t: (sp.context ?? 0) >= 0.9 ? clockMillis * 0.5 : clockMillis)
             guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][look(sp).vendor + "/stand.0"] else { continue }
             let sig = pose.layers.map { String($0.sprite) }.joined(separator: ",")
             let n = moverNodes[sp.id] ?? {
@@ -143,22 +175,26 @@ extension HouseScene2 {
             n.zPosition = at.z
         }
         for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil }
+        for (id, n) in canopyNodes where !seen.contains(id) { n.removeFromParent(); canopyNodes[id] = nil }
     }
 
     /// True while anything moves: the view then runs at full rate; otherwise it may rest until the next minute.
     var isMoving: Bool {
         guard let sim else { return false }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
-        return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade }
+        if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
+        return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade || $0.behaviour.handover != nil }
     }
 
-    var isTyping: Bool { sim?.sprites.contains { $0.seated == true || $0.state == "working" } ?? false }
+    var isTyping: Bool { sim?.sprites.contains { $0.seated == true || $0.state == "working" || $0.state == "waiting" || $0.state == "error" } ?? false }
 
     override func update(_ currentTime: TimeInterval) {
-        let dt = lastTime.map { min(0.1, max(0, currentTime - $0)) } ?? 0
+        let raw = lastTime.map { max(0, currentTime - $0) } ?? 0
+        let dt = min(0.1, raw)
         lastTime = currentTime
         if !freezeClock { clockMillis += dt * 1000 }
-        if driveSim, let sim { var left = dt * 1000; while left > 0 { let step = min(50, left); left -= step; sim.step(dt: step) } }
+        if behaviour != nil, !freezeSim { advanceBehaviour(ms: raw * 1000) }
+        else if driveSim, let sim { var left = dt * 1000; while left > 0 { let step = min(50, left); left -= step; sim.step(dt: step) } }
         if followClock {
             let c = Calendar.current, d = Date(), h = c.component(.hour, from: d), m = c.component(.minute, from: d)
             if h * 60 + m != lastMinute {
@@ -167,7 +203,14 @@ extension HouseScene2 {
                 setTime(hour: Double(h) + Double(m) / 60 + Double(c.component(.second, from: d)) / 3600, day: (c.ordinality(of: .day, in: .year, for: d) ?? 1) - 1)
             }
             let blink = Int(d.timeIntervalSince1970) % 2 == 0
-            if blink != colon { colon = blink; repaint(sync: false, clockOnly: true) } // the clock faces' colon blinks with the seconds, as the page's
+            if blink != colon {
+                colon = blink
+                // the light follows the seconds like the page's: the shader's ambient every second, a new variant rebuilds
+                let hs = Double(h) + Double(m) / 60 + Double(c.component(.second, from: d)) / 3600
+                let st = HouseLight.state(parts, hour: hs)
+                if st.variant != builtVariant { setTime(hour: hs, day: (c.ordinality(of: .day, in: .year, for: d) ?? 1) - 1) } else { shaders.set(st.amb) }
+                repaint(sync: false, clockOnly: true) // the clock faces' colon blinks with the seconds, as the page's
+            }
         }
         if let sim { sync(sim: sim) }
         updateClouds()
@@ -184,7 +227,7 @@ extension HouseScene2 {
         if now - countFrom >= 5 { deliveredFps = Double(counted) / (now - countFrom); counted = 0; countFrom = now }
         guard followClock else { return }
         let typing = isTyping, moving = isMoving
-        let want = fixedFps ?? (moving ? maxFps : typing ? min(25, maxFps) : maxFps)
+        let want = fixedFps ?? (moving ? maxFps : typing ? min(10, maxFps) : maxFps)
         if want != rate { rate = want; view?.preferredFramesPerSecond = want }
         if moving || typing || fixedFps != nil { stillSince = nil; return }
         if stillSince == nil { stillSince = now }
@@ -205,7 +248,9 @@ extension HouseScene2 {
     }
 
     /// Wakes a sleeping house (the host calls it when the window shows again).
-    func wake() { napTimer?.invalidate(); stillSince = nil; view?.isPaused = false }
+    func wake() { covered = false; napTimer?.invalidate(); stillSince = nil; view?.isPaused = false }
+    /// New work for a house that rests: wakes it unless the window is covered.
+    func stir() { if !covered { wake() } }
     /// Stops drawing until wake(), without the minute refresh (the host calls it when the window is covered).
-    func hide() { napTimer?.invalidate(); view?.isPaused = true }
+    func hide() { covered = true; napTimer?.invalidate(); view?.isPaused = true }
 }

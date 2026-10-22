@@ -19,7 +19,10 @@ final class HouseScene2: SKScene {
 
     let parts: HouseParts, pages: HousePages, shaders: HouseShaders
     private(set) var layout: HouseLayout
-    let unit: CGFloat
+    /// Points per art pixel. With the app's screen-sized view it follows the layout (a relayout changes the canvas' pixel density);
+    /// a harness that sizes the scene to the canvas sets `followsLayoutScale` off.
+    private(set) var unit: CGFloat
+    var followsLayoutScale = true
     struct LiveItem { weak var node: SKSpriteNode?; let make: (HousePainter) -> (CGImage, CGPoint, CGSize)?; let clock: Bool }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
@@ -68,6 +71,23 @@ final class HouseScene2: SKScene {
 
     // moving sprites
     var sim: HouseSim?
+    /// The real agents (HouseScene2Agents.swift): its simulation is `sim`, its layout the scene's.
+    var behaviour: HouseBehaviour? {
+        didSet {
+            sim = behaviour?.sim
+            look = { sp in HouseLook(vendor: sp.behaviour.vendor, activity: sp.behaviour.agent?.activity ?? "") }
+        }
+    }
+    var pendingRows: [HouseAgentRow]?
+    /// After a delivery has been applied: the host stores the growth.
+    var onDelivered: (() -> Void)?
+    var builtProjects = -1
+    /// The harness steps the behaviour itself.
+    var freezeSim = false
+    /// The host's window is covered: nothing is drawn until `wake()`.
+    var covered = false
+    var canopyCache: [String: SKTexture] = [:]
+    var canopyNodes: [String: SKSpriteNode] = [:]
     var driveSim = false
     var look: (HouseSprite) -> HouseLook = { _ in HouseLook() }
     var moverNodes: [String: SKSpriteNode] = [:]
@@ -124,7 +144,11 @@ final class HouseScene2: SKScene {
     // MARK: public control
 
     /// A new project list: the layout changes, the house is built again.
-    func setLayout(_ l: HouseLayout) { layout = l; builtKey = ""; rebuild() }
+    func setLayout(_ l: HouseLayout) {
+        layout = l; builtKey = ""
+        if followsLayoutScale { unit = CGFloat(l.view.PXD / l.view.DPR); world.setScale(unit) }
+        rebuild()
+    }
 
     /// New growth levels (room key -> level); the rooms that changed are built again.
     func setGrowth(_ g: [String: Int]) { guard g != growth else { return }; growth = g; rebuild() }
@@ -191,6 +215,8 @@ final class HouseScene2: SKScene {
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
         let vi = light.variant
+        buildId += 1
+        if builtKey != layoutKey { lastLive.removeAll() } // other rooms: the old signs, clocks and panes belong to other slots
         builtVariant = vi; builtKey = layoutKey
         let oldSky = skyGroup
         skyGroup = SKNode(); root.addChild(skyGroup)
@@ -213,6 +239,7 @@ final class HouseScene2: SKScene {
         if let sim { sync(sim: sim) }
     }
     var painted = false
+    var buildId = 0
 
     private func addLights(_ list: [HouseParts.Light], ox: Double, oy: Double) {
         for l in list {
@@ -298,7 +325,8 @@ final class HouseScene2: SKScene {
     func buildLiftSlice(room key: String,  vi: Int, depth: Double?, info: inout RoomInfo) {
         guard let lf = liftParts, vi < lf.variants.count, !lf.variants[vi].floors.isEmpty else { return }
         // the room's slice is found by its key in the lift's floor list (room:'self'), never by the cut-time floor
-        guard let f = lf.fl.firstIndex(where: { $0.room == key }), f < lf.variants[vi].floors.count else { return }
+        // (the atlas was cut with one project's name in the tower; the floor index is the same for any project)
+        guard let f = layout.lift?.fl.firstIndex(where: { $0.room == key }) ?? lf.fl.firstIndex(where: { $0.room == key }), f < lf.variants[vi].floors.count else { return }
         let v = lf.variants[vi], fl = v.floors[f]
         var items: [(Double, (CGFloat) -> Void)] = []
         for p in fl.pieces { items.append((p.key, { [unowned self] z in self.sprite(p.sprite, x: self.wf.ox + p.x, y: self.wf.oy + p.y, z: z) })) }

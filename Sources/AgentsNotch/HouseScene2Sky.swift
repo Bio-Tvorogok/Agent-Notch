@@ -17,13 +17,15 @@ extension HouseScene2 {
         var live: [(SKTexture, CGPoint, CGSize)?]
         var sky: HousePainter.SkyBundle?
         var clockOnly: Bool
+        var build = 0
+        var timedOut = false
     }
 
     /// Paints the live images and the sky for the current time on the paint queue and swaps them in on the main thread. `sync` waits
     /// for it (the first build, a harness frame); a minute's refresh does not. `clockOnly` repaints just the clock faces.
     func repaint(sync: Bool, clockOnly: Bool = false) {
         painted = true
-        let inp = paintInputs(), makers = liveItems.map { (clockOnly && !$0.clock) ? nil : $0.make }
+        let build = buildId, inp = paintInputs(), makers = liveItems.map { (clockOnly && !$0.clock) ? nil : $0.make }
         let painter = self.painter
         let work: () -> PaintResult = {
             painter.set(inp)
@@ -34,8 +36,13 @@ extension HouseScene2 {
             // upload now, off the main thread, so the swap costs nothing
             var all: [SKTexture] = live.compactMap { $0?.0 }
             if let sky { all += sky.pieces.compactMap { $0.tex } + sky.clouds.map { $0.tex } }
-            if !all.isEmpty { let sem = DispatchSemaphore(value: 0); SKTexture.preload(all) { sem.signal() }; sem.wait() }
-            return PaintResult(live: live, sky: sky, clockOnly: clockOnly)
+            var timedOut = false
+            if !all.isEmpty {
+                let sem = DispatchSemaphore(value: 0)
+                SKTexture.preload(all) { sem.signal() }
+                timedOut = sem.wait(timeout: .now() + 5) == .timedOut
+            }
+            return PaintResult(live: live, sky: sky, clockOnly: clockOnly, build: build, timedOut: timedOut)
         }
         if sync { let r = paintQueue.sync(execute: work); apply(r) } else {
             paintQueue.async { [weak self] in
@@ -46,6 +53,8 @@ extension HouseScene2 {
     }
 
     func apply(_ r: PaintResult) {
+        if r.timedOut { NSLog("agents-notch: house textures did not preload in time"); onFailure?(); return }
+        guard r.build == buildId else { return } // painted for a house that has been built again since
         let t0 = CACurrentMediaTime()
         for (i, item) in liveItems.enumerated() where i < r.live.count {
             guard let n = item.node else { continue }

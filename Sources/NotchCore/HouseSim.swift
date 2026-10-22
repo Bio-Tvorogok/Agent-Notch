@@ -99,6 +99,8 @@ public final class HouseSim {
     public internal(set) var sprites: [HouseSprite] = []
     public internal(set) var time = 0.0
     var roomDrops: [String: Double] = [:]
+    /// True while a room is still dropping into place (a renderer keeps its frame rate up).
+    public var roomsSettling: Bool { roomDrops.values.contains { $0 != 0 } }
     let random: () -> Double
     public convenience init(layout: HouseLayout, seed: UInt32 = 173) {
         let rng = HouseRandom(seed: seed)
