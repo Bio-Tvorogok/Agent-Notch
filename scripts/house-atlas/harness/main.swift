@@ -1,6 +1,8 @@
 import AppKit
 import NotchCore
 import SpriteKit
+import Metal
+import QuartzCore
 
 // Hosts HouseScene2 (the SpriteKit house composed from room/atlas/parts.json) to prove it and to measure it.
 //   harness proof <atlas dir> <ref dir> <out dir>      render every page frame in <ref dir> (scripts/house-atlas/harness/ref.js)
@@ -61,6 +63,7 @@ func render(_ scene: HouseScene2, view: SKView) -> CGImage {
 let texScale: Double = {
     let v = SKView(frame: NSRect(x: 0, y: 0, width: 100, height: 100)), s = SKScene(size: CGSize(width: 100, height: 100))
     v.presentScene(s); spin(0.2)
+    defer { v.isPaused = true; v.presentScene(nil) } // its display link would keep running for the life of the process
     return Double(v.texture(from: s)!.cgImage().width) / 100
 }()
 
@@ -326,6 +329,179 @@ case "bench":
         print(bad ? "BENCH CHECK: FAILED" : "BENCH CHECK: ok")
     }
     exit(bad ? 3 : 0)
+
+case "render":
+    // render <atlas dir> <fixtures dir> <fixture> <walk|type|idle> <seconds> [label]: the real per-frame cost of drawing. The scene of the app's
+    // screen (1728x1117 points, unit PXD/DPR) is driven in real time at the rate it asks for and drawn by SKRenderer with Metal into an
+    // offscreen 2x texture (the app's drawable), no window. Prints the process CPU (getrusage user+sys) over the measured seconds as % of
+    // one core, the frames drawn per second and the main-thread ms of update+encode. The house naps like the app's (3 s still: no frames).
+    //   walk: rows alternate every 6 s; type: the fixture's rows, measured after 55 s of settling on a virtual clock; idle: no agents.
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), fixDir = URL(fileURLWithPath: args[3], isDirectory: true)
+    let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixDir.appendingPathComponent(args[4] + ".json"))) as! [String: Any]
+    let kind = args[5], seconds = Double(args[6])!, label = args.count > 7 ? args[7] : kind
+    let input = fixture["input"] as! [String: Any]
+    let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
+    func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
+    let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
+    let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: 2), insets: .init(top: 38, bottom: 73, right: 120), random: { rng.nextDouble() })
+    if kind == "walk" || kind == "crowd" { behaviour.enableLife(hour: 12, dark: 0) }
+    // crowd: the fixture's first rows (14-projects: 14 agents in 14 rooms, with context batteries), each agent moving one room on every 6 s
+    let crowd0 = kind == "crowd" ? rows(events[0]) : []
+    func crowd(_ k: Int) -> [HouseAgentRow] {
+        crowd0.enumerated().map { i, r in var r = r; r.project = crowd0[(i + k) % crowd0.count].project; r.state = "working"; return r }
+    }
+    if kind == "crowd" { behaviour.setAgents(crowd(0)) }
+    let lay = behaviour.layout
+    let pts = CGSize(width: 1728, height: 1117)
+    guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(lay.view.PXD / lay.view.DPR), size: pts) else { print("no atlas"); exit(1) }
+    sc.followClock = true
+    // the sky follows a clock pinned to RB_HOUR (default noon) of today, running at real speed: the night adds the city's lights
+    let pinned = Calendar.current.startOfDay(for: Date()).addingTimeInterval((Double(ProcessInfo.processInfo.environment["RB_HOUR"] ?? "12") ?? 12) * 3600), began = Date()
+    sc.wallClock = { pinned.addingTimeInterval(Date().timeIntervalSince(began)) }
+    sc.env = HouseSkyEnv(innerHeight: 1117, insetBottom: 73)
+    sc.attach(behaviour)
+    sc.setTime(hour: 12, day: 100)
+    guard let dev = MTLCreateSystemDefaultDevice(), let queue = dev.makeCommandQueue() else { print("no Metal"); exit(1) }
+    let renderer = SKRenderer(device: dev)
+    renderer.scene = sc
+    renderer.ignoresSiblingOrder = true
+    if ProcessInfo.processInfo.environment["RB_NOCULL"] != nil { renderer.shouldCullNonVisibleNodes = false }
+    let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: 3456, height: 2234, mipmapped: false)
+    td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+    let targets = (0..<3).map { _ in dev.makeTexture(descriptor: td)! }
+    let inflight = DispatchSemaphore(value: 2)
+    var tex = 0, updMs = 0.0, encMs = 0.0
+    let noUpdate = ProcessInfo.processInfo.environment["RB_NOUPDATE"] != nil, noRender = ProcessInfo.processInfo.environment["RB_NORENDER"] != nil
+    func draw(_ t: TimeInterval) {
+        let u0 = CACurrentMediaTime()
+        if !noUpdate || tex == 0 { renderer.update(atTime: t) }
+        if noRender && tex > 0 { return }
+        let u1 = CACurrentMediaTime(); updMs += (u1 - u0) * 1000
+        defer { encMs += (CACurrentMediaTime() - u1) * 1000 }
+        inflight.wait()
+        let cb = queue.makeCommandBuffer()!
+        let rp = MTLRenderPassDescriptor()
+        rp.colorAttachments[0].texture = targets[tex % 3]; tex += 1
+        rp.colorAttachments[0].loadAction = .clear; rp.colorAttachments[0].storeAction = .store
+        rp.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        renderer.render(withViewport: CGRect(x: 0, y: 0, width: 3456, height: 2234), commandBuffer: cb, renderPassDescriptor: rp)
+        cb.addCompletedHandler { _ in inflight.signal() }
+        cb.commit()
+    }
+    // warm-up on a virtual clock (type: until the rows settle), then real time from where it left off
+    var pending = kind == "type" ? events : []
+    if kind == "walk" { behaviour.setAgents(rows(events[1])) }
+    if kind == "idle" { behaviour.setAgents([]) }
+    var V = 1000.0
+    draw(V)
+    let warm = kind == "type" ? 55.0 : 2.0
+    while V - 1000 < warm {
+        while let e = pending.first, Double(e["at"] as! Int) / 1000 <= V - 1000 { behaviour.setAgents(rows(e)); pending.removeFirst() }
+        sc.update(V); V += 1 / Double(max(1, sc.rate))
+    }
+    sc.stillSince = nil
+    // probes for finding the cost (wrong pixels): RB_NOSHADER strips the shaders, RB_HIDE=root|movers|sky hides a group
+    let env = ProcessInfo.processInfo.environment
+    func walkNodes(_ n: SKNode, _ f: (SKNode) -> Void) { f(n); for c in n.children { walkNodes(c, f) } }
+    if env["RB_NOSHADER"] != nil { walkNodes(sc) { ($0 as? SKSpriteNode)?.shader = nil } }
+    let hideKinds = Set((env["RB_HIDE"] ?? "").split(separator: ",").map(String.init))
+    for k in hideKinds where ["root", "movers", "sky"].contains(k) { (k == "root" ? sc.root : k == "movers" ? sc.movers : sc.skyGroup).isHidden = true }
+    // live: the painted signs, clocks and panes; color: untextured sprites (marks, batteries, ropes); battery: the movers' info rects
+    if hideKinds.contains("live") { for l in sc.liveItems { l.node?.alpha = 0; l.node?.removeFromParent() } }
+    if hideKinds.contains("color") { walkNodes(sc) { if let s = $0 as? SKSpriteNode, s.texture == nil { s.removeFromParent() } } }
+    if hideKinds.contains("battery") { for (_, r) in sc.infoRects { r.removeFromParent() } }
+    draw(V); spin(1.0)
+    func cpu() -> Double { var u = rusage(); getrusage(RUSAGE_SELF, &u); return Double(u.ru_utime.tv_sec + u.ru_stime.tv_sec) + Double(u.ru_utime.tv_usec + u.ru_stime.tv_usec) / 1e6 }
+    func work() -> (ins: Double, cyc: Double, p: Double) {
+        var ri = rusage_info_v6()
+        let ok = withUnsafeMutablePointer(to: &ri) { $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_V6, $0) } }
+        guard ok == 0 else { return (0, 0, 0) }
+        return (Double(ri.ri_instructions), Double(ri.ri_cycles), Double(ri.ri_user_ptime + ri.ri_system_ptime) / 1e9)
+    }
+    let t0 = CACurrentMediaTime(), c0 = cpu(), w0 = work(), base = V - t0
+    updMs = 0; encMs = 0
+    var frames = 0, mainMs = 0.0, napped = 0.0, lastFlip = -1, at60 = 0
+    var next = t0
+    while CACurrentMediaTime() - t0 < seconds {
+        let now = CACurrentMediaTime()
+        if now < next { RunLoop.current.run(until: Date(timeIntervalSinceNow: next - now)); continue }
+        if kind == "walk", Int((now - t0) / 6) != lastFlip { lastFlip = Int((now - t0) / 6); behaviour.setAgents(rows(events[lastFlip % 2 == 0 ? 2 : 0])) }
+        if kind == "crowd", Int((now - t0) / 6) != lastFlip { lastFlip = Int((now - t0) / 6); behaviour.setAgents(crowd(lastFlip + 1)) }
+        if let s = sc.stillSince, (base + now) - s >= 3 { napped += 0.5; next = now + 0.5; continue } // the app's view rests until the next minute
+        let a = CACurrentMediaTime()
+        draw(base + now)
+        mainMs += (CACurrentMediaTime() - a) * 1000
+        frames += 1
+        if sc.rate >= 60 { at60 += 1 }
+        next += 1 / Double(max(1, sc.rate))
+        if next < now { next = now + 1 / Double(max(1, sc.rate)) / 2 }
+    }
+    let wall = CACurrentMediaTime() - t0, used = cpu() - c0, w1 = work()
+    func count(_ n: SKNode) -> Int { n.children.reduce(1) { $0 + count($1) } }
+    func drawn(_ n: SKNode) -> Int { n.isHidden ? 0 : n.children.reduce(n is SKSpriteNode ? 1 : 0) { $0 + drawn($1) } }
+    func shaded(_ n: SKNode) -> Int { n.isHidden ? 0 : n.children.reduce((n as? SKSpriteNode)?.shader != nil ? 1 : 0) { $0 + shaded($1) } }
+    print(String(format: "render %@: CPU %.1f%% of a core, %.1f fps drawn (%d%% of frames at the 60 rate), %.2f ms main per frame (update %.2f + render %.2f), napped %.0f s; nodes %d, sprites drawn %d (shaded %d); %.1f M instructions/s, %.1f M cycles/s, %.0f%% of the CPU time on P cores",
+                 label as NSString, 100 * used / wall, Double(frames) / wall, frames > 0 ? 100 * at60 / frames : 0, frames > 0 ? mainMs / Double(frames) : 0, updMs / Double(max(1, frames)), encMs / Double(max(1, frames)), napped,
+                 count(sc), drawn(sc), shaded(sc), (w1.ins - w0.ins) / wall / 1e6, (w1.cyc - w0.cyc) / wall / 1e6, 100 * (w1.p - w0.p) / max(1e-9, used)))
+    if env["RB_GROUPS"] != nil {
+        func drawnIn(_ n: SKNode) -> Int { n.isHidden ? 0 : n.children.reduce(n is SKSpriteNode ? 1 : 0) { $0 + drawnIn($1) } }
+        for (name, g) in [("sky", sc.skyGroup), ("mist", sc.mistGroup), ("movers", sc.movers)] {
+            var kinds: [String: Int] = [:]
+            for c in g.children where !c.isHidden { kinds["\(type(of: c))/\(c.name ?? "-")/children \(c.children.count)", default: 0] += 1 }
+            print("  \(name): drawn \(drawnIn(g)); \(kinds.sorted { $0.value > $1.value }.prefix(10))")
+        }
+        var rootKinds: [String: Int] = [:]
+        for c in sc.root.children where !c.isHidden && c !== sc.skyGroup && c !== sc.mistGroup { rootKinds["\(type(of: c))/shader \((c as? SKSpriteNode)?.shader != nil)/tex \((c as? SKSpriteNode)?.texture != nil)", default: 0] += 1 }
+        print("  root: drawn \(drawnIn(sc.root) - drawnIn(sc.skyGroup) - drawnIn(sc.mistGroup)); \(rootKinds)")
+    }
+    if env["RB_SEGMENTS"] != nil {
+        // how far the static house could fold: runs of static sprites in z order, broken by any place a mover can stand and any node that changes
+        var dyn = Set<ObjectIdentifier>()
+        for (n, _) in sc.glows { dyn.insert(ObjectIdentifier(n)) }
+        for (_, v) in sc.dynNodes { dyn.insert(ObjectIdentifier(v.node)) }
+        for (_, n) in sc.lampNodes { dyn.insert(ObjectIdentifier(n)) }
+        for p in sc.cagePieces { dyn.insert(ObjectIdentifier(p.node)) }
+        for l in sc.liveItems { if let n = l.node { dyn.insert(ObjectIdentifier(n)) } }
+        for (_, i) in sc.linkInfo { for n in i.down + i.up { dyn.insert(ObjectIdentifier(n)) } }
+        var cuts: [CGFloat] = [sc.topZ]
+        for (_, i) in sc.roomInfo { cuts += i.slots.map { $0.z - 4 }; cuts.append(i.endZ) }
+        for (_, i) in sc.linkInfo { cuts += [i.backZ + 4, i.stepsZ + 4] }
+        for (_, f) in sc.riderZ { cuts += f.values }
+        var items: [(CGFloat, Bool)] = []
+        for c in sc.root.children where c !== sc.skyGroup && c !== sc.mistGroup && !c.isHidden {
+            items.append((c.zPosition, c is SKSpriteNode && !(c is HouseRects) && !dyn.contains(ObjectIdentifier(c)) && (c as! SKSpriteNode).shader != nil))
+        }
+        for z in cuts { items.append((z, false)) }
+        items.sort { $0.0 < $1.0 }
+        var runs = 0, inRun = false, st = 0, dy = 0
+        for (_, s) in items { if s { st += 1; if !inRun { runs += 1; inRun = true } } else { inRun = false } }
+        dy = sc.root.children.filter { !$0.isHidden && dyn.contains(ObjectIdentifier($0)) }.count
+        var zeroA = 0; walkNodes(sc) { if !$0.isHidden && $0.alpha == 0 && $0 is SKSpriteNode { zeroA += 1 } }
+        print("  glows \(sc.glows.count) (alpha 0: \(sc.glows.filter { $0.0.alpha == 0 }.count)); visible sprites with alpha 0: \(zeroA)")
+        print("  static sprites \(st) in \(runs) runs between \(cuts.count) mover places; changing nodes \(dy)")
+    }
+    if env["RB_BATCHES"] != nil {
+        // an estimate of SpriteKit's batches: the drawn sprites in z order, a new batch where the texture's backing, the shader or the blend changes
+        var page: [ObjectIdentifier: String] = [:]
+        for id in 0..<sc.parts.sprites.count { let r = sc.pages.rect(id); page[ObjectIdentifier(sc.pages.texture(id))] = sc.pages.sparsePages.contains(r.page) ? "cut\(id)" : "p\(r.page)" }
+        var list: [(CGFloat, String, String)] = []
+        func gather(_ n: SKNode, _ z: CGFloat) {
+            guard !n.isHidden, n.alpha > 0 else { return }
+            let zz = z + n.zPosition
+            if let s = n as? SKSpriteNode {
+                let t = s.texture.map { page[ObjectIdentifier($0)] ?? "own\(ObjectIdentifier($0).hashValue)" } ?? "color"
+                list.append((zz, t, (s.shader.map { "\(ObjectIdentifier($0).hashValue)" } ?? "-") + "/\(s.blendMode.rawValue)"))
+            }
+            for c in n.children { gather(c, zz) }
+        }
+        gather(sc, 0)
+        list.sort { $0.0 < $1.0 }
+        var batches = 0, prev = ""
+        var why: [String: Int] = [:]
+        for (_, t, sh) in list { let k = t + "|" + sh; if k != prev { batches += 1; why[t.hasPrefix("own") ? "own" : t.hasPrefix("cut") ? "cut" : t, default: 0] += 1 }; prev = k }
+        print("  batches ~\(batches) for \(list.count) sprites; batch starts by texture: \(why.sorted { $0.value > $1.value }.prefix(8))")
+    }
+    exit(0)
 
 case "interact":
     // interact <atlas> <ref dir> <fixtures dir> <out dir>: replays the page's pointer / pinch / scroll / click sequence (interact-ref.js) on the
