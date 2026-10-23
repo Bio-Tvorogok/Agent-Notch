@@ -217,10 +217,7 @@ final class RoomWallpaper: NSObject {
     /// Why parts.json cannot draw the user's house, nil when it can: it has the islands layout, the autumn season and clear weather
     /// (the app never sets another weather) of the page's atlas. Custom themes are only the five rooms the atlas has.
     static func spriteKitReason(_ prefs: RoomPrefs, date: Date = Date()) -> String? {
-        if prefs.layout != .islands { return "layout \(prefs.layout.rawValue)" }
-        let month = Calendar.current.component(.month, from: date) // the page's autumn: getMonth() 8...10
-        if !(9...11).contains(month) { return "month \(month) is not in the atlas's season" }
-        return nil
+        HouseSpriteKitRules.reason(layout: prefs.layout.rawValue, month: Calendar.current.component(.month, from: date))
     }
 
     /// The numbers the SpriteKit layout is built from: screen size, scale, and the menu bar, Dock and icon-column insets.

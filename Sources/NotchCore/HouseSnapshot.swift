@@ -16,8 +16,12 @@ public struct HouseSnapshot: Equatable {
     public var config: String
     public var fps: Int
     public var written: Date
+    /// "spritekit" when the app draws the house with SpriteKit and the saver should too (nil: the page). The app decides, so the
+    /// saver follows the same setting, season and layout rules.
+    public var renderer: String?
 
-    public init(agents: String, usage: String?, config: String, fps: Int, written: Date) {
+    public init(agents: String, usage: String?, config: String, fps: Int, written: Date, renderer: String? = nil) {
+        self.renderer = renderer
         self.agents = agents
         self.usage = usage
         self.config = config
@@ -30,11 +34,12 @@ public struct HouseSnapshot: Equatable {
 
     /// Snapshots that differ only in when they were written show the same house.
     public func sameHouse(as other: HouseSnapshot) -> Bool {
-        agents == other.agents && usage == other.usage && config == other.config && fps == other.fps
+        agents == other.agents && usage == other.usage && config == other.config && fps == other.fps && renderer == other.renderer
     }
 
     public func encoded() -> Data? {
         var body: [String: Any] = ["written": written.timeIntervalSince1970, "fps": fps]
+        if let renderer { body["renderer"] = renderer }
         for (key, json) in [("agents", agents), ("usage", usage), ("config", config)] {
             guard let json, let value = try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]) else { continue }
             body[key] = value
@@ -55,7 +60,7 @@ public struct HouseSnapshot: Equatable {
         }
         return HouseSnapshot(agents: json(agents) ?? "[]", usage: json(body["usage"]), config: json(body["config"]) ?? "{}",
                              fps: (body["fps"] as? Int).map { min(max($0, 10), 60) } ?? 30,
-                             written: Date(timeIntervalSince1970: written))
+                             written: Date(timeIntervalSince1970: written), renderer: body["renderer"] as? String)
     }
 
     /// The snapshot file under a home folder.

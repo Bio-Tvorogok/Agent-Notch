@@ -534,6 +534,37 @@ case "addproject":
     if med(advances) + med(applies) > 8 { print("ADDPROJECT: over the 8 ms gate"); exit(3) }
     exit(0)
 
+case "saver":
+    // saver <atlas> <out.png>: the screen saver's SpriteKit house (SaverSpriteHouse) from a snapshot, as the saver builds it. Gates: it is built for the
+    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), and refuses what the atlas cannot draw (spring, another layout).
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), out = args[3]
+    let agentsJSON = { (n: Int) in String(data: try! JSONEncoder().encode((0..<n).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") }), encoding: .utf8)! }
+    func snap(_ n: Int, config: String = #"{"layout":"islands","themes":{}}"#) -> HouseSnapshot { HouseSnapshot(agents: agentsJSON(n), usage: nil, config: config, fps: 30, written: Date(), renderer: "spritekit") }
+    var bad = 0
+    func check(_ ok: Bool, _ what: String) { print(ok ? "ok   \(what)" : "FAIL \(what)"); if !ok { bad += 1 } }
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) == nil, "spring: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), month: 10, onFailure: {}) == nil, "another layout: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), month: 10, onFailure: {}) == nil, "no atlas: no SpriteKit house")
+    var failed = false
+    guard let house = SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 10, onFailure: { failed = true }) else { print("FAIL cannot build"); exit(3) }
+    house.scene.setTime(hour: 12, day: 294)
+    spin(1.5)
+    let projects = { house.scene.layout.rooms.filter { !$0.key.hasPrefix("__") }.count }
+    check(projects() == 2, "built for the snapshot's 2 projects (got \(projects()))")
+    house.apply(snap(4))
+    house.scene.advanceBehaviour(ms: 16)
+    spin(1.5)
+    check(projects() == 4, "a later snapshot with 4 projects grows the house (got \(projects()))")
+    check(!failed, "no failure callback")
+    let img = house.view.texture(from: house.scene)!.cgImage()
+    let px = pixels(img)
+    var distinct = Set<UInt32>()
+    for i in stride(from: 0, to: px.data.count - 3, by: 4 * 37) { distinct.insert(UInt32(px.data[i]) << 16 | UInt32(px.data[i + 1]) << 8 | UInt32(px.data[i + 2])) }
+    check(distinct.count > 40, "the frame shows a house (\(distinct.count) distinct colours sampled)")
+    if let d = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, "public.png" as CFString, 1, nil) { CGImageDestinationAddImage(d, img, nil); CGImageDestinationFinalize(d) }
+    print(bad == 0 ? "SAVER PROOF: ok" : "SAVER PROOF: \(bad) failed")
+    exit(bad == 0 ? 0 : 3)
+
 case "snapdemo":
     // snapdemo <atlas> <projects> <hour> <seconds> <out.png>
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, hour = Double(args[4]) ?? 12, secs = Double(args[5]) ?? 20
