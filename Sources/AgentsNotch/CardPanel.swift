@@ -15,12 +15,21 @@ final class CardPanel {
     private var leftAt: Date?
     private let onLeave: () -> Void
     private weak var store: Store?
+    /// The list's card follows the store's selection; the desktop widget brings its own.
+    private let current: () -> Agent.ID?
+    private let clear: () -> Void
+    /// The list may slide over to make room; the widget stays where it was put and the card takes the free side.
+    private let movesList: Bool
 
-    init(store: Store, list: NSPanel, settings: AppSettings? = nil, onLeave: @escaping () -> Void) {
+    init(store: Store, list: NSPanel, settings: AppSettings? = nil, selection: AnyPublisher<Agent.ID?, Never>? = nil,
+         current: (() -> Agent.ID?)? = nil, clear: (() -> Void)? = nil, onLeave: @escaping () -> Void) {
         let settings = settings ?? .shared
         self.list = list
         self.store = store
         self.onLeave = onLeave
+        self.current = current ?? { [weak store] in store?.selected }
+        self.clear = clear ?? { [weak store] in if let store, store.selected != nil { store.selected = nil } }
+        movesList = selection == nil
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
@@ -30,7 +39,7 @@ final class CardPanel {
         panel.hidesOnDeactivate = false
         model.readsUsage = { settings.cardBlockShown(.contextCost) }
         panel.contentView = NSHostingView(rootView: LiveCardView(model: model, settings: settings) { [weak store] in store?.open($0) })
-        selection = store.$selected.receive(on: RunLoop.main).sink { [weak self] id in
+        self.selection = (selection ?? store.$selected.eraseToAnyPublisher()).receive(on: RunLoop.main).sink { [weak self] id in
             self?.apply(id, retry: true)
         }
         updates = store.objectWillChange.receive(on: RunLoop.main).sink { [weak self, weak store] _ in
@@ -44,7 +53,7 @@ final class CardPanel {
         guard let store, let list else { close(); return }
         guard let id, let agent = store.shown.first(where: { $0.id == id }) else { close(); return }
         guard list.isVisible else {
-            if retry { DispatchQueue.main.async { [weak self] in self?.apply(store.selected, retry: false) } } else { close() }
+            if retry { DispatchQueue.main.async { [weak self] in self?.apply(self?.current(), retry: false) } } else { close() }
             return
         }
         let changed = !panel.isVisible || model.agent?.id != agent.id
@@ -61,6 +70,14 @@ final class CardPanel {
         let gap: CGFloat = 6
         let screen = list.screen ?? NSScreen.main
         var listFrame = list.frame
+        if !movesList, let visible = screen?.visibleFrame {
+            let height = min(480, max(1, listFrame.maxY - visible.minY - 8))
+            let right = listFrame.maxX + gap
+            let x = right + width <= visible.maxX - 8 ? right : max(visible.minX + 8, listFrame.minX - gap - width)
+            let y = max(visible.minY + 8, min(listFrame.maxY - height, visible.maxY - height))
+            panel.setFrame(NSRect(x: x, y: y, width: width, height: height), display: true)
+            return
+        }
         if let visible = screen?.visibleFrame {
             let maxListX = visible.maxX - 8 - listFrame.width - gap - width
             listFrame.origin.x = max(visible.minX + 8, min(listFrame.minX, maxListX))
@@ -79,7 +96,7 @@ final class CardPanel {
         leftAt = nil
         model.close()
         // A card that is gone must not stay selected, or the next open would show it again.
-        if let store, store.selected != nil { store.selected = nil }
+        clear()
     }
 
     private func watchMouse() {

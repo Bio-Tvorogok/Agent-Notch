@@ -292,6 +292,47 @@ enum Snapshot {
         return ok
     }
 
+    /// `--snapshot-widget <dir>`: the desktop widget in every style (requests, projects, empty), and the three sizes.
+    static func runWidget(into dir: String) -> Bool {
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        defer { scratch.remove() }
+        let settings = AppSettings(defaults: scratch.defaults)
+        settings.widget.enabled = true
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let ask = Store(settings: settings), list = Store(settings: settings), empty = Store(settings: settings)
+        ask.useFixture(Fixtures.agents("ask") ?? [], asks: Fixtures.asks("ask"))
+        // Fixture start times are tiny numbers; give them real ones so the clocks tick.
+        let started = Date().timeIntervalSince1970
+        list.useFixture((Fixtures.agents("projects") ?? []).map { var a = $0; a.startedAt = started - 60 * (a.startedAt + 3) - 17; return a }, asks: [])
+        empty.useFixture([], asks: [])
+        let now = Date()
+        let limits = [VendorLimits(vendor: .claude, windows: [NotchCore.LimitWindow(label: Loc.t("5 h", "5 ч"), usedPercent: 42, resetsAt: now.addingTimeInterval(7_800)),
+                                                            NotchCore.LimitWindow(label: Loc.t("week", "неделя"), usedPercent: 61, resetsAt: now.addingTimeInterval(300_000))], updatedAt: now),
+                      VendorLimits(vendor: .codex, windows: [NotchCore.LimitWindow(label: Loc.t("5 h", "5 ч"), usedPercent: 88, resetsAt: now.addingTimeInterval(9_000))], updatedAt: now)]
+        for store in [ask, list, empty] { store.usage.useFixture(limits: limits, spend: [], contexts: [:], costs: [:], now: now) }
+        func widget(_ store: Store) -> some View {
+            DesktopWidgetView(store: store, model: WidgetModel()).environmentObject(store.usage)
+        }
+        var ok = true
+        for id in ThemeID.allCases {
+            settings.widget.style = id
+            settings.widget.size = .medium
+            let scene = HStack(alignment: .top, spacing: 24) { widget(ask); widget(list); widget(empty) }
+                .padding(28).background(ThemeWallpaper())
+                .environmentObject(settings).environment(\.themeSnapshot, true)
+            ok = host(scene, to: url.appendingPathComponent("widget-\(id.rawValue).png")) && ok
+        }
+        settings.widget.style = nil
+        for size in WidgetSize.allCases {
+            settings.widget.size = size
+            let scene = widget(list).padding(28).background(ThemeWallpaper())
+                .environmentObject(settings).environment(\.themeSnapshot, true)
+            ok = host(scene, to: url.appendingPathComponent("widget-size-\(size.rawValue).png")) && ok
+        }
+        return ok
+    }
+
     static func runCard(to file: String, tab: CardTab = .done, log: String? = nil) -> Bool {
         guard let scratch = ScratchDefaults("snapshot") else { return false }
         let defaults = scratch.defaults

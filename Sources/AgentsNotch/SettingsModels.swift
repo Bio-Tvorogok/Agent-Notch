@@ -90,3 +90,23 @@ struct PromptPrefs: Codable, Equatable {
 struct GeneralPrefs: Codable, Equatable {
     var openAtLogin = false
 }
+
+enum WidgetSize: String, Codable, CaseIterable {
+    case small, medium, large
+}
+
+/// The desktop widget: off until switched on in «Внешний вид».
+struct WidgetPrefs: Codable, Equatable {
+    var enabled = false
+    var size: WidgetSize = .medium
+    /// nil follows the app's theme; a theme here dresses only the widget.
+    var style: ThemeID?
+}
+
+/// Where the widget was left: the display and the top-left corner, relative to that display's visible frame.
+/// Kept apart from «widget» so dragging it makes no settings sound.
+struct WidgetPlace: Codable, Equatable {
+    var display: UInt32
+    var x: Double
+    var y: Double
+}

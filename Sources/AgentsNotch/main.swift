@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var watcher: MenuWatcher?
     var keys: HotKeys?
     var picker: PromptPicker?
+    var widget: DesktopWidget?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = CommandLine.arguments
@@ -25,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let i = args.firstIndex(of: "--snapshot-themes"), i + 1 < args.count {
             exit(Snapshot.runThemes(into: args[i + 1]) ? 0 : 1)
+        }
+        if let i = args.firstIndex(of: "--snapshot-widget"), i + 1 < args.count {
+            exit(Snapshot.runWidget(into: args[i + 1]) ? 0 : 1)
         }
         if let i = args.firstIndex(of: "--snapshot-card"), i + 1 < args.count {
             let tab = args.firstIndex(of: "--card-tab").flatMap { $0 + 1 < args.count ? CardTab(rawValue: args[$0 + 1]) : nil }
@@ -69,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeepAwakeModel.shared.startMonitoring()
         let notch = NotchController(store: store)
         self.notch = notch
+        widget = DesktopWidget(store: store)
         store.onNewAsk = { [weak notch] in
             if AppSettings.shared.behavior.openOnRequest { notch?.showList() }
         }
