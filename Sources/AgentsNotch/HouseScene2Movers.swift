@@ -37,27 +37,25 @@ extension HouseScene2 {
         return gl.cat == "work" && gl.i == 1 && layout.rooms.first { $0.key == room }?.theme == "library"
     }
 
-    func poseName(_ sp: HouseSprite, look: HouseLook, face: Int, t: Double) -> String {
+    func poseName(_ sp: HouseSprite, look: HouseLook, face: Int, t: Double, frame: HouseBehaviourFrame? = nil, simT: Double = 0) -> String {
         let tick = { (ms: Double) in Int(floor(t / ms)) % 2 }
         let st = sp.state ?? ""
         switch sp.kind {
-        case "cat":
-            let f = face >= 0 ? "r" : "l"
-            return sp.moving ? "cat/walk\(tick(120) + 1).\(f)" : "cat/sit2.\(f)"
-        case "dog":
-            let f = face >= 0 ? "r" : "l"
-            return sp.moving ? "dog/walk\(tick(120) + 1).\(f)" : "dog/sit2.\(f)"
+        case "cat", "dog":
+            return petPoseName(sp, face: face, t: t, frame: frame)
         case "home":
             if st == "idle-sleep" { return "home/sleep.\(idx(4, 1400, t))" }
             return sp.moving ? "home/walk.\(tick(110))" : "home/stand.0"
         default:
             let p = look.vendor + (sp.small ? "-mini" : "")
-            if st == "fall" { return p + "/fall.0" }
-            if st == "shower" { return p + "/shower.\(idx(6, 9000, t))" }
-            if st == "dry" { return p + "/dry.\(idx(6, 1382, t))" }
+            if st == "fall" { return sp.moving ? p + "/fallmv.\(tick(110))" : p + "/fall.0" }
+            if st == "shower" { return p + "/shower.0" }
+            if st == "dry" { return p + "/dry.0" }
             if sp.waving == true { return p + "/wave.\(tick(300))" }
+            if let ta = frame?.tossAt, simT - ta < 450, !sp.moving { return p + "/toss.0" }
+            if sp.moving && st == "waiting" { return p + "/waitwalk.\((sin(t / 260) > 0 ? 0 : 2) + tick(110))" } // walking with the waiting arms
             if sp.moving { return p + "/walk.\(tick(110))" }
-            if st == "waiting" { return p + "/waiting.\(idx(6, 1634, t))" }
+            if st == "waiting" { return p + "/waiting.\(Self.waitStep(t))" }
             if st == "error" { return p + "/error.\(idx(4, 1885, t))" }
             if st == "done" || st == "idle-sleep" { return p + "/sleep.\(idx(4, 1400, t))" }
             // the page's drawProps: a working Clawd that stands still and has nowhere to walk holds the laptop it sits at, or what its tool suggests
@@ -133,6 +131,8 @@ extension HouseScene2 {
             for n in info.up { n.isHidden = !up }
         }
         let vi = min(light.variant, parts.poses.variants.count - 1)
+        let frames = behaviour.map { b in Dictionary(b.renderFrames().map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }) } ?? [:]
+        let simT = behaviour?.time ?? clockMillis
         var seen = Set<String>()
         for sp in sim.sprites {
             seen.insert(sp.id)
@@ -149,32 +149,44 @@ extension HouseScene2 {
             if let last { let d = sx - (last.0 - last.1); face = abs(d) > 1e-6 ? (d > 0 ? 1 : -1) : faceMemory[sp.id] ?? 1 }
             faceMemory[sp.id] = face
             lastPos[sp.id] = (sp.x, sp.y)
-            let name = poseName(sp, look: look(sp), face: face, t: (sp.context ?? 0) >= 0.9 ? clockMillis * 0.5 : clockMillis)
-            guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][look(sp).vendor + "/stand.0"] else { continue }
-            let sig = pose.layers.map { String($0.sprite) }.joined(separator: ",")
+            let fr = frames[sp.id], lk = look(sp)
+            if (sp.kind == "cat" || sp.kind == "dog"), let fr { face = fr.facing }
+            let t = (sp.context ?? 0) >= 0.9 ? clockMillis * 0.5 : clockMillis
+            let name = poseName(sp, look: lk, face: face, t: t, frame: fr, simT: simT)
+            guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][lk.vendor + "/stand.0"] else { continue }
+            let extra = overlayLayers(sp, look: lk, frame: fr, t: t, simT: simT, vi: vi)
+            let all = pose.layers.map { ($0, false) } + extra.layers
+            let sig = all.map { String($0.0.sprite) + ($0.1 ? "g" : "") }.joined(separator: ",")
             let n = moverNodes[sp.id] ?? {
                 let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); movers.addChild(m); moverNodes[sp.id] = m; return m
             }()
+            let ax0 = pose.layers[0].ax, ay0 = pose.layers[0].ay
             if n.userData?["sig"] as? String != sig {
-                n.removeAllChildren()
-                for (k, ly) in pose.layers.enumerated() {
+                n.children.filter { $0.name == "ly" || $0.name == "glow" }.forEach { $0.removeFromParent() }
+                for (k, (ly, glow)) in all.enumerated() {
                     let r = pages.rect(ly.sprite)
                     let c = SKSpriteNode(texture: pages.texture(ly.sprite), size: CGSize(width: r.w, height: r.h))
                     c.anchorPoint = CGPoint(x: 0, y: 1)
-                    c.position = CGPoint(x: Double(pose.layers[0].ax - ly.ax), y: -Double(pose.layers[0].ay - ly.ay))
-                    c.zPosition = CGFloat(k) * 0.01
+                    c.position = CGPoint(x: Double(ax0 - ly.ax), y: -Double(ay0 - ly.ay))
+                    c.zPosition = (k < pose.layers.count ? 0 : 0.003) + CGFloat(k) * 0.0001
                     c.shader = shaders.shader(page: r.page, flag: r.flag)
+                    c.name = glow ? "glow" : "ly"
                     if ly.blend == "add" { c.blendMode = .add }
                     n.addChild(c)
                 }
                 n.userData = ["sig": sig]
             }
+            if let g = extra.glow { for c in n.children where c.name == "glow" { c.alpha = CGFloat(g) } }
             n.isHidden = false
             n.alpha = CGFloat(sp.alpha)
-            n.position = CGPoint(x: Double(HouseLight.round(at.x) - pose.layers[0].ax), y: -Double(HouseLight.round(at.y) - pose.layers[0].ay))
+            n.position = CGPoint(x: Double(HouseLight.round(at.x) - ax0), y: -Double(HouseLight.round(at.y) - ay0))
             n.zPosition = at.z
+            let nap = (sp.kind == "cat" || sp.kind == "dog") && name.contains("/nap.")
+            updateMarks(sp, node: n, ax0: ax0, ay0: ay0, look: lk, t: t, napFace: nap ? face : nil, feetX: at.x)
+            if sp.kind != "cat", sp.kind != "dog", let g = parts.poses.looks?[lookKey(sp, lk)] { hitBoxes[sp.id] = hitBox(sp, geo: g, t: t) } else { hitBoxes[sp.id] = nil }
         }
-        for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil }
+        for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil; infoRects[id] = nil; markRects[id] = nil; hitBoxes[id] = nil }
+        updateEffects(sim: sim, simT: simT, t: clockMillis)
         for (id, n) in canopyNodes where !seen.contains(id) { n.removeFromParent(); canopyNodes[id] = nil }
     }
 
@@ -182,10 +194,16 @@ extension HouseScene2 {
     var isMoving: Bool {
         guard let sim else { return false }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
-        if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
-        return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade || $0.behaviour.handover != nil }
+        if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
+        return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil }
     }
 
+    /// The waiting hop and arm: round(|sin(t/260)|*3) x (sin > 0), 7 steps in each half of the 1634 ms cycle.
+    static func waitStep(_ t: Double) -> Int {
+        let ph = (t / 260).truncatingRemainder(dividingBy: 2 * .pi), h = ph >= .pi ? 1 : 0, r = ph - Double(h) * .pi
+        let b = [0.0, 0.1674, 0.5236, 0.9851, 2.1565, 2.618, 2.9742]
+        return h * 7 + (b.lastIndex { $0 <= r } ?? 0)
+    }
     var isTyping: Bool { sim?.sprites.contains { $0.seated == true || $0.state == "working" || $0.state == "waiting" || $0.state == "error" } ?? false }
 
     override func update(_ currentTime: TimeInterval) {

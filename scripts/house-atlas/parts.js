@@ -346,35 +346,50 @@
   const poseProofJobs = [];
   if (want('poses')) {
     const fr = {}; // a stand-in room
+    demo = false; // no hash-driven context batteries and drowsiness on the cut Clawds
     const base = (vendor, small, o) => ({ kind: 'agent', vendor, small, state: 'working', path: [], alpha: 1, moving: false, seated: false, waving: false, toss: 0, onBridge: null,
       seed: .3, goal: null, hold: null, fire: null, room: null, agent: { id: 'x', activity: 'Bash · ls' }, ...o });
-    const cut = draw => {
+    // The page draws a Clawd in phases: the shadow (pre), the body, the context battery and eyelids (info), the status marks (mark: the "!"
+    // bubble, the error smoke, the Zs), drawBathing (bath: foam, towel; drawn by the scene as well) and drawProps (props: held things, the laptop, the fire).
+    // The renderer draws the info and the marks itself (they follow the sprite while it walks), so bodies are cut WITHOUT them; "props" mode
+    // cuts only what drawProps draws, for the overlays that ride on a plain body pose.
+    const PH = { phase: 'pre' };
+    const cut = (draw, mode = 'body') => {
       const layers = [];
+      const dropped = mode === 'props' ? new Set(['pre', 'body', 'info', 'mark', 'bath']) : new Set(['info', 'mark', 'bath']);
       const flush = blend => { const c = cropRaw(100, 120, 400, 460); reset(raw); dirty = false;
         if (c) layers.push({ sprite: ph(c.img), ax: 300 - c.x, ay: 400 - c.y, blend }); };
       reset(raw); dirty = false;
-      glow = (...args) => { flush('normal'); withG(cx, () => real.glow(...args)); flush('add'); };
-      try { withG(cx, draw); flush('normal'); } finally { glow = real.glow; }
+      const saved = { drawBody, infoOverClawd, drawBathing }, fr = raw.fillRect;
+      PH.phase = 'pre';
+      raw.fillRect = function (...a) { if (!dropped.has(PH.phase)) fr.apply(this, a); };
+      drawBody = (...a) => { PH.phase = 'body'; try { return mode === 'props' ? undefined : saved.drawBody(...a); } finally { PH.phase = 'info'; } };
+      infoOverClawd = (...a) => { PH.phase = 'info'; try { return saved.infoOverClawd(...a); } finally { PH.phase = 'mark'; } };
+      drawBathing = (...a) => { PH.phase = 'bath'; try { return saved.drawBathing(...a); } finally { PH.phase = 'props'; } };
+      glow = (x, y, rad, color, k) => { if (dropped.has(PH.phase)) return; flush('normal'); withG(cx, () => real.glow(x, y, rad, color, mode === 'props' ? .3 : k)); flush('add'); };
+      try { withG(cx, draw); flush('normal'); } finally { Object.assign(window, saved); delete raw.fillRect; glow = real.glow; }
       return layers.length ? { layers } : null;
     };
     const list = []; // [name, makeSprite, t]
     const add = (name, mk, ts) => (Array.isArray(ts) ? ts : [ts]).forEach((t, i) => list.push([ts.length > 1 || Array.isArray(ts) ? `${name}.${i}` : name, mk, t]));
     const frames_ = (n, period) => Array.from({ length: n }, (_, i) => Math.round(i * period / n));
+    // waiting: the hop (round(|sin(t/260)|*3)) x the arm (sin > 0) make 14 steps of the 1634 ms cycle
+    const waitB = [0, 0.1674, 0.5236, 0.9851, 2.1565, 2.618, 2.9742, Math.PI], waitCuts = [];
+    for (let h = 0; h < 2; h++) for (let k = 0; k < 7; k++) waitCuts.push(Math.round((Math.PI * h + (waitB[k] + waitB[k + 1]) / 2) * 260));
     const looks = [['claude', false], ['claude', true], ['codex', false], ['codex', true]];
     const catalog = { // per look
       stand: [{}, [0]], walk: [{ moving: true }, [0, 110]], work: [{ seated: true }, [0, 160]],
       laptop: [{ goal: { cat: 'seat', room: fr }, room: fr }, [0, 700, 1400]],
       flask: [{ agent: { id: 'x', activity: 'Bash · pnpm test' } }, frames_(4, 800)], hammer: [{ agent: { id: 'x', activity: 'Edit · f.swift' } }, [0, 190]],
-      binoculars: [{ agent: { id: 'x', activity: 'WebSearch · q' } }, [0, 1700 * .15 - 1 + 1700 * 0]], book: [{ agent: { id: 'x', activity: 'Read · f' } }, [0, 2600 * .06]],
-      waiting: [{ state: 'waiting' }, frames_(6, 1634)], error: [{ state: 'error' }, frames_(4, 1885)], sleep: [{ state: 'done' }, frames_(4, 1400)],
-      shower: [{ state: 'shower' }, frames_(6, 9000)], dry: [{ state: 'dry' }, frames_(6, 1382)], towel: [{ towel: 1e12 }, [0]], fall: [{ state: 'fall' }, [0]],
-      wave: [{ waving: true }, [0, 300]], toss: [{ toss: 100 }, [1000]],
+      binoculars: [{ agent: { id: 'x', activity: 'WebSearch · q' } }, [850, 0]], book: [{ agent: { id: 'x', activity: 'Read · f' } }, [0, 1976]],
+      waiting: [{ state: 'waiting' }, waitCuts], waitwalk: [{ state: 'waiting', moving: true }, [10, 120, 880, 990]], // arm up/down (sin(t/260) > 0) x the walk's two hops
+      error: [{ state: 'error' }, frames_(4, 1885)], sleep: [{ state: 'done' }, frames_(4, 1400)],
+      shower: [{ state: 'shower' }, [0]], dry: [{ state: 'dry' }, [0]], fall: [{ state: 'fall' }, [0]], fallmv: [{ state: 'fall', moving: true }, [0, 110]],
+      wave: [{ waving: true }, [0, 300]], toss: [{ toss: 800 }, [1000]],
       ext: [{ hold: { kind: 'ext', dir: 1 } }, [0]], extL: [{ hold: { kind: 'ext', dir: -1 } }, [0]], mail: [{ hold: { kind: 'mail', stage: 'go' } }, [0]], handover: [{ hold: { kind: 'handover', stage: 'walk' } }, [0]],
       fire: [{ fire: {} }, [0, 130]], fireFoam: [{ fire: { foamed: 900 } }, [1000]],
     };
-    const homeCatalog = { stand: [{ state: 'idle' }, [0]], walk: [{ state: 'idle', moving: true }, [0, 110]], sleep: [{ state: 'idle-sleep' }, frames_(4, 1400)],
-      coffee: [{ state: 'idle', scene: 'coffee', goal: { cat: 'coffee', room: fr }, room: fr }, frames_(4, 1100)], water: [{ state: 'idle', scene: 'water', goal: { cat: 'wash', room: fr }, room: fr }, [0]],
-      pour: [{ state: 'idle', scene: 'water', goal: { cat: 'water', room: fr }, room: fr }, frames_(3, 600)], read: [{ state: 'idle', scene: 'read', goal: { cat: 'read', room: fr }, room: fr }, [0, 2600 * .06]] };
+    const homeCatalog = { stand: [{ state: 'idle' }, [0]], walk: [{ state: 'idle', moving: true }, [0, 110]], sleep: [{ state: 'idle-sleep' }, frames_(4, 1400)] };
     const jobs = []; // [name, () => sprite, t]
     for (const [v, small] of looks) for (const [k, [o, ts]] of Object.entries(catalog)) ts.forEach((t, i) => jobs.push([`${v}${small ? '-mini' : ''}/${k}.${i}`, () => base(v, small, o), t]));
     for (const [k, [o, ts]] of Object.entries(homeCatalog)) ts.forEach((t, i) => jobs.push([`home/${k}.${i}`, () => base('home', true, { kind: 'home', ...o }), t]));
@@ -384,21 +399,50 @@
       const f = face > 0 ? 'r' : 'l';
       jobs.push([`cat/walk1.${f}`, () => pet('cat', face, { moving: true }), 0], [`cat/walk2.${f}`, () => pet('cat', face, { moving: true }), 120],
         [`cat/sit2.${f}`, () => pet('cat', face, { pose: 'sit' }), 0], [`cat/sit1.${f}`, () => pet('cat', face, { pose: 'sit' }), 700]);
-      frames_(4, 1800).forEach((t, i) => jobs.push([`cat/nap.${f}.${i}`, () => pet('cat', face, { pose: 'nap' }), t]));
+      jobs.push([`cat/nap.${f}`, () => pet('cat', face, { pose: 'nap' }), 1799.9]); // the Zs are drawn by the scene: cut at k = .9999 (alpha 0)
       jobs.push([`dog/walk1.${f}`, () => pet('dog', face, { moving: true }), 0], [`dog/walk2.${f}`, () => pet('dog', face, { moving: true }), 120],
         [`dog/walk1ball.${f}`, () => pet('dog', face, { moving: true, ball: true }), 0], [`dog/walk2ball.${f}`, () => pet('dog', face, { moving: true, ball: true }), 120],
-        [`dog/sit2.${f}`, () => pet('dog', face, { pose: 'sit' }), 0], [`dog/sit1.${f}`, () => pet('dog', face, { pose: 'sit' }), 900]);
+        [`dog/sit2.${f}`, () => pet('dog', face, { pose: 'sit' }), 0], [`dog/sit1.${f}`, () => pet('dog', face, { pose: 'sit' }), 900],
+        [`dog/sit2ball.${f}`, () => pet('dog', face, { pose: 'sit', ball: true }), 0], [`dog/sit1ball.${f}`, () => pet('dog', face, { pose: 'sit', ball: true }), 900]);
       [0, 260, 520, 780].forEach((t, i) => jobs.push([`dog/bark.${f}.${i}`, () => pet('dog', face, { pose: 'bark' }), t]));
-      frames_(4, 1900).forEach((t, i) => jobs.push([`dog/nap.${f}.${i}`, () => pet('dog', face, { pose: 'nap' }), t]));
+      jobs.push([`dog/nap.${f}`, () => pet('dog', face, { pose: 'nap' }), 1899.9]);
     }
+    // ---- overlays: what drawProps draws on top of a plain body pose (cut with mode 'props', the body left out) ----
+    // Held things (the page's drawProps chain: letter, paper, extinguisher) ride on stand/walk bodies: s = standing, w0/w1 = the two hops of a walk
+    // (the body bobs by one cell every 110 ms). The fire's glow is cut at its brightest (.30); the renderer scales the layer's alpha by
+    // (.22 + .08 sin(t/90)) / .30. A fire is two frames, floor(t/130 + seed*5) % 2 (the cut seed is .3: t = 0 is frame 1, t = 130 frame 0).
+    const hops = [['s', {}, 0], ['w0', { moving: true }, 0], ['w1', { moving: true }, 110]];
+    for (const [v, small] of looks) {
+      const L = `${v}${small ? '-mini' : ''}`;
+      for (const [k, hold] of Object.entries({ ext: { kind: 'ext', dir: 1 }, extL: { kind: 'ext', dir: -1 }, mail: { kind: 'mail', stage: 'go' }, handover: { kind: 'handover', stage: 'walk' } }))
+        for (const [tag, extra, t] of hops) jobs.push([`${L}/o.${k}.${tag}`, () => base(v, small, { hold, ...extra }), t, 'props']);
+      for (const [fk, fire] of [['fire', {}], ['fireS', { foamed: -100 }]])
+        for (const [idx, t] of [[1, 0], [0, 130]]) jobs.push([`${L}/o.${fk}.${idx}`, () => base(v, small, { state: 'error', fire }), t, 'props']);
+    }
+    for (const [k, hold] of Object.entries({ ext: { kind: 'ext', dir: 1 }, extL: { kind: 'ext', dir: -1 } }))
+      for (const [tag, extra, t] of hops) jobs.push([`home/o.${k}.${tag}`, () => base('home', true, { kind: 'home', state: 'idle', hold, ...extra }), t, 'props']);
+    { const hm = o => () => base('home', true, { kind: 'home', state: 'idle', room: fr, ...o });
+      frames_(4, 1100).forEach((t, i) => jobs.push([`home/o.mug.s${i}`, hm({ scene: 'coffee', goal: { cat: 'coffee', room: fr } }), t, 'props']));
+      [0, 110].forEach((t, i) => jobs.push([`home/o.mug.w${i}`, hm({ scene: 'coffee', moving: true }), t, 'props']));
+      jobs.push(['home/o.can.s', hm({ scene: 'water', goal: { cat: 'wash', room: fr } }), 0, 'props']);
+      frames_(3, 600).forEach((t, i) => jobs.push([`home/o.can.p${i}`, hm({ scene: 'water', goal: { cat: 'water', room: fr } }), t, 'props']));
+      [0, 110].forEach((t, i) => jobs.push([`home/o.can.w${i}`, hm({ scene: 'water', moving: true, goal: { cat: 'wash', room: fr } }), t, 'props']));
+      [0, 1976].forEach((t, i) => jobs.push([`home/o.book.${i}`, hm({ scene: 'read', goal: { cat: 'read', room: fr } }), t, 'props'])); }
     for (const name of ['claude/stand.0', 'claude/walk.1', 'claude/work.1', 'claude/fire.1']) poseProofJobs.push(jobs.find(j => j[0] === name));
     poses.names = jobs.map(j => j[0]);
     poses.composition = 'Draw layers in order at (X-ax,Y-ay); blend normal = source-over, add = additive (SpriteKit .add). Fire glow is a separate add layer between the body and flames.';
     poses.variants = VARS.map(v => dual(v.d, () => { const out = {};
-      for (const [name, mk, t] of jobs) { const sp = mk(); const c = cut(() => drawClawd(300, 400, sp, t)); if (c) out[name] = c; }
+      for (const [name, mk, t, mode] of jobs) { const sp = mk(); const c = cut(() => drawClawd(300, 400, sp, t), mode); if (c) out[name] = c; }
       return out; }));
     poses.timing = { walk: 'frame = floor(t/110) % 2 (legs and hop)', work: 'frame = floor(t/160) % 2', waiting: 'sample i of 6 over 1634 ms: sin(t/260)', error: '4 over 1885 ms', sleep: '4 over 1400 ms (the Zs rise k=(t/1400+seed)%1)',
       shower: '6 over 9000 ms (k=(t/9000+seed)%1)', dry: '6 over 1382 ms', hammer: 'down = floor(t/190 + seed*3) % 2', cat: 'walk floor(t/120)%2; sit2 when floor(t/700+seed*7)%6==0; nap Zs (t/1800+seed)%1', dog: 'walk floor(t/120)%2 (90 when fast); sit2 when floor(t/900+seed*7)%6==0 (wag: floor(t/140)%2==0); bark: sit1/bark floor(t/260)%2 and the text on when floor(t/520)%2==0' };
+    // the geometry the renderer needs to put marks over a Clawd (drawClawd: left = round(X - w*S/2), top = round(Y - (rows + legH)*S - hop), arm rows)
+    poses.looks = Object.fromEntries([...looks.map(([v, small]) => [`${v}${small ? '-mini' : ''}`, { v, small }]), ['home', { v: 'home', small: true }]].map(([k, { v, small }]) => {
+      const L = lookOf({ vendor: v, small }), eyes = [];
+      L.rows.forEach((row, r) => [...row].forEach((ch, c) => { if (ch === 'E') eyes.push([c, r]); }));
+      return [k, { w: L.rows[0].length, rows: L.rows.length, legH: small ? 1 : 2, arm: L.arm, lift: L.lift, body: VENDOR[v][0], eyes }]; }));
+    // the desk lamp's glow over a busy desk at night (drawSceneOverlays): the page's own gradient, '#ffc870' at 26*S, stamped at alpha .55*(DARK-.3)
+    poses.lamp = { sprite: glowSprite('#ffc870', 26 * S), r: 26 * S };
     log('poses', jobs.length);
   }
 

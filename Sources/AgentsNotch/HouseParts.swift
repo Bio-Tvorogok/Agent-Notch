@@ -64,7 +64,12 @@ struct HouseParts: Decodable {
     struct Sky: Decodable { let W, H, ground: Int; let buckets: [Bucket] }
     struct PoseLayer: Decodable { let sprite, ax, ay: Int; let blend: String? }
     struct Pose: Decodable { let layers: [PoseLayer] }
-    struct Poses: Decodable { let names: [String]; let variants: [[String: Pose]] }
+    /// A Clawd's geometry for the marks over it: w columns, rows body rows, legH leg rows, the arm row.
+    /// body = the vendor's body colour, eyes = the [column, row] of every eye cell (the eyelids of a sleepy Clawd).
+    struct Look: Decodable { let w, rows, legH, arm, lift: Int; let body: String; let eyes: [[Int]] }
+    /// The desk lamp's glow sprite (additive), r its radius in canvas pixels.
+    struct Lamp: Decodable { let sprite, r: Int }
+    struct Poses: Decodable { let names: [String]; let variants: [[String: Pose]]; let looks: [String: Look]?; let lamp: Lamp? }
     struct Amb: Decodable { let hour: Double; let amb: [Double]; let sky: [String]; let dark: Double }
     struct PageInfo: Decodable { let file, fileE: String; let w, h: Int }
     struct Edges: Decodable { let hi: Double; let d: Double?; let exact: Bool? }

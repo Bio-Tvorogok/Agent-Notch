@@ -39,6 +39,8 @@ final class HouseScene2: SKScene {
     var colon = true
     /// The scene's own time in ms (clouds, mist wisps, pane stars, poses).
     var clockMillis = 100_000.0
+    /// Proofs only: the time the page draws its room animations at (the atlas cuts them at 100000).
+    var roomClockOverride: Double?
     var growth: [String: Int] = [:]
 
     // built state
@@ -93,6 +95,16 @@ final class HouseScene2: SKScene {
     var driveSim = false
     var look: (HouseSprite) -> HouseLook = { _ in HouseLook() }
     var moverNodes: [String: SKSpriteNode] = [:]
+    /// The info (battery, eyelids) and the status marks drawn over each Clawd, and its hit box (feet-relative) for the chat bubbles.
+    var infoRects: [String: HouseRects] = [:], markRects: [String: HouseRects] = [:]
+    var hitBoxes: [String: [Int]] = [:]
+    var fxRects: HouseRects?
+    var yardRects: HouseRects?
+    var flagPools: [String: HouseRects] = [:]
+    static let screenDepths: [String: Double] = ["bedroom": 6.65, "server": 7.05, "library": 11.41, "greenhouse": 8.01, "arcade": 8.81]
+    struct DynKey: Hashable { let room: String; let name: String }
+    var dynNodes: [DynKey: (node: SKNode, z: CGFloat)] = [:]
+    var lampNodes: [String: SKSpriteNode] = [:]
     var lastPos: [String: (Double, Double)] = [:]
     var faceMemory: [String: Int] = [:]
     /// Holds the scene's clock (clouds, wisps, stars) where the page's reference frame had it, for a pixel comparison.
@@ -212,7 +224,7 @@ final class HouseScene2: SKScene {
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
 
     func rebuild() {
-        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; canopyNodes = [:]
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; fxRects = nil; yardRects = nil; flagPools = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
@@ -273,7 +285,13 @@ final class HouseScene2: SKScene {
                 if l.tag == "clock", let c = pr.clock {
                     live(z: next(), clock: true) { p in p.clockImage(room: r, clock: c, vi: p.light.variant) }
                 } else if let id = l.sprite {
-                    sprite(id, x: r.ox + (l.x ?? 0), y: r.oy + (l.y ?? 0), z: next(), blend: l.blend)
+                    let z = next()
+                    let n = sprite(id, x: r.ox + (l.x ?? 0), y: r.oy + (l.y ?? 0), z: z, blend: l.blend)
+                    if l.dyn == true, let d = l.depth {
+                        var name = r.key == "__bath" && d == 17.6 ? "swing" : r.key == "__bath" && d == 12.21 ? "flag" : r.key == "__kitchen" && d == 12.41 ? "flagK" : nil
+                        if Self.screenDepths[r.theme].map({ abs($0 - d) < 0.001 }) == true { name = "screen" }
+                        if let name { dynNodes[DynKey(room: r.key, name: name)] = (n, z + 0.5) }
+                    }
                 }
             }
             if let d = l.depth { info.slots.append(Slot(depth: d, z: first, fixture: l.kind == "sign" || l.kind == "lift")) }

@@ -75,7 +75,7 @@ func makeScene(atlas: URL, layout: HouseLayout) -> (HouseScene2, SKView) {
     return (scene, view)
 }
 
-let GATE_AGENT24 = 12.0, GATE_AGENT6 = 12.0 // the agents' own pixels; the one known gap is the arms of a waiting Clawd that is still walking (no such pose in the atlas)
+let GATE_AGENT24 = 12.0, GATE_AGENT6 = 12.0 // the agents' own pixels: bodies, marks, props, pets
 let GATE_PCT6 = 0.3, GATE_MAE = 1.0, GATE_FRAME24 = 0.15, GATE_FRAME6 = 0.2 // clean run: <= 0.13, 0.57, 0.063, 0.067; the probes AMB=0.93 and CITYSHIFT=6 are far above
 switch mode {
 case "proof":
@@ -166,10 +166,11 @@ case "live":
         let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
         func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
         let first = samples[0].meta, ins = first["insets"] as! [String: Double], dpr = first["DPR"] as! Double
-        // live-ref.js stubs the life layer on the page, so the behaviour runs without it (no enableLife) and draws the same randoms.
+        // the page runs its life layer too (live-ref.js), so the behaviour does: same randoms, the case's hour and the page's DARK
         let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
         let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
+        behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
@@ -202,7 +203,7 @@ case "live":
             let sc = scene!, v = view!
             sc.followBehaviour(behaviour) // a project that joined relays the house out (the app does it in update)
             if sc.size != size { sc.size = size; v.frame = NSRect(origin: .zero, size: size) }
-            sc.clockMillis = Double(s.t)
+            sc.clockMillis = Double(s.t); sc.roomClockOverride = 100_000
             sc.setTime(hour: hour, day: meta["day"] as! Int)
             sc.repaint(sync: true)
             if let sim = sc.sim { sc.sync(sim: sim) }
@@ -243,6 +244,7 @@ case "live":
             let tag = "\(name)@\(s.t)"
             print(String(format: "%-22@ %3d %9d %8.4f %8.4f %7.4f | %7.4f %7.4f | %8d %8.3f %8.3f | %d agents, %d falling", tag as NSString, sc.light.variant, house, p24, p6, mae, f24, f6, agent, a24, a6,
                          meta["agents"] as! Int, meta["falling"] as! Int))
+            if let b = sc.behaviour { let fw = b.life.fireworks.filter { Double(s.t) - $0.t0 <= 3800 }.count; if fw > 0 { print("    fireworks active: \(fw)") } }
             if p24 > 0.1 || p6 > GATE_PCT6 || mae > GATE_MAE || f24 > GATE_FRAME24 || f6 > GATE_FRAME6 || a24 > GATE_AGENT24 || a6 > GATE_AGENT6 { failed = true; print("    ^ over a gate") }
         }
     }
