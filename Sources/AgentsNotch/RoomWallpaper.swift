@@ -18,7 +18,7 @@ final class RoomWallpaper: NSObject {
     private var skPrefs = RoomPrefs()
     private var skBehaviour: HouseBehaviour?
     /// The one growth count (see HouseScene2Growth.swift).
-    private let growth = HouseGrowthStore()
+    private let growth: HouseGrowthStore = { let g = HouseGrowthStore(); g.importLegacyPage(); return g }()
     /// Set when the atlas failed to draw: the wallpaper stays off until the app restarts (there is no other renderer to fall back to).
     private var atlasBroken = false
     /// Set when the current screen cannot hold the house (too short for the Dock's inset): cleared when the screen changes.

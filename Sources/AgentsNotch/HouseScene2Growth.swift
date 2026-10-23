@@ -1,11 +1,11 @@
 import Foundation
 import NotchCore
 
-/// How far each project's room has grown: one count for both renderers. Native is the source of truth: the page's own count
-/// (room/index.html, WebKit localStorage) is seeded from here when it loads and posts its count back when it saves, and the
-/// SpriteKit house's HouseBehaviour is seeded from here and written back after its agents changed. The rules are the page's
-/// (growthNote / growthLevel): every distinct agent id a project has ever had counts once (the last 150 are remembered) and the
-/// room's level is the last GROWTH_STEPS entry [0, 2, 6, 15] the count reaches. The JSON is the page's `{project: {n, ids}}`.
+/// How far each project's room has grown. Native is the only store (UserDefaults `houseGrowth.v1`): the SpriteKit house's
+/// HouseBehaviour is seeded from here and written back after its agents changed. The old WebKit page kept its own copy in
+/// localStorage; `importLegacyPage` takes that over once. The rules are the page's (growthNote / growthLevel): every distinct agent
+/// id a project has ever had counts once (the last 150 are remembered) and the room's level is the last GROWTH_STEPS entry
+/// [0, 2, 6, 15] the count reaches. The JSON is the page's `{project: {n, ids}}`.
 final class HouseGrowthStore {
     static let steps = [0, 2, 6, 15]
     struct Entry: Codable, Equatable { var n = 0; var ids: [String] = [] }
@@ -47,7 +47,7 @@ final class HouseGrowthStore {
         return true
     }
 
-    /// The page's count (`{project: {n, ids}}`, as it posts it): per project the larger count wins. True when something changed.
+    /// A saved count in the page's shape (`{project: {n, ids}}`): per project the larger count wins. True when something changed.
     @discardableResult
     func merge(page: Any?) -> Bool {
         guard let dict = page as? [String: Any] else { return false }
@@ -61,9 +61,15 @@ final class HouseGrowthStore {
         return changed
     }
 
-    /// What `room.setGrowth(...)` takes.
-    var pageJSON: String {
-        guard let data = try? JSONEncoder().encode(entries), let s = String(data: data, encoding: .utf8) else { return "{}" }
-        return s
+    static let importedKey = "houseGrowth.legacyPageImported.v1"
+
+    /// Once per user: takes over the growth the old WebKit page saved in its localStorage (WebKit's database under
+    /// ~/Library/WebKit/<bundle id>). The flag is set even when nothing was found, so the database is read only on the first run.
+    /// The old files stay where they are. Returns what was merged.
+    @discardableResult
+    func importLegacyPage(root: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/WebKit/\(Bundle.main.bundleIdentifier ?? "com.forichok.agents-notch")", isDirectory: true)) -> Bool {
+        guard !defaults.bool(forKey: Self.importedKey) else { return false }
+        defaults.set(true, forKey: Self.importedKey)
+        return merge(page: HouseGrowthLegacy.readAll(root: root))
     }
 }
