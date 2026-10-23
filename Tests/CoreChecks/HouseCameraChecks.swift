@@ -134,6 +134,10 @@ struct HouseCameraChecks {
         let l2 = HouseLayout.make(projects: ["Agent-Notch", "hexhaven", "world", "extra"], layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: 2))
         let r = c.rebased(layout: l2)
         XCTAssertTrue(r.pose == c.pose && r.homeOn, "a project joining leaves a zoomed view where it is")
+        var g = camera(l)
+        g.zoomAt(2, x: 864, y: 558, now: 0) // a zoom that has only just started: pose.zoom is still 1
+        let kept = g.rebased(layout: l2)
+        XCTAssertTrue(g.pose.zoom == 1 && kept.isMoving && kept.target.zoom == g.target.zoom, "a click in the frame of a relayout is not lost")
         let o = camera(l).rebased(layout: l2)
         XCTAssertTrue(o.pose.zoom == 1 && o.pose.at == l2.view.home, "and an overview follows the new home")
     }

@@ -34,7 +34,10 @@ final class RoomWallpaper: NSObject {
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
     private var pinchTap: CFMachPort?
-    private var pinchLogged = false
+    /// The last pinch line logged: a change (the permission granted later) is logged again.
+    private var pinchLine = ""
+    /// Set while the one-time hint is the card on screen; any other card or a hide clears it, so the timer never hides someone else's.
+    private var hintToken: UUID?
     private var lastJSON = ""
     private var lastMove = 0.0
     private var hovering = false
@@ -176,7 +179,7 @@ final class RoomWallpaper: NSObject {
         let allowed = CGPreflightListenEventAccess()
         guard allowed else {
             stopPinchTap()
-            if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: false, created: nil)); pinchLogged = true }
+            logPinch(HousePinch.statusLine(allowed: false, created: nil))
             return
         }
         guard pinchTap == nil else { return }
@@ -194,12 +197,17 @@ final class RoomWallpaper: NSObject {
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
                                           eventsOfInterest: CGEventMask(1) << 29 | CGEventMask(1) << CGEventMask(NSEvent.EventType.magnify.rawValue), // pinches come as gesture events (29)
                                           callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque())
-        else { if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: true, created: false)) }; pinchLogged = true; return }
+        else { logPinch(HousePinch.statusLine(allowed: true, created: false)); return }
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         pinchTap = tap
-        if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: true, created: true, enabled: CGEvent.tapIsEnabled(tap: tap))) }
-        pinchLogged = true
+        logPinch(HousePinch.statusLine(allowed: true, created: true, enabled: CGEvent.tapIsEnabled(tap: tap)))
+    }
+
+    private func logPinch(_ line: String) {
+        guard line != pinchLine else { return }
+        pinchLine = line
+        NSLog("%@", line)
     }
 
     private func stopPinchTap() {
@@ -261,6 +269,7 @@ final class RoomWallpaper: NSObject {
         scene.onTip = { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                self.hintToken = nil
                 if let t, let w = self.window { self.tip.show(t.payload, in: w.frame) } else { self.tip.hide() }
             }
         }
@@ -345,6 +354,7 @@ final class RoomWallpaper: NSObject {
         guard skGeometry(of: screen) != skBuilt else { return }
         guard let scene = makeSKScene(screen: screen, page: page, prefs: AppSettings.shared.room) else { fallBackToPage("the new screen cannot be drawn", screen: true); return }
         view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        tip.hide(); hovering = false; hintToken = nil // a card from the old scene would stay up
         view.presentScene(scene)
         sentActive = nil
         syncPower()
@@ -605,12 +615,21 @@ final class RoomWallpaper: NSObject {
         guard let scene, let w = window,
               HousePinch.hintDue(tapActive: pinchTap != nil, alreadyShown: pinchHinted, zoomTarget: scene.houseCamera?.target.zoom ?? 1) else { return }
         pinchHinted = true
-        NSLog("agents-notch: pinch zoom is off (no Input Monitoring); showed the one-time hint")
+        let cause = HousePinch.cause(allowed: CGPreflightListenEventAccess())
+        NSLog("agents-notch: pinch zoom is off (\(cause == .notGranted ? "no Input Monitoring" : "the event tap could not start")); showed the one-time hint")
+        let token = UUID()
+        hintToken = token
         tip.show(["title": Loc.t("Pinch zoom is off", "Масштаб жестом выключен"),
                   "status": Loc.t("Click a room, scroll to pan, double tap goes back", "Клик по комнате, прокрутка двигает, двойное касание возвращает"),
-                  "color": "#e0a030", "detail": Loc.t("Settings > House > Pinch zoom", "Настройки > Дом > Масштаб жестом"),
+                  "color": "#e0a030",
+                  "detail": cause == .notGranted ? Loc.t("Settings > House > Pinch zoom", "Настройки > Дом > Масштаб жестом")
+                                                 : Loc.t("Input Monitoring is on, but the gesture tap did not start: restart the app", "Доступ есть, но перехват жестов не запустился: перезапустите приложение"),
                   "x": Double(x), "y": Double(y)], in: w.frame)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.tip.hide() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.hintToken == token else { return }
+            self.hintToken = nil
+            self.tip.hide()
+        }
     }
     /// True when no app window is over this point, so the cursor is over the wallpaper itself.
     private func desktopIsBare(at p: NSPoint) -> Bool { coveringWindow(at: p) == nil }

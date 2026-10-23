@@ -39,11 +39,11 @@ public struct HouseCamera: Sendable {
                   top: insets.top, bottom: insets.bottom, right: insets.right, home: layout.view.home)
     }
 
-    /// The same window with a new layout (a project joined): the view stays where it is when zoomed, as the page's layout() leaves it.
+    /// The same window with a new layout (a project joined): the view stays where it is when zoomed or zooming (a click or pinch in the frame of the relayout is kept), as the page's layout() leaves it.
     public func rebased(layout: HouseLayout) -> HouseCamera {
         var c = HouseCamera(base: layout.view.base, dpr: layout.view.DPR, innerWidth: innerWidth, innerHeight: innerHeight,
                             top: top, bottom: bottom, right: right, home: layout.view.home)
-        if pose.zoom != 1 { c.pose = pose; c.glide = glide; c.follow = follow }
+        if pose.zoom != 1 || target.zoom != 1 { c.pose = pose; c.glide = glide; c.follow = follow }
         c.touched = touched; c.homeOn = homeOn
         return c
     }

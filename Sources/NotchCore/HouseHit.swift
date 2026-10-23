@@ -50,14 +50,17 @@ public enum HouseHit {
     }
 
     /// sp.hit: [x, y, w, h] in canvas pixels, from the feet (X, Y). `t` is the page's draw time (halved for a drowsy Clawd by the caller).
-    public static func agentRect(vendor: String, small: Bool, state: String, moving: Bool, x X: Double, y Y: Double, t: Double) -> [Double] {
+    public typealias Box = (x: Double, y: Double, w: Double, h: Double)
+    public static func agentRect(vendor: String, small: Bool, state: String, moving: Bool, x X: Double, y Y: Double, t: Double) -> Box {
         let C = 2.0, k = cells(vendor: vendor, small: small)
         let hop = state == "waiting" && !moving ? houseRound(abs(sin(t / 260)) * 3) : (moving ? Double(Int(floor(t / 110)) % 2) * C : 0)
         let left = houseRound(X - Double(k.w) * C / 2), top = houseRound(Y - Double(k.rows + k.legs) * C - hop)
-        return [left - 2 * 2, top - 2 * 2, Double(k.w + 4) * C, Double(k.rows + k.legs + 4) * C]
+        return (left - 2 * 2, top - 2 * 2, Double(k.w + 4) * C, Double(k.rows + k.legs + 4) * C)
     }
 
-    public static func contains(_ r: [Double], _ x: Double, _ y: Double) -> Bool { x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3] }
+    public static func contains(_ r: Box, _ x: Double, _ y: Double) -> Bool { x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h }
+    /// A sign's rectangle [x, y, w, h] (they are few and set once, not per frame).
+    public static func contains(_ r: [Double], _ x: Double, _ y: Double) -> Bool { contains((r[0], r[1], r[2], r[3]), x, y) }
 
     // MARK: rooms
 

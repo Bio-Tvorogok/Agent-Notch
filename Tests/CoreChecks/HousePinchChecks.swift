@@ -13,6 +13,7 @@ struct HousePinchChecks {
         XCTAssertTrue(!HousePinch.hintDue(tapActive: true, alreadyShown: false, zoomTarget: 2.4), "tap works: no hint")
         XCTAssertTrue(!HousePinch.hintDue(tapActive: false, alreadyShown: true, zoomTarget: 2.4), "only once")
         XCTAssertTrue(!HousePinch.hintDue(tapActive: false, alreadyShown: false, zoomTarget: 1), "overview: no hint")
+        XCTAssertTrue(HousePinch.cause(allowed: false) == .notGranted && HousePinch.cause(allowed: true) == .tapFailed, "the hint names the real cause")
         print("housePinchChecks: status lines, hint due")
     }
 }

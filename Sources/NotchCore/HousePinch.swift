@@ -12,6 +12,10 @@ public enum HousePinch {
                        : "agents-notch: pinch tap: Input Monitoring granted; CGEvent.tapCreate failed"
     }
 
+    /// Why no pinch can arrive: the permission is missing, or it is granted and the tap still could not be made.
+    public enum Cause { case notGranted, tapFailed }
+    public static func cause(allowed: Bool) -> Cause { allowed ? .tapFailed : .notGranted }
+
     /// The hint is shown once, the first time a click has zoomed the house in while no pinch can arrive.
     public static func hintDue(tapActive: Bool, alreadyShown: Bool, zoomTarget: Double) -> Bool {
         !tapActive && !alreadyShown && zoomTarget > 1.01

@@ -53,14 +53,14 @@ struct HouseHitChecks {
     func agentRect() throws {
         let r = HouseHit.agentRect(vendor: "claude", small: false, state: "working", moving: false, x: 100, y: 200, t: 0)
         // 12 cells of 2 px wide, 6 + 2 legs rows: left = 100 - 12, top = 200 - 16; the rectangle is 4 px wider on each side
-        XCTAssertEqual(r, [84.0, 180.0, 32.0, 24.0], "a Clawd's hit box")
+        XCTAssertTrue(r == (84.0, 180.0, 32.0, 24.0), "a Clawd's hit box")
         XCTAssertTrue(HouseHit.contains(r, 100, 195) && !HouseHit.contains(r, 100, 100), "inside and outside")
         let s = HouseHit.agentRect(vendor: "claude", small: true, state: "working", moving: false, x: 100, y: 200, t: 0)
-        XCTAssertTrue(s[2] < r[2] && s[3] < r[3], "a sub-agent is smaller")
+        XCTAssertTrue(s.w < r.w && s.h < r.h, "a sub-agent is smaller")
         let c = HouseHit.agentRect(vendor: "codex", small: false, state: "working", moving: false, x: 100, y: 200, t: 0)
-        XCTAssertTrue(c[3] > r[3], "a Codex is taller")
+        XCTAssertTrue(c.h > r.h, "a Codex is taller")
         let hop = HouseHit.agentRect(vendor: "claude", small: false, state: "waiting", moving: false, x: 100, y: 200, t: 260 * .pi / 2)
-        XCTAssertEqual(hop[1], r[1] - 3, "a waiting Clawd hops by up to 3 px")
+        XCTAssertEqual(hop.y, r.y - 3, "a waiting Clawd hops by up to 3 px")
     }
 
     func rooms() throws {
