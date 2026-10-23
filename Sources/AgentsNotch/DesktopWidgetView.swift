@@ -6,6 +6,24 @@ import NotchCore
 final class WidgetModel: ObservableObject {
     @Published var selected: Agent.ID?
     @Published var dragging = false
+    /// Bumped whenever the widget may have just come into view or under the pointer: answer buttons re-arm from zero.
+    @Published var armEpoch = 0
+    /// The tallest the list may be on the current display; past it the list scrolls.
+    @Published var maxListHeight: CGFloat = 600
+}
+
+extension WidgetLine {
+    /// Stable identity, so a row's state never passes to another agent when lines shift.
+    var key: String {
+        switch self {
+        case .project(let name): "p:" + name
+        case .session(let a, _): "s:" + a.id
+        case .kid(let a, _): "k:" + a.id
+        case .doneKids(let kids): "d:" + (kids.first?.id ?? "")
+        case .attention(let a, _): "a:" + a.id
+        case .more: "more"
+        }
+    }
 }
 
 extension WidgetSize {
@@ -64,6 +82,8 @@ struct DesktopWidgetView: View {
     var onSize: (CGSize) -> Void = { _ in }
     var onDrag: (_ ended: Bool) -> Void = { _ in }
     var openSettings: () -> Void = {}
+    @GestureState private var dragActive = false
+    @State private var listHeight: CGFloat = 0
 
     var body: some View {
         let theme = settings.widgetTheme
@@ -86,16 +106,20 @@ struct DesktopWidgetView: View {
         .padding(.vertical, 10)
         .modifier(Glow(color: theme.glow))
         .frame(width: size.width, alignment: .topLeading)
-        .frame(minHeight: size.minHeight, alignment: .top)
+        // An empty widget stays compact rather than holding a gap above the limits.
+        .frame(minHeight: projects.isEmpty ? 0 : size.minHeight, alignment: .top)
         .fixedSize(horizontal: false, vertical: true)
         .themeSurface(theme, radius: max(theme.radius, theme.id == .pixel ? 0 : 18))
         .themed(theme)
         .font(.system(size: 12, design: theme.design))
         .foregroundStyle(Ink.text)
         .background(GeometryReader { g in Color.clear.onAppear { onSize(g.size) }.onChange(of: g.size) { _, s in onSize(s) } })
+        // Gesture state resets on a cancelled drag too, so the drop always lands and the buttons wake up again.
         .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
-            .onChanged { _ in onDrag(false) }
-            .onEnded { _ in onDrag(true) })
+            .updating($dragActive) { _, active, _ in active = true }
+            .onChanged { _ in onDrag(false) })
+        .onChange(of: dragActive) { _, active in if !active { onDrag(true) } }
+        .onHover { inside in if inside { model.armEpoch += 1 } }
         .contextMenu { menu }
     }
 
@@ -103,12 +127,19 @@ struct DesktopWidgetView: View {
         let pinned = Set(store.hooks.pending.map(\.event.agentKey))
         let sections = ListFilter.sections(projects, grouped: settings.rows.groupByProject, order: settings.rows.sort)
         let lines = WidgetPlan.lines(sections, tree: settings.rows.subagentTree, pinned: pinned, capacity: size.capacity)
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+        let rows = VStack(alignment: .leading, spacing: 0) {
+            ForEach(lines, id: \.key) { line in
                 self.line(line, projects: projects)
             }
         }
         .padding(.top, 2)
+        .background(GeometryReader { g in Color.clear.onAppear { listHeight = g.size.height }.onChange(of: g.size.height) { _, h in listHeight = h } })
+        // Many requests or a long plan can outgrow the display; then the list scrolls instead of leaving the screen.
+        if listHeight > model.maxListHeight {
+            ScrollView { rows }.frame(height: model.maxListHeight)
+        } else {
+            rows
+        }
     }
 
     @ViewBuilder private func line(_ line: WidgetLine, projects: [ProjectNode]) -> some View {
@@ -138,12 +169,12 @@ struct DesktopWidgetView: View {
             let item = AttentionItem(agent: agent, project: project, parent: parent)
             let asks = store.hooks.pending.filter { $0.event.agentKey == agent.id }
             if asks.isEmpty {
-                ArmedRow(key: agent.id, dragging: model.dragging) {
+                ArmedRow(key: "\(agent.id).\(model.armEpoch)", dragging: model.dragging) {
                     AttentionRow(item: item, multi: false, store: store, ask: nil, select: select)
                 }
             } else {
                 ForEach(asks) { ask in
-                    ArmedRow(key: "\(ask.ticket)", dragging: model.dragging) {
+                    ArmedRow(key: "\(ask.ticket).\(model.armEpoch)", dragging: model.dragging) {
                         AttentionRow(item: item, multi: false, store: store, ask: ask, select: select)
                     }
                 }
@@ -184,6 +215,9 @@ private struct ArmedRow<Content: View>: View {
     var body: some View {
         content()
             .allowsHitTesting(armed && !dragging)
+            // Keyboard activation too, while the panel holds focus for a text field.
+            .disabled(!armed || dragging)
+            .onChange(of: key) { _, _ in armed = false }
             .task(id: key) {
                 armed = false
                 try? await Task.sleep(for: .milliseconds(500))
@@ -215,6 +249,7 @@ private struct WidgetRow: View {
     let open: (Agent) -> Void
     @State private var hover = false
     @Environment(\.theme) private var theme
+    @EnvironmentObject private var settings: AppSettings
 
     var body: some View {
         HStack(alignment: .center, spacing: 7) {
@@ -223,7 +258,7 @@ private struct WidgetRow: View {
                 .opacity(agent.state.isLive ? 1 : 0.6)
             Spacer(minLength: 4)
             if folded > 0 { Text("+\(folded)").font(.system(size: 10.5, weight: .medium)).foregroundStyle(dim) }
-            WidgetClock(agent: agent)
+            if settings.rowPartShown(.runningTime) { WidgetClock(agent: agent) }
         }
         .padding(.horizontal, 14 + theme.rowInset)
         .frame(minHeight: 22)

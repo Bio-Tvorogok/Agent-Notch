@@ -6,10 +6,11 @@ import NotchCore
 /// The desktop widget's window: on the desktop under every window, on all Spaces, where the user left it.
 /// It is not WidgetKit: a plain panel keeps live answers and needs no extension or signing.
 @MainActor
-final class DesktopWidget {
+final class DesktopWidget: NSObject {
     private let store: Store
     private let settings: AppSettings
     private let model = WidgetModel()
+    private let activity = SurfaceActivity()
     private var panel: KeyPanel?
     private var card: CardPanel?
     private var subscriptions: Set<AnyCancellable> = []
@@ -19,6 +20,7 @@ final class DesktopWidget {
     init(store: Store, settings: AppSettings? = nil) {
         self.store = store
         self.settings = settings ?? .shared
+        super.init()
         self.settings.$widget.map(\.enabled).removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] on in self?.setVisible(on) }
             .store(in: &subscriptions)
@@ -28,7 +30,12 @@ final class DesktopWidget {
             .sink { [weak self] _ in self?.place() }
             .store(in: &subscriptions)
         store.$hooks.map { $0.pending.contains(where: \.needsTyping) }.removeDuplicates().receive(on: RunLoop.main)
-            .sink { [weak self] typing in self?.panel?.wantsKey = typing }
+            .sink { [weak self] typing in
+                guard let panel = self?.panel else { return }
+                panel.wantsKey = typing
+                // Typing goes back to the user's own window once nothing here needs it.
+                if !typing && panel.isKeyWindow { panel.resignKey() }
+            }
             .store(in: &subscriptions)
     }
 
@@ -41,11 +48,27 @@ final class DesktopWidget {
         place()
         updateKey()
         panel?.orderFrontRegardless()
+        occlusionChanged()
     }
 
+    /// Switched off, the widget lets go of its window and views, so nothing keeps ticking.
     private func hide() {
         card?.close()
+        card = nil
         panel?.orderOut(nil)
+        panel = nil
+        size = .zero
+        dragStart = nil
+        model.dragging = false
+    }
+
+    /// Clocks and blinking marks run only while some of the widget can be seen.
+    /// Coming into view also re-arms the answer buttons: a request uncovered by a closing window is not clickable at once.
+    @objc private func occlusionChanged() {
+        guard let panel else { return }
+        let visible = panel.isVisible && panel.occlusionState.contains(.visible)
+        if visible && !activity.active { model.armEpoch += 1 }
+        activity.setActive(visible)
     }
 
     private func makePanel() -> KeyPanel {
@@ -59,10 +82,11 @@ final class DesktopWidget {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.isMovable = false
-        let view = DesktopWidgetView(store: store, model: model,
+        NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged), name: NSWindow.didChangeOcclusionStateNotification, object: panel)
+        let view = ActiveSurface(activity: activity) { DesktopWidgetView(store: store, model: model,
                                      onSize: { [weak self] in self?.resize($0) },
                                      onDrag: { [weak self] ended in self?.drag(ended: ended) },
-                                     openSettings: { SettingsWindow.shared.open(.appearance) })
+                                     openSettings: { SettingsWindow.shared.open(.appearance) }) }
             .environmentObject(settings)
             .environmentObject(store.usage)
         panel.contentView = NSHostingView(rootView: view)
@@ -90,7 +114,7 @@ final class DesktopWidget {
     }
 
     private func drag(ended: Bool) {
-        guard let panel else { return }
+        guard let panel, !(ended && dragStart == nil) else { return }
         let mouse = NSEvent.mouseLocation
         if dragStart == nil {
             dragStart = (mouse, panel.frame.origin)
@@ -121,8 +145,11 @@ final class DesktopWidget {
         guard let panel else { return }
         let frameSize = size == .zero ? panel.frame.size : size
         let saved = settings.widgetPlace
-        let screen = saved.flatMap { place in NSScreen.screens.first { $0.displayID == place.display } } ?? NSScreen.main ?? NSScreen.screens.first
+        // The primary display (the one with the menu bar) is first; NSScreen.main is merely the focused one.
+        let screen = saved.flatMap { place in NSScreen.screens.first { $0.displayID == place.display } } ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else { return }
+        // Hero and limits take about 260 points; the list gets the rest of the display.
+        model.maxListHeight = max(160, visible.height - 300)
         var frame: NSRect
         if let saved, screen?.displayID == saved.display {
             frame = NSRect(x: visible.minX + saved.x, y: visible.maxY - saved.y - frameSize.height, width: frameSize.width, height: frameSize.height)

@@ -129,6 +129,7 @@ final class AppSettings: ObservableObject {
         soundEvents = SoundPrefs()
         finishToast = true
         widget = WidgetPrefs()
+        widgetPlace = nil
     }
 
     /// What the presets own, read from and written back to the sections.

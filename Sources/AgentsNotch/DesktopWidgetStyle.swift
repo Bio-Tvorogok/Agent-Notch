@@ -60,6 +60,7 @@ struct WidgetHero: View {
                 states()
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .bottom) {
             if theme.id == .glass { Rectangle().fill(Ink.rule).frame(height: 0.5).offset(y: 8) }
         }
