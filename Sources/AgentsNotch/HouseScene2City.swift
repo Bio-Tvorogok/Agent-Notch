@@ -200,14 +200,24 @@ extension HousePainter {
         return w
     }
 
+    /// seasonLeaves: the canopy colours of the season.
+    static func seasonLeaves(_ se: String, _ snowy: Bool) -> [String] {
+        switch se {
+        case "autumn": return ["#d8702e", "#f0b040", "#b85a2a"]
+        case "spring": return ["#f4a8c4", "#fff0f4", "#6aa850"]
+        case "winter": return snowy ? ["#eef2fa", "#c8d0de", "#6a5a4a"] : ["#7a6a58", "#9a8a74", "#5a4a3a"]
+        default: return ["#4e9a4a", "#7ac06a", "#3a7a3a"]
+        }
+    }
+
     // MARK: city layers (paintFar / paintMid / paintRail / paintNear / paintRoad, autumn, clear)
 
     private func cF(_ p: HousePixels, _ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, alpha: Double = 1) { p.fill(c, x * 2, y * 2, w * 2, h * 2, alpha: alpha) }
 
     private func paintFar(_ C: HouseCityPlan, _ T: Int) -> HousePixels {
         let S = 2, p = HousePixels(C.aw * S, (T + 4) * S)
-        let a = 0.58, body = haze("#7a84a8", a), rim = haze("#9aa4c4", a), dark = haze("#6a7298", a)
-        let winA = max(0, light.dark - 0.3) * 1.3
+        let a = weather == "rain" || weather == "snow" ? 0.72 : 0.58, body = haze("#7a84a8", a), rim = haze("#9aa4c4", a), dark = haze("#6a7298", a)
+        let winA = max(0, light.dark - 0.3) * 1.3, sn = haze("#f4f8ff", a * 0.7)
         for b in C.far {
             let y = T - b.h
             cF(p, body, b.x, y, b.w, b.h + 4); cF(p, rim, b.x, y, b.w, 1); cF(p, dark, b.x + b.w - 2, y + 1, 2, b.h + 3)
@@ -219,6 +229,7 @@ extension HousePainter {
             case 4: cF(p, body, b.x + 2, y - 8, 1, 8)
             default: break
             }
+            if snowy { cF(p, sn, b.x, y - 1, b.w, 1) }
             if winA > 0 {
                 let rr = HouseCityPlan.Rnd(b.s), wc = [255, 214, 140]
                 var yy = y + 3
@@ -234,8 +245,10 @@ extension HousePainter {
 
     private func paintMid(_ C: HouseCityPlan, _ T: Int, boardAt: inout [Int: (Int, Int, Int)]) -> HousePixels {
         let S = 2, p = HousePixels(C.aw * S, (T + 4) * S)
-        let a = 0.22, out = haze(Self.outC, a), glass = haze("#4e5e80", a), glint = haze("#9cb4d4", a)
-        let leaves = ["#d8702e", "#f0b040", "#b85a2a"].map { haze($0, a) }
+        let a = weather == "rain" || weather == "snow" ? 0.34 : 0.22, out = haze(Self.outC, a), glass = haze("#4e5e80", a), glint = haze("#9cb4d4", a)
+        let sn = haze("#f4f8ff", a * 0.6), snS = haze("#cdd6e6", a * 0.6)
+        func cap(_ x: Int, _ y: Int, _ w: Int) { if snowy { cF(p, sn, x, y - 1, w, 1); cF(p, snS, x, y, w, 1) } }
+        let leaves = Self.seasonLeaves(season, snowy).map { haze($0, a) }
         for (bi, b) in C.mid.enumerated() {
             let pal = HouseCityPlan.midPal[b.pal].map { haze($0, a) }, wall = pal[0], shade = pal[1], trim = pal[2], y = T - b.h, x = b.x
             cF(p, out, x - 1, y - 1, b.w + 2, b.h + 5); cF(p, wall, x, y, b.w, b.h + 4); cF(p, shade, x + b.w - 3, y, 3, b.h + 4)
@@ -249,13 +262,15 @@ extension HousePainter {
             cF(p, trim, x - 1, y, b.w + 2, 1)
             if b.roof == "step" {
                 let sx = x + 3, sw = b.w - 6
-                cF(p, out, sx - 1, y - 7, sw + 2, 7); cF(p, wall, sx, y - 6, sw, 6); cF(p, shade, sx + sw - 2, y - 6, 2, 6); cF(p, trim, sx - 1, y - 6, sw + 2, 1)
+                cF(p, out, sx - 1, y - 7, sw + 2, 7); cF(p, wall, sx, y - 6, sw, 6); cF(p, shade, sx + sw - 2, y - 6, 2, 6); cF(p, trim, sx - 1, y - 6, sw + 2, 1); cap(sx - 1, y - 6, sw + 2)
             }
+            cap(x - 1, y, b.w + 2)
             if b.roof == "tower" {
                 let tx = b.towerX, wood = haze("#9a6a44", a), band = haze("#6e4a30", a), cone = haze("#5a4a48", a)
                 cF(p, out, tx, y - 4, 1, 4); cF(p, out, tx + 5, y - 4, 1, 4); cF(p, out, tx, y - 2, 6, 1)
                 cF(p, out, tx - 1, y - 11, 8, 8); cF(p, wood, tx, y - 10, 6, 6); cF(p, band, tx, y - 8, 6, 1); cF(p, band, tx, y - 6, 6, 1); cF(p, haze("#7a5236", a), tx + 4, y - 10, 2, 6)
                 for i in 0..<4 { cF(p, cone, tx + 3 - i - (i == 3 ? 1 : 0), y - 14 + i, 2 + i * 2 + (i == 3 ? 2 : 0), 1) }
+                if snowy { cF(p, sn, tx + 2, y - 15, 2, 1); cF(p, sn, tx + 1, y - 14, 4, 1) }
             }
             if b.roof == "antenna" { cF(p, out, b.mastX, y - b.mast, 1, b.mast); cF(p, out, b.mastX - 2, y - b.mast + 3, 5, 1); cF(p, out, b.mastX - 1, y - b.mast + 6, 3, 1) }
             if b.roof == "garden" {
@@ -263,21 +278,25 @@ extension HousePainter {
                 cF(p, out, x + 1, y - 2, b.w - 2, 2); cF(p, box, x + 2, y - 2, b.w - 4, 1)
                 var bx = x + 2
                 while bx + 3 <= x + b.w - 2 { cF(p, leaves[2], bx, y - 4, 3, 2); cF(p, leaves[0], bx, y - 5, 3, 2); cF(p, leaves[1], bx + 1, y - 5, 1, 1); bx += 4 }
+                if snowy { bx = x + 2; while bx + 3 <= x + b.w - 2 { cF(p, sn, bx, y - 6, 3, 1); bx += 4 } }
             }
             if b.roof == "flat" && b.w > 14 {
                 let hut = haze("#8a8a94", a)
                 cF(p, out, x + b.w - 8, y - 5, 5, 5); cF(p, hut, x + b.w - 7, y - 4, 3, 4)
+                cap(x + b.w - 8, y - 5, 5)
                 cF(p, out, x + 2, y - 2, 4, 2); cF(p, haze("#b0b4bc", a), x + 3, y - 2, 2, 1)
             }
             if b.roof == "pitch" {
                 let rc = haze("#5a5068", a)
                 var i = 0
                 while i < 6 && b.w - 2 - i * 4 > 1 { cF(p, out, x - 1 + i * 2, y - 1 - i, b.w + 2 - i * 4, 1); cF(p, rc, x + i * 2, y - 1 - i, b.w - i * 4, 1); i += 1 }
+                if snowy { i = 0; while i < 6 && b.w - 2 - i * 4 > 1 { cF(p, sn, x + i * 2, y - 2 - i, 2, 1); cF(p, sn, x + b.w - 2 - i * 2, y - 2 - i, 2, 1); i += 1 } }
             }
             if let bd = b.board {
                 let (txt, bg, fg) = HouseCityPlan.boards[bd], tw = fontWidth(txt), bw = tw + 6, bx = x + HouseLight.round(Double(b.w - bw) / 2), by = y - 13
                 cF(p, out, bx + 2, by + 9, 1, 4); cF(p, out, bx + bw - 3, by + 9, 1, 4); cF(p, out, bx - 1, by - 1, bw + 2, 11); cF(p, haze(bg, a), bx, by, bw, 9)
                 text(p, txt, (bx + 3) * S, (by + 2) * S, haze(fg, a), S)
+                cap(bx - 1, by - 1, bw + 2)
                 boardAt[bi] = (bx, by, bw)
             }
             if let n = b.neon {
@@ -296,16 +315,22 @@ extension HousePainter {
         cF(p, out, 0, y - 1, C.aw, 6); cF(p, deck, 0, y, C.aw, 3); cF(p, under, 0, y + 3, C.aw, 1); cF(p, rail, 0, y - 1, C.aw, 1)
         var x = 1; while x < C.aw { cF(p, rail, x, y - 3, 1, 2); x += 6 }
         cF(p, rail, 0, y - 3, C.aw, 1)
+        if snowy { cF(p, haze("#f4f8ff", a), 0, y - 4, C.aw, 1) }
         return p
     }
 
     private func paintNear(_ C: HouseCityPlan, _ T: Int) -> HousePixels {
         let S = 2, p = HousePixels(C.aw * S, (T + 4) * S)
         let a = 0.06, out = haze(Self.outC, a), frame = haze("#f4efe6", a), glass = haze("#506080", a), glint = haze("#a8c0dc", a), door = haze("#6a4430", a)
-        let leaves = ["#d8702e", "#f0b040", "#b85a2a"].map { haze($0, a) }, trunk = haze("#6a4a2a", a)
+        let leaves = Self.seasonLeaves(season, snowy).map { haze($0, a) }, trunk = haze("#6a4a2a", a), sn = haze("#f4f8ff", a)
         for tr in C.trees {
             let x = tr.x, top = T - tr.h
             cF(p, out, x - 1, top, 3, tr.h + 4); cF(p, trunk, x, top, 1, tr.h + 4)
+            if season == "winter" {
+                cF(p, trunk, x - 2, top - 2, 1, 3); cF(p, trunk, x + 2, top - 3, 1, 4); cF(p, trunk, x - 1, top - 4, 1, 3)
+                if snowy { cF(p, sn, x - 2, top - 3, 1, 1); cF(p, sn, x + 2, top - 4, 1, 1); cF(p, sn, x - 1, top - 5, 1, 1) }
+                continue
+            }
             cF(p, out, x - 4, top - 6, 9, 7); cF(p, out, x - 3, top - 8, 7, 10); cF(p, leaves[2], x - 3, top - 5, 7, 5); cF(p, leaves[0], x - 2, top - 7, 5, 7); cF(p, leaves[1], x - 1, top - 6, 2, 2); cF(p, leaves[1], x + 1, top - 3, 1, 1)
         }
         for d in C.near {
@@ -318,12 +343,14 @@ extension HousePainter {
                 for i in 0..<rows {
                     let rw = d.w + 2 - i * 2; if rw < 2 { break }
                     cF(p, out, x - 2 + i, y - 1 - i, rw + 2, 1); cF(p, i % 2 == 1 ? roof : roofL, x - 1 + i, y - 1 - i, rw, 1)
+                    if snowy && rw > 2 { cF(p, sn, x - 1 + i, y - 2 - i, 1, 1); cF(p, sn, x + rw - 2 + i, y - 2 - i, 1, 1) }
                 }
-                if d.chim { cF(p, out, x + d.w - 6, y - 7, 4, 6); cF(p, haze("#9a5a48", a), x + d.w - 5, y - 6, 2, 5) }
-            } else { cF(p, out, x - 2, y - 2, d.w + 4, 3); cF(p, roof, x - 1, y - 1, d.w + 2, 1) }
+                if snowy { cF(p, sn, x + (d.w >> 1) - 1, y - rows - 1, 2, 1) }
+                if d.chim { cF(p, out, x + d.w - 6, y - 7, 4, 6); cF(p, haze("#9a5a48", a), x + d.w - 5, y - 6, 2, 5); if snowy { cF(p, sn, x + d.w - 6, y - 8, 4, 1) } }
+            } else { cF(p, out, x - 2, y - 2, d.w + 4, 3); cF(p, roof, x - 1, y - 1, d.w + 2, 1); if snowy { cF(p, sn, x - 2, y - 3, d.w + 4, 1) } }
             for w in d.wins {
                 let wy = T - w.y - w.h
-                if w.frame { cF(p, frame, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x, wy, 1, 1); cF(p, frame, w.x + 1, wy, 1, w.h) }
+                if w.frame { cF(p, frame, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x, wy, 1, 1); cF(p, frame, w.x + 1, wy, 1, w.h); if snowy { cF(p, sn, w.x - 1, wy + w.h + 1, w.w + 2, 1) } }
                 else { cF(p, out, w.x - 1, wy - 1, w.w + 2, w.h + 2); cF(p, glass, w.x, wy, w.w, w.h); cF(p, glint, w.x + 1, wy, w.w - 2, 1) }
             }
             let dx = d.shop ? x + d.w - 6 : x + (d.w >> 1) - 1
@@ -333,6 +360,7 @@ extension HousePainter {
                 cF(p, out, x, ay - 1, aw2 + 1, 4)
                 for i in 0..<max(0, aw2) { cF(p, haze(i % 4 < 2 ? awn : "#f6f0e4", a), x + 1 + i, ay, 1, 2) }
                 var i = 0; while i < aw2 { cF(p, haze(awn, a), x + 1 + i, ay + 2, 1, 1); i += 2 }
+                if snowy { cF(p, sn, x, ay - 1, aw2 + 1, 1) }
             }
         }
         return p
@@ -341,20 +369,31 @@ extension HousePainter {
     private func paintRoad(_ C: HouseCityPlan, _ T: Int) -> HousePixels {
         let S = 2, BD_M = 16, rows = Int((Double(BD_M) / Double(S)).rounded(.up)) + 14, W = C.aw
         let p = HousePixels(W * S, (16 + 14) * S + BD_M * 2)
-        let walk = lit("#c2b8ae"), joint = lit("#a49a90"), curb = lit("#8a8484"), road = lit("#4c4c58"), dash = lit("#e8dca0"), out = lit(Self.outC)
+        let wet = weather == "rain", walk = lit(snowy ? "#e8eef8" : "#c2b8ae"), joint = lit(snowy ? "#cdd6e6" : "#a49a90"), curb = lit("#8a8484"), road = lit(wet ? "#3a3a48" : "#4c4c58"), dash = lit("#e8dca0"), out = lit(Self.outC)
         cF(p, walk, 0, T, W, 3)
         var x = 0; while x < W { cF(p, joint, x, T + 1, 1, 2); x += 6 }
         cF(p, curb, 0, T + 3, W, 1); cF(p, road, 0, T + 4, W, 9); cF(p, curb, 0, T + 13, W, 1); cF(p, walk, 0, T + 14, W, rows)
-        x = 0; while x < W { cF(p, dash, x, T + 8, 4, 1); x += 8 }
-        let r = HouseCityPlan.Rnd(9), cols = ["#d8702e", "#f0b040", "#b85a2a"]
-        var i = 0
-        while Double(i) < Double(W) / 5 {
-            let c = lit(cols[i % 3]), px = Int(r.next() * Double(W)), py = T + Int(r.next() * 3)
-            cF(p, c, px, py, 1, 1); i += 1
+        if snowy {
+            cF(p, lit("#eef2fa"), 0, T + 4, W, 1); cF(p, lit("#dfe6f0"), 0, T + 12, W, 1)
+            x = 0; while x < W { cF(p, lit("#d0d8e4"), x, T + 5, 2, 1); cF(p, lit("#d0d8e4"), x + 1, T + 11, 2, 1); x += 3 }
+        } else { x = 0; while x < W { cF(p, dash, x, T + 8, 4, 1); x += 8 } }
+        if wet {
+            let r = HouseCityPlan.Rnd(5), sheen = haze("#8890b0", 0.3)
+            var i = 0
+            while Double(i) < Double(W) / 6 { let px = Int(r.next() * Double(W)), py = T + 5 + Int(r.next() * 7), w = 2 + Int(r.next() * 5); cF(p, sheen, px, py, w, 1); i += 1 }
+        }
+        if season == "autumn" && !snowy {
+            let r = HouseCityPlan.Rnd(9), cols = ["#d8702e", "#f0b040", "#b85a2a"]
+            var i = 0
+            while Double(i) < Double(W) / 5 {
+                let c = lit(cols[i % 3]), px = Int(r.next() * Double(W)), py = T + Int(r.next() * 3)
+                cF(p, c, px, py, 1, 1); i += 1
+            }
         }
         let post = lit("#3a3a48"), lamp = lit("#d8d4c0")
         for x in C.lamps {
             cF(p, out, x - 1, T - 14, 3, 15); cF(p, post, x, T - 13, 1, 14); cF(p, out, x - 1, T - 15, 5, 3); cF(p, post, x, T - 14, 3, 1); cF(p, lamp, x + 1, T - 13, 2, 1)
+            if snowy { cF(p, lit("#f4f8ff"), x - 1, T - 16, 4, 1) }
         }
         return p
     }
@@ -545,7 +584,7 @@ extension HousePainter {
             cityPlan = HouseCityPlan(width: W, ground: gy, innerHeight: skyEnv.innerHeight, base: layout.view.base, dpr: layout.view.DPR, fontWidth: { self.fontWidth($0) })
         }
         let C = cityPlan!
-        let lightKey = [light.amb.x, light.amb.y, light.amb.z].map { "\(HouseLight.round($0 * 60))" }.joined(separator: ",") + "|\(HouseLight.round(light.dark * 20))"
+        let lightKey = [light.amb.x, light.amb.y, light.amb.z].map { "\(HouseLight.round($0 * 60))" }.joined(separator: ",") + "|\(HouseLight.round(light.dark * 20))|\(weather)|\(season)"
         var fresh = false
         if lightKey != cityLightKey {
             cityLightKey = lightKey; fresh = true; out.reset = true

@@ -105,6 +105,10 @@ final class HouseScene2: SKScene {
     var infoRects: [String: HouseRects] = [:], markRects: [String: HouseRects] = [:]
     var hitBoxes: [String: [Int]] = [:]
     var fxRects: HouseRects?
+    /// The page's seasonNow() and weather; the season overlay's still and drifting layers.
+    var season = "autumn", weather = "clear", seasonSig = ""
+    var seasonStill: HouseRects?, seasonDrift: HouseRects?
+    let skyLifeLayer = HouseSkyLifeLayer()
     var yardRects: HouseRects?
     var flagPools: [String: HouseRects] = [:]
     static let screenDepths: [String: Double] = ["bedroom": 6.65, "server": 7.05, "library": 11.41, "greenhouse": 8.01, "arcade": 8.81]
@@ -174,6 +178,11 @@ final class HouseScene2: SKScene {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// The atlas folder of a season next to the autumn one (room/atlas is autumn; the others are room/atlas-<season>).
+    static func atlasDir(_ autumn: URL, season: String) -> URL {
+        season == "autumn" ? autumn : autumn.deletingLastPathComponent().appendingPathComponent(autumn.lastPathComponent + "-" + season, isDirectory: true)
+    }
+
     /// Loads parts.json and the pages from a folder (the app's Resources/room/atlas, or the repo's room/atlas).
     static func load(from dir: URL, layout: HouseLayout, unit: CGFloat, size: CGSize) -> HouseScene2? {
         guard let data = try? Data(contentsOf: dir.appendingPathComponent("parts.json")) else { return nil }
@@ -210,6 +219,7 @@ final class HouseScene2: SKScene {
     /// only uniforms, glow alphas and the live parts change.
     func setTime(hour: Double, day: Int) {
         self.hour = hour; self.day = day
+        defer { feedLife(hour: hour, dark: light.dark, exact: false) }
         let h = floor(hour), m = floor((hour.truncatingRemainder(dividingBy: 1)) * 60)
         clockHM = (Int(h), Int(m))
         light = HouseLight.state(parts, hour: hour)
@@ -257,7 +267,7 @@ final class HouseScene2: SKScene {
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
 
     func rebuild() {
-        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; moverSig = [:]; ropeColor = nil; fxRects = nil; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; moverSig = [:]; ropeColor = nil; fxRects = nil; seasonStill = nil; seasonDrift = nil; seasonSig = ""; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }

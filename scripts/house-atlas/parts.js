@@ -15,7 +15,7 @@
 
   // ---------- quiet page: no loop, no residents, no eggs, no seasons' particles, clear weather ----------
   setActive(false);
-  weather = 'clear'; Q.set('season', 'autumn'); Q.set('moon', '.5');
+  weather = 'clear'; Q.set('season', O.season || 'autumn'); Q.set('moon', '.5');
   CAM.glide = null; CAM.follow = null; VIEW.zoom = 1; mouse = null; PAR.x = PAR.y = 0;
   CITY.lanes = [[], []]; CITY.nextCar = [Infinity, Infinity]; CITY.train = null; CITY.nextTrain = Infinity;
   // Pin CSS geometry and DPR as well as the WebView size: layout() must not depend on the host display.
@@ -657,12 +657,12 @@
   result.rules = {
     seed: "seed = key == '__yard' ? 11 : hashStr(key) % 97; hashStr(s): let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h (iterate Unicode code points, use their first UTF-16 code unit).",
     rounding: 'Use JavaScript Math.round(x), equivalent to floor(x + .5) (ignoring signed zero). Swift rounded() defaults to ties away from zero: -1.5 becomes -2 instead of JS -1; use floor(x + .5) for parity.',
-    capture: { season: 'autumn', width: 1728, height: 1117, dpr: 2, insets: O.insets, date: '2026-10-15 (local calendar)', moon: .5, traffic: 'cars and train disabled' },
+    capture: { season: O.season || 'autumn', width: 1728, height: 1117, dpr: 2, insets: O.insets, date: '2026-10-15 (local calendar)', moon: .5, traffic: 'cars and train disabled' },
     bridge: 'Bridges are exported as concrete configurations (village.links, plan prefix of 13 links, valid for 0..14 projects). Rules for a renderer that wants to repeat them: planks n = Math.max(3, Math.round((s1 - s0) / .3)), plank colour ["#c48c58","#b88250","#cc965e"][(i*2 + (i>>2)) % 3], seam line at each plank i>0 in #7a4a2a, nail on odd i; posts m = Math.max(1, Math.round((s1 - s0 - .3) / 1.0)) at s0+.15+(s1-s0-.3)*i/m, rope 6 segments per span with sag 6.6 - sin(u*PI)*1.6; lanterns at s0+.15 and s1-.15 (lit when DARK > .3, glow 20*S #ffc870). Source: room/index.html drawLink.',
     stair: 'Stairs are concrete (13 steps, W=.5, rope posts every 3rd step, lantern at the foot); the swing (L.lift) is only exported down/up. Source: room/index.html drawStair.',
     lift: 'Room layers with kind lift refer to room=self; find that room key in the selected lift.fl list (never reuse a cut-time absolute floor). The lift is exported per floor count (3 for 0 projects, 4 for >=1): shaft slices plus cage; pulleys are static. Source: room/index.html drawLifts.',
   };
-  result.limits = ['one season (autumn), clear weather only', 'island layout only', 'no-yard (yardOn false) and other screens not covered', 'dynamic items frozen at t=100000, the clock at 12:00', 'stair swing only down/up, pulleys static', 'pose frames are sampled', 'sky cut for a ' + sky.W + 'x' + sky.H + ' canvas at the AMBK bucket hours; other sizes and hours need the page sky / the renderer\'s own formulas'];
+  result.limits = ['one season per atlas (room/atlas is autumn, atlas-<season> the others), clear weather only', 'island layout only', 'no-yard (yardOn false) and other screens not covered', 'dynamic items frozen at t=100000, the clock at 12:00', 'stair swing only down/up, pulleys static', 'pose frames are sampled', 'sky cut for a ' + sky.W + 'x' + sky.H + ' canvas at the AMBK bucket hours; other sizes and hours need the page sky / the renderer\'s own formulas'];
   result.counts = { rooms: Object.keys(result.rooms).length, sprites: atlas.length };
 
   result.sprites = atlas; // [page, x, y, w, h, flag] by sprite id

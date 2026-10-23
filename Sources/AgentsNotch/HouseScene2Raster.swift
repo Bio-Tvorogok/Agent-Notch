@@ -69,6 +69,9 @@ final class HousePainter {
     var cityPlan: HouseCityPlan?, cityPlanKey = "", cityLightKey = ""
     var cityImages: [CGImage] = [], cityBoards: [Int: (Int, Int, Int)] = [:]
     var extraScreen = false
+    /// The page's seasonNow() and weather: the city's leaves, snow caps and wet road.
+    var season = "autumn", weather = "clear"
+    var snowy: Bool { weather == "snow" || season == "winter" }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
 
@@ -83,11 +86,12 @@ final class HousePainter {
         var layout: HouseLayout, env: HouseSkyEnv?
         /// An extra screen leaves the sun and the moon to the main one (the page's `SCENE !== 'extra'`).
         var extraScreen = false
+        var season = "autumn", weather = "clear"
     }
     func set(_ i: Inputs) {
         light = i.light; hour = i.hour; clockHM = i.clockHM; colon = i.colon; clockMillis = i.clockMillis
         if i.layout.view.width != layout.view.width || i.layout.view.height != layout.view.height { cityPlanKey = "" }
-        layout = i.layout; env = i.env; extraScreen = i.extraScreen
+        layout = i.layout; env = i.env; extraScreen = i.extraScreen; season = i.season; weather = i.weather
     }
 }
 

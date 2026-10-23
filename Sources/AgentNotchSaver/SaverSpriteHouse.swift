@@ -26,6 +26,7 @@ final class SaverSpriteHouse {
         guard HousePainter.groundRaw(layout: behaviour.layout, env: env) >= 0 else { return nil }
         let unit = CGFloat(behaviour.layout.view.PXD / behaviour.layout.view.DPR)
         guard let scene = HouseScene2.load(from: atlas, layout: behaviour.layout, unit: unit, size: size), scene.missingParts() == nil else { return nil }
+        scene.setSeason(HouseScene2.seasonOf(month0: month - 1))
         scene.env = env
         scene.attach(behaviour)
         scene.followClock = true

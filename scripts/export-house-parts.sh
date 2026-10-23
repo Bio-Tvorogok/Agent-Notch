@@ -6,12 +6,14 @@ set -eu
 cd "$(dirname "$0")/.."
 mkdir -p .build/house-atlas .build/parts-check
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
-.build/house-atlas/export room/index.html scripts/house-atlas/parts.js room/atlas "${HOUR:-12}" parts .build/parts-check
+SEASON=${SEASON:-autumn}; ATLAS=room/atlas; [ "$SEASON" = autumn ] || ATLAS=room/atlas-$SEASON
+HOUSE_SEASON=$SEASON .build/house-atlas/export room/index.html scripts/house-atlas/parts.js "$ATLAS" "${HOUR:-12}" parts .build/parts-check
 # Check the persisted manifest and file set as well as the in-page gate.
-python3 - <<'PY'
+ATLAS=$ATLAS python3 - <<'PY'
 import json
 from pathlib import Path
-out = Path('room/atlas')
+import os
+out = Path(os.environ.get('ATLAS', 'room/atlas'))
 m = json.loads((out / 'parts.json').read_text())
 expected = {'parts.json'} | {p[k] for p in m['pages'] for k in ('file', 'fileE')}
 actual = {'parts.json'} | {p.name for p in out.glob('parts-*.png')}

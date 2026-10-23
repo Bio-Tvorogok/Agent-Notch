@@ -174,6 +174,7 @@ case "live":
         let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
+        behaviour.enableSkyLife() // the page draws its sky life in this proof (live-ref.js), with the sim's random numbers
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
@@ -182,6 +183,10 @@ case "live":
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
                 if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
                 bt += 50
+            }
+            if ProcessInfo.processInfo.environment["SKY_DEBUG"] != nil {
+                let k = behaviour.skyLife, ps = (s.meta["sky"] as? [String: Any])?["birds"] as? [[Double]] ?? []
+                print("  sky t=\(s.t) mine", k.birds.map { String(format: "%.1f/%.1f", $0.x, $0.y) }, "plane", k.plane.map { String(format: "%.1f", $0.x) } ?? "-", "page", ps.map { String(format: "%.1f/%.1f", $0[0], $0[1]) })
             }
             let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
             let pxd = meta["PXD"] as! Double
@@ -194,7 +199,7 @@ case "live":
             let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 }
             let size = CGSize(width: even(Double(W)), height: even(Double(H)))
             if scene == nil {
-                guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
+                guard let sc = HouseScene2.load(from: HouseScene2.atlasDir(atlas, season: meta["season"] as? String ?? "autumn"), layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
                 sc.followsLayoutScale = false; sc.freezeClock = true; sc.freezeSim = true; sc.colon = false
                 sc.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
                 sc.attach(behaviour)
@@ -207,6 +212,7 @@ case "live":
             sc.followBehaviour(behaviour) // a project that joined relays the house out (the app does it in update)
             if sc.size != size { sc.size = size; v.frame = NSRect(origin: .zero, size: size) }
             sc.clockMillis = Double(s.t); sc.roomClockOverride = 100_000
+            sc.setSeason(meta["season"] as? String ?? "autumn"); sc.weather = meta["weather"] as? String ?? "clear"
             sc.setTime(hour: hour, day: meta["day"] as! Int)
             sc.repaint(sync: true)
             if let sim = sc.sim { sc.sync(sim: sim) }
@@ -503,6 +509,7 @@ case "render":
     }
     exit(0)
 
+#if !OLDREV // the pointer: not in the revisions bench.sh compares against
 case "interact":
     // interact <atlas> <ref dir> <fixtures dir> <out dir>: replays the page's pointer / pinch / scroll / click sequence (interact-ref.js) on the
     // scene and compares the camera, the overview button, the hovered agent, the hover card and the click's {open} at every record;
@@ -669,6 +676,7 @@ case "interact":
     print(failed ? "INTERACT PROOF: FAILED" : "INTERACT PROOF: the scene answers like the page (\(recs.count) records)")
     exit(failed ? 3 : 0)
 
+#endif
 case "selftest":
     // selftest <atlas>: the atlas guards (exact variant, short arrays, corrupt page) and the growth store; exits 1 on the first failure
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true)
@@ -713,6 +721,7 @@ case "selftest":
     print(bad == 0 ? "SELFTEST: ok" : "SELFTEST: \(bad) failed")
     exit(bad == 0 ? 0 : 1)
 
+#if !OLDREV // the pointer, the saver and the extra screen: not in the revisions bench.sh compares against
 case "hitch":
     // hitch <atlas> <projects>: main-thread cost of the per-minute refresh and of a light-variant change
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 14
@@ -790,13 +799,13 @@ case "addproject":
 
 case "saver":
     // saver <atlas> <out.png>: the screen saver's SpriteKit house (SaverSpriteHouse) from a snapshot, as the saver builds it. Gates: it is built for the
-    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), and refuses what the atlas cannot draw (spring, another layout).
+    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), draws every season, and refuses what the atlas cannot draw (another layout).
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), out = args[3]
     let agentsJSON = { (n: Int) in String(data: try! JSONEncoder().encode((0..<n).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") }), encoding: .utf8)! }
     func snap(_ n: Int, config: String = #"{"layout":"islands","themes":{}}"#) -> HouseSnapshot { HouseSnapshot(agents: agentsJSON(n), usage: nil, config: config, fps: 30, written: Date(), renderer: "spritekit") }
     var bad = 0
     func check(_ ok: Bool, _ what: String) { print(ok ? "ok   \(what)" : "FAIL \(what)"); if !ok { bad += 1 } }
-    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) == nil, "spring: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) != nil, "spring: a SpriteKit house")
     check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), month: 10, onFailure: {}) == nil, "another layout: no SpriteKit house")
     check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), month: 10, onFailure: {}) == nil, "no atlas: no SpriteKit house")
     var failed = false
@@ -903,6 +912,7 @@ case "snapdemo":
     try! NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: args[6]))
     print("snapdemo \(img.width)x\(img.height) sprites \(sim.sprites.map { "\($0.id)@\($0.room ?? "transit")" })")
 
+#endif
 case "idle", "demo":
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, secs = Double(args[4]) ?? 20
     let screen = NSScreen.screens[0]
