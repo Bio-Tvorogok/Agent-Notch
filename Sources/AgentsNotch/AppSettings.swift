@@ -44,6 +44,12 @@ final class AppSettings: ObservableObject {
     @Published var roomWallpaper: Bool { didSet { save(roomWallpaper, "roomWallpaper") } }
     /// Its layout, rooms, frame rate and screens.
     @Published var room: RoomPrefs { didSet { save(room, "room") } }
+    @Published var widget: WidgetPrefs { didSet { save(widget, "widget") } }
+    var widgetPlace: WidgetPlace? {
+        get { SettingsStorage.read(WidgetPlace?.self, key: "widgetPlace", default: nil, in: defaults) }
+        set { SettingsStorage.write(newValue, key: "widgetPlace", in: defaults) }
+    }
+    var widgetTheme: Theme { Theme.of(widget.style ?? theme) }
     @Published var isRecordingShortcut = false
     @Published var hotKeyError: String?
 
@@ -86,6 +92,7 @@ final class AppSettings: ObservableObject {
         finishToast = load("finishToast", true)
         roomWallpaper = load("roomWallpaper", false)
         room = load("room", RoomPrefs())
+        widget = load("widget", WidgetPrefs())
         rows.parts = DisplayOrder.normalize(rows.parts)
         card.blocks = DisplayPreset.migrate(card.blocks)
         if !shortcuts.isValid { shortcuts = ShortcutPrefs() }
@@ -128,6 +135,8 @@ final class AppSettings: ObservableObject {
         soundEvents = SoundPrefs()
         finishToast = true
         room = RoomPrefs()
+        widget = WidgetPrefs()
+        widgetPlace = nil
     }
 
     /// What the presets own, read from and written back to the sections.

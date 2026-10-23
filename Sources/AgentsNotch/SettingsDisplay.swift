@@ -16,6 +16,19 @@ struct SettingsAppearance: View {
             Section(SettingsText.theme) {
                 SettingsThemePicker(settings: settings)
             }
+            Section(WidgetMenuText.title) {
+                Toggle(isOn: $settings.widget.enabled) {
+                    SettingsLabel(WidgetMenuText.title, hint: WidgetMenuText.help)
+                }.toggleStyle(.switch)
+                Picker(WidgetMenuText.size, selection: $settings.widget.size) {
+                    ForEach(WidgetSize.allCases, id: \.self) { Text(WidgetMenuText.size($0)).tag($0) }
+                }.pickerStyle(.segmented)
+                Picker(WidgetMenuText.style, selection: $settings.widget.style) {
+                    Text(WidgetMenuText.followTheme).tag(ThemeID?.none)
+                    Divider()
+                    ForEach(ThemeID.allCases, id: \.self) { Text(SettingsText.theme($0)).tag(ThemeID?.some($0)) }
+                }
+            }
             Section(SettingsText.marks) {
                 HStack(spacing: 10) {
                     ForEach([MarkStyle.dots, .logos, .logosMono], id: \.self) { style in

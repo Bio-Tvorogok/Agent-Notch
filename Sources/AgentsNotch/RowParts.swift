@@ -11,12 +11,14 @@ private enum RowPartsText {
 struct RowParts: View {
     let agent: Agent
     var small = false
+    /// Parts the host draws itself, such as the widget's running time on the right.
+    var excluding: Set<RowPart> = []
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var usage: UsageModel
 
     var body: some View {
         RowPartsLayout {
-            ForEach(settings.visibleRowParts, id: \.self) { part in
+            ForEach(settings.visibleRowParts.filter { !excluding.contains($0) }, id: \.self) { part in
                 content(part).layoutValue(key: RowActivityLine.self, value: part == .activity)
             }
         }
