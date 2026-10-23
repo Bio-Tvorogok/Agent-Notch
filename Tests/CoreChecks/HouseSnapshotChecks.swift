@@ -40,9 +40,6 @@ extension HouseSnapshotChecks {
         let old = try XCTUnwrap(HouseSnapshot.decode(Data(#"{"written":\#(now.timeIntervalSince1970),"agents":[]}"#.utf8), now: now))
         XCTAssertTrue(old.renderer == nil, "a file from an older app means the page")
         XCTAssertTrue(!sk.sameHouse(as: HouseSnapshot(agents: "[]", usage: nil, config: "{}", fps: 30, written: now)), "a renderer change is a change")
-        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 10) == nil, "autumn islands: drawable")
-        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 3) != nil, "spring: the page")
-        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "tower", month: 10) != nil, "another layout: the page")
-        print("houseSnapshotRenderer: field round trip, old file, rules")
+        print("houseSnapshotRenderer: field round trip, old file")
     }
 }

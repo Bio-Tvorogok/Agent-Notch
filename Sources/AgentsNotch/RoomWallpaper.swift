@@ -4,31 +4,28 @@ import IOKit.ps
 import NotchCore
 import SpriteKit
 import SwiftUI
-import WebKit
 
-/// The agents' house as the desktop wallpaper: room/index.html in a window just above the desktop picture.
-/// The window never takes the mouse, so the desktop icons keep working; hover and clicks on bare desktop
-/// are forwarded to the page, and a click on a Clawd opens that agent's chat.
+/// The agents' house as the desktop wallpaper: the SpriteKit house (HouseScene2, drawn from room/atlas) in a window just above the
+/// desktop picture. SpriteKit is the only renderer. The window never takes the mouse, so the desktop icons keep working; hover and
+/// clicks on bare desktop are forwarded to the scene, and a click on a Clawd opens that agent's chat.
 @MainActor
 final class RoomWallpaper: NSObject {
     private let store: Store
     private var window: NSWindow?
-    private(set) var web: WKWebView?
-    /// The SpriteKit prototype (docs/house-spritekit-port.md), only with `houseRenderer spritekit`.
     private var house: SKView?
     /// What the running SpriteKit house was built from: the screen's numbers and the project list (see skGeometry).
     private var skBuilt: [Double] = []
     private var skPrefs = RoomPrefs()
     private var skBehaviour: HouseBehaviour?
-    /// The one growth count of both renderers (see HouseScene2Growth.swift).
+    /// The one growth count (see HouseScene2Growth.swift).
     private let growth = HouseGrowthStore()
-    /// Set when the atlas failed to draw: the page stays in charge until the app restarts.
-    private var forceWeb = false
+    /// Set when the atlas failed to draw: the wallpaper stays off until the app restarts (there is no other renderer to fall back to).
+    private var atlasBroken = false
     /// Set when the current screen cannot hold the house (too short for the Dock's inset): cleared when the screen changes.
     private var screenBlocked = false
     /// The screen geometry that was too short for the SpriteKit house: only another one is tried again.
     private var blockedGeometry: [Double]?
-    /// Texture preload stalls this session; the second one leaves the page in place.
+    /// Texture preload stalls this session; the second one turns the wallpaper off.
     private var skStalls = 0
     private var rendererSubs: Set<AnyCancellable> = []
     private var subs: Set<AnyCancellable> = []
@@ -45,7 +42,6 @@ final class RoomWallpaper: NSObject {
     private let tip = RoomTip()
     private var powerTimer: Timer?
     private var sentActive: Bool?
-    private var sentFps = 0
     /// The other screens' windows (see RoomScreens.swift) and where a click started.
     var extras: [CGDirectDisplayID: RoomExtraScreen] = [:]
     var settingsSubs: Set<AnyCancellable> = []
@@ -60,8 +56,8 @@ final class RoomWallpaper: NSObject {
     var isRunning: Bool { window != nil }
 
     func start() {
-        guard window == nil else { return }
-        guard let page = Self.page else { NSLog("agents-notch: room/index.html not found"); return }
+        guard window == nil, !atlasBroken else { return }
+        guard let atlas = Self.atlasDirectory else { NSLog("agents-notch: room/atlas not found"); return }
         guard let screen = NSScreen.screens.first else { return }
 
         let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
@@ -77,69 +73,18 @@ final class RoomWallpaper: NSObject {
         w.isReleasedWhenClosed = false
 
         observeRenderer()
-        if Self.wantsSpriteKit, !forceWeb {
-            if let why = Self.spriteKitReason(AppSettings.shared.room) {
-                NSLog("agents-notch: the SpriteKit house cannot draw this (\(why)), using the page")
-            } else if startSpriteKit(in: w, page: page, screen: screen) {
-                return
-            } else if skFailedOnScreen {
-                screenBlocked = true; blockedGeometry = skGeometry(of: screen)
-                NSLog("agents-notch: this screen cannot hold the SpriteKit house, using the page until the screen changes")
-            } else {
-                forceWeb = true
-                NSLog("agents-notch: no usable SpriteKit house atlas next to \(page.path), using the page")
-            }
+        if startSpriteKit(in: w, atlas: atlas, screen: screen) { return }
+        if skFailedOnScreen {
+            screenBlocked = true; blockedGeometry = skGeometry(of: screen)
+            NSLog("agents-notch: this screen cannot hold the house, trying again when the screen changes")
+        } else {
+            atlasBroken = true
+            NSLog("agents-notch: no usable house atlas in \(atlas.path), the house stays off")
         }
-
-        let config = WKWebViewConfiguration()
-        config.userContentController.add(MessageProxy(self), name: "room")
-        let web = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: config)
-        web.navigationDelegate = self
-        if #available(macOS 13.3, *) { web.isInspectable = true }
-        var url = URLComponents(url: page, resolvingAgainstBaseURL: false)
-        url?.queryItems = [URLQueryItem(name: "nodemo", value: "1")]
-        web.loadFileURL(url?.url ?? page, allowingReadAccessTo: page.deletingLastPathComponent())
-        w.contentView = web
-        w.setFrame(screen.frame, display: true)
-        w.orderFrontRegardless()
-        window = w
-        self.web = web
-        syncHouseActivity(working: store.shown.contains { $0.state == .working }, changed: true)
-        observeRoomSettings()
-
-        store.objectWillChange
-            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
-            .sink { [weak self] _ in self?.push() }
-            .store(in: &subs)
-        info.start(store: store, changed: { [weak self] in self?.push() }, send: { [weak self] js in self?.web?.evaluateJavaScript(js) })
-        // A desktop-level window doesn't always follow to a new Space; bring it along when it got left behind.
-        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)
-            .sink { [weak self] _ in
-                self?.refreshDesktopHitTargets()
-                guard let w = self?.window, !w.isOnActiveSpace else { return }
-                w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-                w.orderFrontRegardless()
-            }
-            .store(in: &subs)
-        // Battery: nothing is drawn while the desktop is covered, and fewer frames are drawn on battery.
-        NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: w)
-            .sink { [weak self] _ in self?.syncPower() }
-            .store(in: &subs)
-        NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.syncPower() }
-            .store(in: &subs)
-        powerTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.syncPower() }
-        }
-        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
-            .sink { [weak self] _ in self?.fitScreen() }
-            .store(in: &subs)
-        startPointer()
     }
 
-    /// The window ignores the mouse, so both renderers read the pointer, trackpad and Esc through a global monitor and the pinch tap
-    /// (the SpriteKit path once returned before this, so nothing answered the pointer there; scripts/test-pointer-wiring.sh).
+    /// The window ignores the mouse, so the house reads the pointer, trackpad and Esc through a global monitor and the pinch tap
+    /// (startSpriteKit must call it; scripts/test-pointer-wiring.sh).
     private func startPointer() {
         guard monitor == nil else { return }
         refreshDesktopHitTargets()
@@ -160,7 +105,6 @@ final class RoomWallpaper: NSObject {
             if type == .keyDown {
                 guard e.keyCode == 53, NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder" else { return }
                 MainActor.assumeIsolated {
-                    self?.web?.evaluateJavaScript("room.resetView()")
                     (self?.house?.scene as? HouseScene2)?.resetView()
                 }
                 return
@@ -217,17 +161,6 @@ final class RoomWallpaper: NSObject {
 
     // MARK: SpriteKit house
 
-    /// `houseRenderer spritekit` in the defaults, or HOUSE_RENDERER=spritekit in the environment (for a trial run, nothing is stored).
-    static var wantsSpriteKit: Bool {
-        ProcessInfo.processInfo.environment["HOUSE_RENDERER"] == "spritekit" || UserDefaults.standard.string(forKey: "houseRenderer") == "spritekit"
-    }
-
-    /// Why parts.json cannot draw the user's house, nil when it can: it has the islands layout, the autumn season and clear weather
-    /// (the app never sets another weather) of the page's atlas. Custom themes are only the five rooms the atlas has.
-    static func spriteKitReason(_ prefs: RoomPrefs, date: Date = Date()) -> String? {
-        HouseSpriteKitRules.reason(layout: prefs.layout.rawValue, month: Calendar.current.component(.month, from: date))
-    }
-
     /// The numbers the SpriteKit layout is built from: screen size, scale, and the menu bar, Dock and icon-column insets.
     private func skGeometry(of screen: NSScreen) -> [Double] {
         let icons = UserDefaults(suiteName: "com.apple.finder")?.object(forKey: "CreateDesktop") as? Bool ?? true
@@ -240,7 +173,7 @@ final class RoomWallpaper: NSObject {
 
     /// A scene and its behaviour for this screen: the behaviour starts from the stored growth and the agents now on the desk, and the
     /// scene is laid out as the behaviour is (the projects of those agents). nil when the atlas or the screen cannot draw it.
-    private func makeSKScene(screen: NSScreen, page: URL, prefs: RoomPrefs) -> HouseScene2? {
+    private func makeSKScene(screen: NSScreen, atlas: URL, prefs: RoomPrefs) -> HouseScene2? {
         skFailedOnScreen = false
         let g = skGeometry(of: screen)
         let themes = prefs.themes.filter { RoomTheme(rawValue: $0.value) != nil }.map { HouseLayout.ThemeChoice(project: $0.key, theme: $0.value) }
@@ -253,16 +186,16 @@ final class RoomWallpaper: NSObject {
             NSLog("agents-notch: screen too short for the SpriteKit house"); skFailedOnScreen = true; return nil
         }
         let unit = CGFloat(behaviour.layout.view.PXD / behaviour.layout.view.DPR)
-        guard let scene = HouseScene2.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas"), layout: behaviour.layout, unit: unit, size: screen.frame.size) else { return nil }
+        guard let scene = HouseScene2.load(from: atlas, layout: behaviour.layout, unit: unit, size: screen.frame.size) else { return nil }
         scene.env = env
         scene.attach(behaviour)
         if let why = scene.missingParts() { NSLog("agents-notch: the atlas has no \(why)"); return nil }
         scene.followClock = true
-        scene.onFailure = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.fallBackToPage("the atlas failed to draw") } } }
+        scene.onFailure = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.leave("the atlas failed to draw", screen: false) } } }
         scene.onStall = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated {
             guard let self else { return }
             self.skStalls += 1
-            self.fallBackToPage(self.skStalls > 1 ? "the atlas stalled twice" : "the textures stalled, trying again")
+            if self.skStalls > 1 { self.leave("the atlas stalled twice", screen: false) } else { NSLog("agents-notch: the textures stalled, trying again"); self.restart() }
         } } }
         // the pointer: the view of the window and what the hover card and a click do (HouseScene2Pointer.swift)
         scene.installCamera(HouseCamera(layout: behaviour.layout, innerWidth: g[0], innerHeight: g[1], insets: .init(top: g[3], bottom: g[4], right: g[5])))
@@ -284,18 +217,18 @@ final class RoomWallpaper: NSObject {
         return scene
     }
 
-    /// The agents as the page gets them (`Self.rows`), decoded for the behaviour.
+    /// The agents as the house gets them (`Self.rows`), decoded for the behaviour.
     private func currentRows() -> [HouseAgentRow]? {
         let agents = store.shown
         info.track(agents)
         return try? JSONDecoder().decode([HouseAgentRow].self, from: Data(Self.rows(agents, contexts: info.contexts).utf8))
     }
 
-    /// The house composed from room/atlas/parts.json by HouseScene2 (stage 1c): one room per project the agents work in,
-    /// the sky by the hour. No agents or clicks yet (stage 2b); screens, Spaces and settings are followed like the page's.
-    private func startSpriteKit(in w: NSWindow, page: URL, screen: NSScreen) -> Bool {
+    /// The house composed from room/atlas/parts.json by HouseScene2: one room per project the agents work in, the sky by the hour;
+    /// screens, Spaces and settings are followed.
+    private func startSpriteKit(in w: NSWindow, atlas: URL, screen: NSScreen) -> Bool {
         let prefs = AppSettings.shared.room
-        guard let scene = makeSKScene(screen: screen, page: page, prefs: prefs) else { return false }
+        guard let scene = makeSKScene(screen: screen, atlas: atlas, prefs: prefs) else { return false }
         let view = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.ignoresSiblingOrder = true
         view.preferredFramesPerSecond = Self.fps
@@ -331,12 +264,12 @@ final class RoomWallpaper: NSObject {
             .sink { [weak self] _ in self?.syncPower() }
             .store(in: &subs)
         powerTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.syncPower(); self?.checkRenderer() }
+            MainActor.assumeIsolated { self?.syncPower() }
         }
         return true
     }
 
-    /// The agents as the house's behaviour takes them, only when they changed (the page's push()).
+    /// The agents as the house's behaviour takes them, only when they changed .
     private func skPush() {
         let agents = store.shown
         info.track(agents)
@@ -350,9 +283,11 @@ final class RoomWallpaper: NSObject {
 
     /// The screen changed (size, scale, menu bar, Dock, icons, arrangement): the window follows and the house is laid out again.
     private func skFitScreen() {
-        guard let screen = NSScreen.screens.first, let view = house, let page = Self.page else { return }
+        guard let screen = NSScreen.screens.first, let view = house, let atlas = Self.atlasDirectory else { return }
         guard skGeometry(of: screen) != skBuilt else { return }
-        guard let scene = makeSKScene(screen: screen, page: page, prefs: AppSettings.shared.room) else { fallBackToPage("the new screen cannot be drawn", screen: true); return }
+        guard let scene = makeSKScene(screen: screen, atlas: atlas, prefs: AppSettings.shared.room) else {
+            leave("the new screen cannot be drawn", screen: skFailedOnScreen); return
+        }
         view.frame = NSRect(origin: .zero, size: screen.frame.size)
         tip.hide(); hovering = false; hintToken = nil // a card from the old scene would stay up
         view.presentScene(scene)
@@ -360,22 +295,10 @@ final class RoomWallpaper: NSObject {
         syncPower()
     }
 
-    /// Settings or the date moved the user's house out of (or back into) what the atlas draws: the renderer follows, the
-    /// other changes (theme choices) only lay the rooms out again.
+    /// Theme choices are fixed when the behaviour is made, so a change lays the rooms out again.
     private func rendererSettingsChanged(_ prefs: RoomPrefs) {
-        guard isRunning else { return }
-        if Self.wantsSpriteKit, !forceWeb, Self.spriteKitReason(prefs) == nil {
-            if house == nil { restart(); return }
-            if prefs.themes != skPrefs.themes { restart() } // the behaviour's themes are fixed when it is made
-        } else if house != nil {
-            fallBackToPage(Self.spriteKitReason(prefs) ?? "the renderer was turned off")
-        }
-    }
-
-    /// The 20 s tick: the month can leave the atlas's season while the house runs.
-    private func checkRenderer() {
-        guard house != nil, let why = Self.spriteKitReason(AppSettings.shared.room) else { return }
-        fallBackToPage(why)
+        guard isRunning, house != nil, prefs.themes != skPrefs.themes else { return }
+        restart()
     }
 
     private func observeRenderer() {
@@ -386,14 +309,24 @@ final class RoomWallpaper: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] prefs in self?.rendererSettingsChanged(prefs) }
             .store(in: &rendererSubs)
+        // the house was kept off only because the last screen was too small: another one may do
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, window == nil, screenBlocked, let screen = NSScreen.screens.first, skGeometry(of: screen) != blockedGeometry else { return }
+                screenBlocked = false
+                start()
+            }
+            .store(in: &rendererSubs)
     }
 
-    /// The SpriteKit house gives way to the page (for good when the atlas itself is at fault).
-    private func fallBackToPage(_ why: String, screen: Bool = false) {
+    /// The house turns off: the screen cannot hold it (tried again when the screen changes) or the atlas is at fault (for good).
+    private func leave(_ why: String, screen: Bool) {
         guard house != nil else { return }
-        NSLog("agents-notch: leaving the SpriteKit house: \(why)")
-        if screen { screenBlocked = true; blockedGeometry = NSScreen.screens.first.map { skGeometry(of: $0) } } else if why.contains("atlas") { forceWeb = true }
-        restart()
+        NSLog("agents-notch: leaving the house: \(why)")
+        let geometry = NSScreen.screens.first.map { skGeometry(of: $0) }
+        stop()
+        if screen { screenBlocked = true; blockedGeometry = geometry } else { atlasBroken = true }
     }
 
     private func restart() {
@@ -408,53 +341,30 @@ final class RoomWallpaper: NSObject {
         powerTimer?.invalidate()
         powerTimer = nil
         sentActive = nil
-        sentFps = 0
+        screenBlocked = false
+        blockedGeometry = nil
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         stopPinchTap()
         subs.removeAll()
         removeExtras()
         info.stop()
-        web?.configuration.userContentController.removeScriptMessageHandler(forName: "room")
         window?.orderOut(nil)
         window = nil
         house?.presentScene(nil)
         house = nil
         skBehaviour = nil
         tip.hide()
-        web = nil
         lastJSON = ""
     }
 
     func syncPower() {
-        if let house, let w = window, let scene = house.scene as? HouseScene2 {
-            // covered: nothing drawn; on battery or in Low Power Mode: 30 fps at most
-            scene.maxFps = Self.fps
-            let visible = w.occlusionState.contains(.visible)
-            if visible != sentActive { sentActive = visible; if visible { scene.wake() } else { scene.hide() } }
-            extras.values.forEach { $0.sync(fps: Self.fps, awake: houseAwake) }
-            return
-        }
-        guard let w = window, let web else { return }
+        guard let house, let w = window, let scene = house.scene as? HouseScene2 else { return }
+        // covered: nothing drawn; on battery or in Low Power Mode: 30 fps at most
+        scene.maxFps = Self.fps
         let visible = w.occlusionState.contains(.visible)
-        if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
-        let fps = Self.fps
-        if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
-        extras.values.forEach { $0.sync(fps: fps, awake: houseAwake) }
-        syncInsets()
-    }
-
-    /// The menu bar and the Dock cover part of the wallpaper; the page keeps the house and the city's street clear of them,
-    /// and the islands clear of the column of desktop icons on the right (unless Finder hides the desktop).
-    private var sentInsets: (CGFloat, CGFloat, CGFloat)?
-    private func syncInsets() {
-        guard let screen = NSScreen.screens.first, let web else { return }
-        let top = screen.frame.maxY - screen.visibleFrame.maxY, bottom = screen.visibleFrame.minY - screen.frame.minY
-        let icons = UserDefaults(suiteName: "com.apple.finder")?.object(forKey: "CreateDesktop") as? Bool ?? true
-        let right: CGFloat = icons ? 120 : 0
-        if let s = sentInsets, s == (top, bottom, right) { return }
-        sentInsets = (top, bottom, right)
-        web.evaluateJavaScript("room.setInsets({top: \(top), bottom: \(bottom), right: \(right)})")
+        if visible != sentActive { sentActive = visible; if visible { scene.wake() } else { scene.hide() } }
+        extras.values.forEach { $0.sync(fps: Self.fps, awake: houseAwake) }
     }
 
     static var fps: Int { AppSettings.shared.room.fps(lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, onBattery: onBattery) }
@@ -469,26 +379,10 @@ final class RoomWallpaper: NSObject {
         w.setFrame(screen.frame, display: true)
         refreshDesktopHitTargets()
         syncScreens()
-        syncInsets()
         skFitScreen()
-        // the page was kept only because the last screen was too small: this one may do
-        if house == nil, screenBlocked, Self.wantsSpriteKit, !forceWeb, skGeometry(of: screen) != blockedGeometry { screenBlocked = false; restart() }
     }
 
     // MARK: agents
-
-    /// The agents as the page wants them; only changes are sent.
-    private func push() {
-        let agents = store.shown
-        info.track(agents)
-        let json = Self.rows(agents, contexts: info.contexts)
-        syncHouseActivity(working: agents.contains { $0.state == .working }, changed: json != lastJSON)
-        guard json != lastJSON else { return }
-        lastJSON = json
-        web?.evaluateJavaScript("window.room && room.setAgents(\(json)); true") { _, error in
-            if let error { NSLog("agents-notch: room update failed: \(error)") }
-        }
-    }
 
     private func syncHouseActivity(working: Bool, changed: Bool) {
         let now = CACurrentMediaTime()
@@ -508,7 +402,7 @@ final class RoomWallpaper: NSObject {
         }
     }
 
-    /// The agents as `room.setAgents(...)` takes them, as JSON; the screen saver gets the same rows (RoomSaverFeed.swift).
+    /// The agents as the house takes them, as JSON; the screen saver gets the same rows (RoomSaverFeed.swift).
     static func rows(_ agents: [Agent], contexts: [String: Double]) -> String {
         let rows: [[String: Any]] = agents.map { a in
             var r: [String: Any] = ["id": a.id, "title": a.title, "project": a.project, "vendor": a.vendor.rawValue, "state": Self.state(a.state)]
@@ -533,25 +427,12 @@ final class RoomWallpaper: NSObject {
         }
     }
 
-    fileprivate func received(_ body: Any) {
-        guard let msg = body as? [String: Any] else { return }
-        if msg.keys.contains("growth") { growth.merge(page: msg["growth"]); return }
-        if let error = msg["jsError"] as? String { NSLog("agents-notch: room page error: \(error.prefix(400))"); return }
-        if msg.keys.contains("tip") {
-            if let t = msg["tip"] as? [String: Any], let w = window { tip.show(t, in: w.frame) } else { tip.hide() }
-            return
-        }
-        guard let id = msg["open"] as? String,
-              let agent = store.shown.first(where: { $0.id == id }) else { return }
-        store.open(agent)
-    }
-
     // MARK: mouse
 
     /// The window ignores the mouse, so the cursor is read globally and passed on while nothing covers the desktop.
     /// Trackpad gestures over bare desktop drive the view: pinch zooms at the cursor, two fingers move, a double tap resets.
     private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0)) {
-        guard let w = window, web != nil || house != nil else { return }
+        guard let w = window, house != nil else { return }
         let scene = house?.scene as? HouseScene2
         let now = CACurrentMediaTime()
         if type == .mouseMoved {
@@ -573,25 +454,25 @@ final class RoomWallpaper: NSObject {
             // a click, not the end of a drag across the desktop
             let click = pressed.map { hypot($0.0.x - p.x, $0.0.y - p.y) < 6 && CACurrentMediaTime() - $0.1 < 0.6 } ?? true
             pressed = nil
-            if bare, click { if let web { web.evaluateJavaScript("room.click(\(x), \(y))") } else { scene?.pointerClicked(x: Double(x), y: Double(y)); pinchHint(scene, x: x, y: y) } }
+            if bare, click { scene?.pointerClicked(x: Double(x), y: Double(y)); pinchHint(scene, x: x, y: y) }
             return
         case .magnify:
-            if bare { if let web { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") } else { scene?.zoom(1 + Double(magnify), x: Double(x), y: Double(y)) } }
+            if bare { scene?.zoom(1 + Double(magnify), x: Double(x), y: Double(y)) }
             else if CACurrentMediaTime() - lastPinchNote > 2 { // why a pinch did not reach the room
                 lastPinchNote = CACurrentMediaTime()
                 NSLog("agents-notch: pinch not passed on: \(w.frame.contains(p) ? "covered by \(coveringWindow(at: p) ?? "?")" : "outside the wallpaper")")
             }
             return
         case .smartMagnify:
-            if bare { if let web { web.evaluateJavaScript("room.resetView()") } else { scene?.resetView() } }
+            if bare { scene?.resetView() }
             return
         case .scrollWheel:
-            if bare, scroll != (0, 0) { if let web { web.evaluateJavaScript("room.pan(\(scroll.0), \(scroll.1))") } else { scene?.pan(dx: Double(scroll.0), dy: Double(scroll.1)) } }
+            if bare, scroll != (0, 0) { scene?.pan(dx: Double(scroll.0), dy: Double(scroll.1)) }
             return
         default: break
         }
-        if bare { hovering = true; if let web { web.evaluateJavaScript("room.pointer(\(x), \(y))") } else { scene?.pointerMoved(x: Double(x), y: Double(y)) } }
-        else if hovering { hovering = false; tip.hide(); if let web { web.evaluateJavaScript("room.leave()") } else { scene?.pointerLeft() } }
+        if bare { hovering = true; scene?.pointerMoved(x: Double(x), y: Double(y)) }
+        else if hovering { hovering = false; tip.hide(); scene?.pointerLeft() }
     }
 
     /// Cache desktop IDs only when the windows/Space are created. AppKit's point hit test then handles
@@ -654,9 +535,26 @@ final class RoomWallpaper: NSObject {
         return nil
     }
 
-    // MARK: the page
+    // MARK: where the art lives
 
-    /// AGENT_NOTCH_ROOM overrides; the app bundle carries Resources/room; `swift run` finds the repo's room/.
+    /// The atlas the house is drawn from: AGENT_NOTCH_ROOM (a room/index.html path, as before) names its folder; the app bundle carries
+    /// Resources/room/atlas; `swift run` finds the repo's room/atlas.
+    static var atlasDirectory: URL? {
+        func usable(_ d: URL) -> URL? { FileManager.default.fileExists(atPath: d.appendingPathComponent("parts.json").path) ? d : nil }
+        if let p = ProcessInfo.processInfo.environment["AGENT_NOTCH_ROOM"] {
+            return usable(URL(fileURLWithPath: p).deletingLastPathComponent().appendingPathComponent("atlas", isDirectory: true))
+        }
+        if let d = Bundle.main.resourceURL?.appendingPathComponent("room/atlas", isDirectory: true), let u = usable(d) { return u }
+        var dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+        for _ in 0..<6 {
+            if let u = usable(dir.appendingPathComponent("room/atlas", isDirectory: true)) { return u }
+            dir.deleteLastPathComponent()
+        }
+        return nil
+    }
+
+    /// room/index.html, for the extra-screen windows only (RoomScreens.swift, until they are SpriteKit): the app bundle no longer
+    /// carries it, so they are only made when running from the repo.
     static var page: URL? {
         if let p = ProcessInfo.processInfo.environment["AGENT_NOTCH_ROOM"] { return URL(fileURLWithPath: p) }
         if let u = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "room") { return u }
@@ -667,33 +565,6 @@ final class RoomWallpaper: NSObject {
             dir.deleteLastPathComponent()
         }
         return nil
-    }
-}
-
-extension RoomWallpaper: WKNavigationDelegate {
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        MainActor.assumeIsolated {
-            lastJSON = ""
-            sentActive = nil
-            sentFps = 0
-            sentInsets = nil
-            pushRoomConfig()
-            web?.evaluateJavaScript("window.room && room.setGrowth && room.setGrowth(\(growth.pageJSON)); true")
-            push()
-            info.resend(store: store)
-            syncPower()
-        }
-    }
-}
-
-/// WKUserContentController keeps its handlers alive; this keeps it from keeping the wallpaper alive.
-private final class MessageProxy: NSObject, WKScriptMessageHandler {
-    weak var owner: RoomWallpaper?
-    init(_ owner: RoomWallpaper) { self.owner = owner }
-
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        let body = message.body
-        MainActor.assumeIsolated { owner?.received(body) }
     }
 }
 

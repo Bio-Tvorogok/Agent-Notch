@@ -11,12 +11,11 @@ final class SaverSpriteHouse {
     private let behaviour: HouseBehaviour
     private var agents = ""
 
-    /// nil when the atlas or the screen cannot draw it; the saver then keeps the page.
-    init?(size: CGSize, scale: CGFloat, atlas: URL, snapshot: HouseSnapshot, month: Int = Calendar.current.component(.month, from: Date()),
-          onFailure: @escaping () -> Void) {
+    /// nil when the atlas or the screen cannot draw it; the saver then shows a dark frame. The atlas draws the autumn islands house,
+    /// whatever the snapshot's layout or the month.
+    init?(size: CGSize, scale: CGFloat, atlas: URL, snapshot: HouseSnapshot, onFailure: @escaping () -> Void) {
         let config = (try? JSONSerialization.jsonObject(with: Data(snapshot.config.utf8))) as? [String: Any] ?? [:]
-        guard HouseSpriteKitRules.reason(layout: config["layout"] as? String ?? "islands", month: month) == nil,
-              size.width > 0, size.height > 0 else { return nil }
+        guard size.width > 0, size.height > 0 else { return nil }
         let themes = (config["themes"] as? [String: String] ?? [:]).map { HouseLayout.ThemeChoice(project: $0.key, theme: $0.value) }
         let canvas = HouseLayout.Canvas(width: Double(size.width), height: Double(size.height), dpr: Double(scale))
         behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: .islands, canvas: canvas, insets: .init(), themes: themes)

@@ -614,17 +614,16 @@ case "addproject":
 
 case "saver":
     // saver <atlas> <out.png>: the screen saver's SpriteKit house (SaverSpriteHouse) from a snapshot, as the saver builds it. Gates: it is built for the
-    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), and refuses what the atlas cannot draw (spring, another layout).
+    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), draws the autumn islands house whatever the month or layout (there is no other renderer), and refuses a missing atlas.
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), out = args[3]
     let agentsJSON = { (n: Int) in String(data: try! JSONEncoder().encode((0..<n).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") }), encoding: .utf8)! }
     func snap(_ n: Int, config: String = #"{"layout":"islands","themes":{}}"#) -> HouseSnapshot { HouseSnapshot(agents: agentsJSON(n), usage: nil, config: config, fps: 30, written: Date(), renderer: "spritekit") }
     var bad = 0
     func check(_ ok: Bool, _ what: String) { print(ok ? "ok   \(what)" : "FAIL \(what)"); if !ok { bad += 1 } }
-    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) == nil, "spring: no SpriteKit house")
-    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), month: 10, onFailure: {}) == nil, "another layout: no SpriteKit house")
-    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), month: 10, onFailure: {}) == nil, "no atlas: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), onFailure: {}) != nil, "another layout: still the SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), onFailure: {}) == nil, "no atlas: no SpriteKit house")
     var failed = false
-    guard let house = SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 10, onFailure: { failed = true }) else { print("FAIL cannot build"); exit(3) }
+    guard let house = SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), onFailure: { failed = true }) else { print("FAIL cannot build"); exit(3) }
     house.scene.setTime(hour: 12, day: 294)
     spin(1.5)
     let projects = { house.scene.layout.rooms.filter { !$0.key.hasPrefix("__") }.count }
