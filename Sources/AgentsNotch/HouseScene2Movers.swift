@@ -162,18 +162,24 @@ extension HouseScene2 {
             }()
             let ax0 = pose.layers[0].ax, ay0 = pose.layers[0].ay
             if n.userData?["sig"] as? String != sig {
-                n.children.filter { $0.name == "ly" || $0.name == "glow" }.forEach { $0.removeFromParent() }
+                // the pose's layers are reused in place: a walk changes its pose every 110 ms and makes no node for it
+                var spare = n.children.compactMap { $0 as? SKSpriteNode }.filter { $0.name == "ly" || $0.name == "glow" }
                 for (k, (ly, glow)) in all.enumerated() {
                     let r = pages.rect(ly.sprite)
-                    let c = SKSpriteNode(texture: pages.texture(ly.sprite), size: CGSize(width: r.w, height: r.h))
-                    c.anchorPoint = CGPoint(x: 0, y: 1)
+                    let c: SKSpriteNode
+                    if !spare.isEmpty { c = spare.removeFirst() } else {
+                        c = SKSpriteNode(); c.anchorPoint = CGPoint(x: 0, y: 1); n.addChild(c); HouseRects.created += 1
+                    }
+                    c.texture = pages.texture(ly.sprite)
+                    c.size = CGSize(width: r.w, height: r.h)
                     c.position = CGPoint(x: Double(ax0 - ly.ax), y: -Double(ay0 - ly.ay))
                     c.zPosition = (k < pose.layers.count ? 0 : 0.003) + CGFloat(k) * 0.0001
                     c.shader = shaders.shader(page: r.page, flag: r.flag)
                     c.name = glow ? "glow" : "ly"
-                    if ly.blend == "add" { c.blendMode = .add }
-                    n.addChild(c)
+                    c.blendMode = ly.blend == "add" ? .add : .alpha
+                    c.isHidden = false; c.alpha = 1
                 }
+                for c in spare { c.removeFromParent() }
                 n.userData = ["sig": sig]
             }
             if let g = extra.glow { for c in n.children where c.name == "glow" { c.alpha = CGFloat(g) } }
@@ -190,12 +196,23 @@ extension HouseScene2 {
         for (id, n) in canopyNodes where !seen.contains(id) { n.removeFromParent(); canopyNodes[id] = nil }
     }
 
-    /// True while anything moves: the view then runs at full rate; otherwise it may rest until the next minute.
+    /// The page's houseAwake: the house draws while an agent works or anything moves, and may rest until the next minute otherwise.
+    /// Marks, idle residents and a still camera do not keep it awake (the page does not animate them on their own either).
     var isMoving: Bool {
         guard let sim else { return false }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
-        return sim.sprites.contains { $0.moving || !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.alpha != $0.fade || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil }
+        return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil || ($0.kind == "agent" && $0.state == "working") }
+    }
+
+    /// Anything that visibly moves (walking, the lift, falls, particles, fades, rooms arriving, the host's direct manipulation): draws at the full rate.
+    /// What stays awake without it (agents typing or waiting at their desks, a held or burning resident: frames of 110-130 ms) only steps frames, so it draws at half that.
+    var isBursting: Bool {
+        guard let sim else { return false }
+        if sim.roomsSettling || pendingRows != nil || burstExtra() { return true }
+        if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
+        if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty { return true }
+        return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.alpha != $0.fade || $0.moving }
     }
 
     /// The waiting hop and arm: round(|sin(t/260)|*3) x (sin > 0), 7 steps in each half of the 1634 ms cycle.
@@ -204,7 +221,6 @@ extension HouseScene2 {
         let b = [0.0, 0.1674, 0.5236, 0.9851, 2.1565, 2.618, 2.9742]
         return h * 7 + (b.lastIndex { $0 <= r } ?? 0)
     }
-    var isTyping: Bool { sim?.sprites.contains { $0.seated == true || $0.state == "working" || $0.state == "waiting" || $0.state == "error" } ?? false }
 
     override func update(_ currentTime: TimeInterval) {
         let raw = lastTime.map { max(0, currentTime - $0) } ?? 0
@@ -237,17 +253,17 @@ extension HouseScene2 {
         pace(currentTime)
     }
 
-    /// Full rate while something moves, 25 fps while agents only type, paused after 3 s of nothing and woken each minute
+    /// Full rate while something moves, half of it while agents only type (their frames change every ~110 ms), paused after 3 s of nothing and woken each minute
     /// for the sky (the clouds drift a pixel at a time and the wisps likewise, so the idle house rests too).
     private func pace(_ now: TimeInterval) {
         counted += 1
         if countFrom == 0 { countFrom = now }
         if now - countFrom >= 5 { deliveredFps = Double(counted) / (now - countFrom); counted = 0; countFrom = now }
         guard followClock else { return }
-        let typing = isTyping, moving = isMoving
-        let want = fixedFps ?? (moving ? maxFps : typing ? min(10, maxFps) : maxFps)
+        let moving = isMoving
+        let want = fixedFps ?? min(maxFps, isBursting ? 60 : 30)
         if want != rate { rate = want; view?.preferredFramesPerSecond = want }
-        if moving || typing || fixedFps != nil { stillSince = nil; return }
+        if moving || fixedFps != nil { stillSince = nil; return }
         if stillSince == nil { stillSince = now }
         if let s = stillSince, now - s >= 3 { sleepUntilNextMinute() }
     }

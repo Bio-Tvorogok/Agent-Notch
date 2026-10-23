@@ -5,27 +5,40 @@ import SpriteKit
 /// A pool of solid-colour rectangles in canvas pixels (y down, like the page's fillRect): the marks over a Clawd are a handful
 /// of such rects, recoloured every frame, so no texture is made. Rects past `begin()`'s count stay hidden.
 final class HouseRects: SKNode {
+    private struct Rect: Equatable { var c: [Int]; var x, y, w, h: Int; var alpha: Double; var add: Bool }
     private var pool: [SKSpriteNode] = []
-    private var used = 0
-    func begin() { used = 0 }
+    private var shown: [Rect] = []    // what the pooled nodes show now
+    private var pending: [Rect] = []  // what this frame asked for
+    /// Nodes ever made by any pool: a steady scene makes none after its first frames (the benchmark checks it).
+    nonisolated(unsafe) static var created = 0
+    func begin() { pending.removeAll(keepingCapacity: true) }
     func add(_ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, alpha: Double = 1, blend: SKBlendMode = .alpha) {
         guard w > 0, h > 0, alpha > 0 else { return }
-        let n: SKSpriteNode
-        if used < pool.count { n = pool[used] } else {
-            n = SKSpriteNode(color: .white, size: .zero)
-            n.anchorPoint = CGPoint(x: 0, y: 1)
-            addChild(n); pool.append(n)
-        }
-        used += 1
-        n.isHidden = false
-        n.color = SKColor(srgbRed: CGFloat(c[0]) / 255, green: CGFloat(c[1]) / 255, blue: CGFloat(c[2]) / 255, alpha: 1)
-        n.alpha = CGFloat(min(1, alpha))
-        n.blendMode = blend
-        n.size = CGSize(width: w, height: h)
-        n.position = CGPoint(x: x, y: -y)
-        n.zPosition = CGFloat(used) * 0.0001
+        pending.append(Rect(c: c, x: x, y: y, w: w, h: h, alpha: min(1, alpha), add: blend == .add))
     }
-    func end() { if used < pool.count { for i in used..<pool.count { pool[i].isHidden = true } } }
+    /// Only the rects that changed since the last frame touch their node.
+    func end() {
+        for (i, r) in pending.enumerated() {
+            let n: SKSpriteNode
+            if i < pool.count { n = pool[i] } else {
+                n = SKSpriteNode(color: .white, size: .zero)
+                n.anchorPoint = CGPoint(x: 0, y: 1)
+                n.zPosition = CGFloat(i + 1) * 0.0001
+                addChild(n); pool.append(n); shown.append(Rect(c: [], x: 0, y: 0, w: 0, h: 0, alpha: 0, add: false)); Self.created += 1
+                n.isHidden = true
+            }
+            if i < shown.count, shown[i] == r, !n.isHidden { continue }
+            let old = shown[i]
+            n.isHidden = false
+            if old.c != r.c { n.color = SKColor(srgbRed: CGFloat(r.c[0]) / 255, green: CGFloat(r.c[1]) / 255, blue: CGFloat(r.c[2]) / 255, alpha: 1) }
+            if old.alpha != r.alpha { n.alpha = CGFloat(r.alpha) }
+            if old.add != r.add { n.blendMode = r.add ? .add : .alpha }
+            if old.w != r.w || old.h != r.h { n.size = CGSize(width: r.w, height: r.h) }
+            if old.x != r.x || old.y != r.y { n.position = CGPoint(x: r.x, y: -r.y) }
+            shown[i] = r
+        }
+        if pending.count < pool.count { for i in pending.count..<pool.count where !pool[i].isHidden { pool[i].isHidden = true } }
+    }
 }
 
 /// What the page's drawClawd paints over a Clawd that is not a body pose: the context battery and eyelids, and the status marks

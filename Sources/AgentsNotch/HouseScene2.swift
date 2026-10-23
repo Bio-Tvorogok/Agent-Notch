@@ -116,6 +116,9 @@ final class HouseScene2: SKScene {
     /// The highest rate this view may run at (60 on power, 30 on battery); `fixedFps` turns off the adaptive rate.
     var maxFps = 60 { didSet { rate = fixedFps ?? min(rate, maxFps); view?.preferredFramesPerSecond = rate } }
     var fixedFps: Int?
+    var yardSig: [String: String] = [:]
+    /// Set by the host for direct manipulation (pointer, camera glide), which the page paints at the burst rate too.
+    var burstExtra: () -> Bool = { false }
     var rate = 60
     var stillSince: TimeInterval?
     var napTimer: Timer?
@@ -224,7 +227,7 @@ final class HouseScene2: SKScene {
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
 
     func rebuild() {
-        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; fxRects = nil; yardRects = nil; flagPools = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; fxRects = nil; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }

@@ -15,9 +15,15 @@ enum HouseLight {
     /// JS Math.round: halves go up.
     static func round(_ v: Double) -> Int { Int(floor(v + 0.5)) }
 
+    nonisolated(unsafe) private static var rgbCache: [String: [Int]] = [:]
+    private static let rgbLock = NSLock()
     static func rgb(_ hex: String) -> [Int] {
+        rgbLock.lock(); defer { rgbLock.unlock() } // also called off the main thread
+        if let c = rgbCache[hex] { return c }
         let n = Int(hex.dropFirst(), radix: 16) ?? 0
-        return [n >> 16, n >> 8 & 255, n & 255]
+        let v = [n >> 16, n >> 8 & 255, n & 255]
+        if rgbCache.count < 4096 { rgbCache[hex] = v }
+        return v
     }
 
     /// setTime(hour): AMB, DARK and SKY mixed linearly between the two AMBK rows around the hour (row 24 repeats row 0).

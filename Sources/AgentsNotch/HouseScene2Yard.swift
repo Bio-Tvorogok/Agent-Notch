@@ -73,14 +73,17 @@ extension HouseScene2 {
     func updateYardDyn(_ b: HouseBehaviour, sim: HouseSim, simT: Double) {
         let layer = yardRects ?? { let r = HouseRects(); root.addChild(r); yardRects = r; return r }()
         if layer.parent !== root { layer.removeFromParent(); root.addChild(layer) }
-        layer.begin(); defer { layer.end() }
         let up = simT - b.life.mailFlag < 15000
         let G = -parts.SLAB
+        // each part redraws only when what it shows changes: the swing with its rider, the flag, the lit monitors
+        func changed(_ k: String, _ sig: String) -> Bool { if yardSig[k] == sig { return false }; yardSig[k] = sig; return true }
         for (key, node) in dynNodes {
             switch key.name {
             case "swing":
                 let sw = b.life.swinger.flatMap { id in sim.sprites.first { $0.id == id } }
                 node.node.isHidden = sw != nil
+                guard changed("swing", sw.map { "\($0.id) \($0.y) \($0.z)" } ?? "") else { continue }
+                layer.begin(); defer { layer.end() }
                 guard let sw, let r = roomFrame("__bath") else { continue }
                 layer.zPosition = node.z
                 let cv = HouseRoomCanvas(rects: layer, scene: self, ox: r.ox, oy: r.oy), dy = sw.y - 7.05, dz = sw.z - 4.5
@@ -92,7 +95,8 @@ extension HouseScene2 {
                 cv.box(10.35, 6.92 + dy, G + 4 + dz, 0.7, 0.26, 0.5, "#c04848")
             case "flag", "flagK":
                 node.node.isHidden = up
-                guard up, let r = roomFrame(key.name == "flag" ? "__bath" : "__kitchen") else { continue }
+                guard changed(key.name, "\(up)") else { continue }
+                guard up, let r = roomFrame(key.name == "flag" ? "__bath" : "__kitchen") else { let p = flagRects(key.name); p.begin(); p.end(); continue }
                 let cv = HouseRoomCanvas(rects: flagRects(key.name), scene: self, ox: r.ox, oy: r.oy)
                 cv.rects.zPosition = node.z
                 cv.rects.begin()
@@ -104,6 +108,8 @@ extension HouseScene2 {
                 let work = sim.sprites.filter { $0.kind == "agent" && $0.goal?.room == key.room && $0.goal?.cat == "work" && $0.path.isEmpty && $0.state == "working" }
                 let on0 = work.contains { $0.goal?.i == 0 }, on1 = work.contains { $0.goal?.i == 1 }
                 let pool = flagRects("screen:" + key.room)
+                let shift = Int(floor((roomClockOverride ?? simT) / 700))
+                guard changed("screen:" + key.room, "\(on0) \(on1) \((on0 || on1) ? shift : 0)") else { continue }
                 pool.zPosition = node.z
                 pool.begin(); defer { pool.end() }
                 let cv = HouseRoomCanvas(rects: pool, scene: self, ox: r.ox, oy: r.oy)
@@ -116,7 +122,6 @@ extension HouseScene2 {
                 case "arcade": list = [(7.7, 9.4, 0.501, 16, 23, on0 || on1, true)]
                 default: break
                 }
-                let shift = Int(floor((roomClockOverride ?? simT) / 700))
                 for (x0, x1, y, z0, z1, on, game) in list where on {
                     cv.fy(x0, x1, y, z0, z1, emiC(game ? "#1a2440" : "#13202a"))
                     let a = cv.iso(x0 + 0.1, y, z1 - 1)
@@ -132,7 +137,6 @@ extension HouseScene2 {
             default: break
             }
         }
-        if !up { for (k, r) in flagPools where !k.hasPrefix("screen:") { r.begin(); r.end() } }
     }
 
     func flagRects(_ k: String) -> HouseRects {

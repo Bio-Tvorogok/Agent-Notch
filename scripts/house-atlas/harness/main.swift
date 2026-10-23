@@ -251,6 +251,82 @@ case "live":
     print(failed ? "LIVE PROOF: FAILED (a sample is over a gate)" : "LIVE PROOF: all samples within the gates")
     exit(failed ? 3 : 0)
 
+case "bench":
+    // bench <atlas dir> <fixtures dir> <fixture> <work|idle|life> <seconds> [label]: the scene driven like the app drives it (update(_:) at the rate it
+    // asks for, paused when it naps) over a scripted run on a virtual clock. Prints main-thread ms per frame, frames requested per second
+    // and the nodes made after the first 35 s; with `check` as the 8th argument it exits 3 when an idle house does not rest or a steady
+    // one keeps making nodes.
+    //   work: the fixture's rows as they are (agents working); idle: no agents, no residents; life: no agents, the life layer on.
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), fixDir = URL(fileURLWithPath: args[3], isDirectory: true)
+    let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixDir.appendingPathComponent(args[4] + ".json"))) as! [String: Any]
+    let kind = args[5], seconds0 = Double(args[6])!, label = args.count > 7 ? args[7] : kind, check = args.count > 8 && args[8] == "check"
+    let input = fixture["input"] as! [String: Any]
+    let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
+    func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
+    let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
+    let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: 2), insets: .init(top: 0, bottom: 0, right: 0), random: { rng.nextDouble() })
+    if kind != "idle" && kind != "type" { behaviour.enableLife(hour: 12, dark: 0) }
+    let lay = behaviour.layout
+    let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 }
+    let size = CGSize(width: even(Double(lay.view.width)), height: even(Double(lay.view.height)))
+    guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
+    sc.followsLayoutScale = false; sc.followClock = true
+    sc.env = HouseSkyEnv(innerHeight: 1117, insetBottom: 0)
+    sc.attach(behaviour)
+    let v = SKView(frame: NSRect(origin: .zero, size: size)); v.ignoresSiblingOrder = true
+    sc.setTime(hour: 12, day: 100)
+    v.presentScene(sc)
+    spin(1.0)
+    func count(_ n: SKNode) -> Int { n.children.reduce(1) { $0 + count($1) } }
+    // walk: the rows alternate every 6 s so agents keep changing rooms; type: the fixture's rows, measured after they have settled (35 s on)
+    var pending = kind == "work" || kind == "type" ? events : []
+    if kind == "walk" { behaviour.setAgents(rows(events[1])) }
+    if kind == "idle" || kind == "life" { behaviour.setAgents([]) }
+    var lastFlip = -1, why = [String: Int]()
+    let seconds = kind == "type" ? seconds0 + 55 : seconds0
+    var T = 1000.0, frames = 0, spent = 0.0, worst = [Double](), nodes20 = 0, created20 = 0, framesAfter20 = 0, spentAfter20 = 0.0
+    var paused = false, pausedAt: Double?
+    let start = T
+    sc.update(T) // the first update only anchors lastTime
+    while T - start < seconds {
+        while let e = pending.first, Double(e["at"] as! Int) / 1000 <= T - start { behaviour.setAgents(rows(e)); pending.removeFirst() }
+        if v.isPaused { if pausedAt == nil { pausedAt = T - start }; paused = true; T += 0.5; continue } // the minute timer is not simulated
+        if kind == "walk", Int((T - start) / 6) != lastFlip { lastFlip = Int((T - start) / 6); behaviour.setAgents(rows(events[lastFlip % 2 == 0 ? 2 : 0])) }
+        let t0 = ProcessInfo.processInfo.systemUptime
+        sc.update(T)
+        let ms = (ProcessInfo.processInfo.systemUptime - t0) * 1000
+        frames += 1; spent += ms; worst.append(ms)
+        if T - start >= (kind == "type" ? 55 : 35) { framesAfter20 += 1; spentAfter20 += ms } else { nodes20 = count(sc); created20 = HouseRects.created }
+        #if !OLDREV
+        if kind == "type", T - start >= 55, let sim = sc.sim {
+            let b = sc.behaviour
+            for (k, on) in [("settling", sim.roomsSettling), ("rows", sc.pendingRows != nil), ("cab", sim.cabins.contains { $0.state != "idle" }), ("link", sim.links.contains { $0.turn != nil }),
+                            ("puff", !(b?.puffs.isEmpty ?? true)), ("paper", !(b?.papers.isEmpty ?? true)), ("fw", !(b?.life.fireworks.isEmpty ?? true)),
+                            ("path", sim.sprites.contains { !$0.path.isEmpty }), ("bridge", sim.sprites.contains { $0.onBridge != nil }), ("fall", sim.sprites.contains { $0.fall != nil }),
+                            ("hand", sim.sprites.contains { $0.behaviour.handover != nil }), ("fade", sim.sprites.contains { $0.alpha != $0.fade }), ("moving", sim.sprites.contains { $0.moving })] where on { why[k, default: 0] += 1 }
+        }
+        #endif
+        T += 1 / Double(max(1, sc.rate))
+    }
+    worst.sort()
+    let p95 = worst.isEmpty ? 0 : worst[min(worst.count - 1, Int(Double(worst.count) * 0.95))]
+    let madeAfter = HouseRects.created - created20, nodesEnd = count(sc)
+    let steady = kind == "type"
+    let nF = steady ? framesAfter20 : frames, nMs = steady ? spentAfter20 : spent
+    print(String(format: "bench %@: %d frames in %.0f s = %.1f frames/s requested, %.2f ms/frame mean (%.2f p95), %.1f ms of main thread per second; nodes %d -> %d, pool nodes made after 35 s: %d, paused %@",
+                 label as NSString, nF, seconds0, Double(nF) / seconds0, nF > 0 ? nMs / Double(nF) : 0, p95, nMs / seconds0, nodes20, nodesEnd, madeAfter,
+                 paused ? "at \(Int(pausedAt ?? 0)) s" as NSString : "never" as NSString))
+    #if !OLDREV
+    if kind == "type" { print("  type why60 frames:", why.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")) }
+    #endif
+    var bad = false
+    if check {
+        if kind == "idle" && !(paused && (pausedAt ?? 99) <= 10) { print("FAIL: the idle house did not rest within 10 s"); bad = true }
+        if madeAfter > (kind == "walk" ? 12 : 0) || nodesEnd > nodes20 + 8 { print("FAIL: nodes are made in steady state (made \(madeAfter), count \(nodes20) -> \(nodesEnd))"); bad = true }
+        print(bad ? "BENCH CHECK: FAILED" : "BENCH CHECK: ok")
+    }
+    exit(bad ? 3 : 0)
+
 case "selftest":
     // selftest <atlas>: the atlas guards (exact variant, short arrays, corrupt page) and the growth store; exits 1 on the first failure
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true)
