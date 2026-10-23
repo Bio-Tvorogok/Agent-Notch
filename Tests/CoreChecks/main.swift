@@ -398,6 +398,7 @@ run("houseBehaviourGoldenFixtures") { try HouseBehaviourChecks().goldenFixtures(
 run("houseLifeGoldenFixtures") { try HouseLifeChecks().goldenFixtures() }
 run("houseCamera") { try HouseCameraChecks().all() }
 run("houseHit") { try HouseHitChecks().all() }
+run("housePinch") { try HousePinchChecks().all() }
 run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 

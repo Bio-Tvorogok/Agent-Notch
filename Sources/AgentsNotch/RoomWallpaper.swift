@@ -34,6 +34,7 @@ final class RoomWallpaper: NSObject {
     private var subs: Set<AnyCancellable> = []
     private var monitor: Any?
     private var pinchTap: CFMachPort?
+    private var pinchLogged = false
     private var lastJSON = ""
     private var lastMove = 0.0
     private var hovering = false
@@ -100,7 +101,6 @@ final class RoomWallpaper: NSObject {
         w.orderFrontRegardless()
         window = w
         self.web = web
-        refreshDesktopHitTargets()
         syncHouseActivity(working: store.shown.contains { $0.state == .working }, changed: true)
         observeRoomSettings()
 
@@ -118,12 +118,6 @@ final class RoomWallpaper: NSObject {
                 w.orderFrontRegardless()
             }
             .store(in: &subs)
-        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)
-            .sink { [weak self] note in
-                guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == "com.apple.finder" else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refreshDesktopHitTargets() }
-            }
-            .store(in: &subs)
         // Battery: nothing is drawn while the desktop is covered, and fewer frames are drawn on battery.
         NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: w)
             .sink { [weak self] _ in self?.syncPower() }
@@ -138,12 +132,25 @@ final class RoomWallpaper: NSObject {
         NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
             .sink { [weak self] _ in self?.fitScreen() }
             .store(in: &subs)
+        startPointer()
+    }
+
+    /// The window ignores the mouse, so both renderers read the pointer, trackpad and Esc through a global monitor and the pinch tap
+    /// (the SpriteKit path once returned before this, so nothing answered the pointer there; scripts/test-pointer-wiring.sh).
+    private func startPointer() {
+        guard monitor == nil else { return }
+        refreshDesktopHitTargets()
+        NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)
+            .sink { [weak self] note in
+                guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == "com.apple.finder" else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refreshDesktopHitTargets() }
+            }
+            .store(in: &subs)
         NotificationCenter.default.publisher(for: Self.pinchPermissionChanged)
             .merge(with: NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
             .sink { [weak self] _ in self?.startPinchTap() }
             .store(in: &subs)
         startPinchTap()
-        if let mode = ProcessInfo.processInfo.environment["HOUSE_DEBUG_POINTER"] { startDebugPointer(mode) }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
             let type = e.type
             // Esc on the desktop goes back to the overview; macOS only delivers keys here with Accessibility access
@@ -160,39 +167,18 @@ final class RoomWallpaper: NSObject {
         }
     }
 
-    /// For CPU measurements only (HOUSE_DEBUG_POINTER=hover|zoom in the environment): the pointer, pinch and two-finger pan a person would make,
-    /// fed every 40 ms into the same calls `mouse()` makes for a bare desktop (a real pinch cannot be posted from a script).
-    private var debugStep = 0
-    private func startDebugPointer(_ mode: String) {
-        Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let w = self.window else { return }
-                self.debugStep += 1
-                let n = Double(self.debugStep), W = Double(w.frame.width), H = Double(w.frame.height)
-                let x = W / 2 + cos(n / 17) * W / 4, y = H / 2 + sin(n / 11) * H / 5
-                @MainActor func call(_ js: String, _ scene: (HouseScene2) -> Void) {
-                    if let web = self.web { web.evaluateJavaScript(js) } else if let sc = self.house?.scene as? HouseScene2 { scene(sc) }
-                }
-                if mode == "zoom" {
-                    // 12 s cycle: pinch in at the cursor for 4 s, two fingers back and forth for 4 s, pinch out for 4 s
-                    let ph = self.debugStep % 300
-                    if ph < 100 { call("room.zoom(1.025, \(x), \(y))") { $0.zoom(1.025, x: x, y: y) } }
-                    else if ph < 200 { let d = sin(n / 6) * 14; call("room.pan(\(d), \(d / 2))") { $0.pan(dx: d, dy: d / 2) } }
-                    else { call("room.zoom(0.975, \(x), \(y))") { $0.zoom(0.975, x: x, y: y) } }
-                } else {
-                    call("room.pointer(\(x), \(y))") { $0.pointerMoved(x: x, y: y) }
-                }
-            }
-        }
-    }
-
     static let pinchPermissionChanged = Notification.Name("AgentsNotch.housePinchPermissionChanged")
 
     /// A global monitor is never sent trackpad pinches (they go to the app under the cursor, Finder on the desktop),
     /// so they are read from a listen-only event tap after Input Monitoring has already been granted.
     /// Only Settings' explicit enable action requests access. A denied tap has no polling timer.
     private func startPinchTap() {
-        guard CGPreflightListenEventAccess() else { stopPinchTap(); return }
+        let allowed = CGPreflightListenEventAccess()
+        guard allowed else {
+            stopPinchTap()
+            if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: false, created: nil)); pinchLogged = true }
+            return
+        }
         guard pinchTap == nil else { return }
         let callback: CGEventTapCallBack = { _, type, event, ref in
             guard let ref else { return Unmanaged.passUnretained(event) }
@@ -208,10 +194,12 @@ final class RoomWallpaper: NSObject {
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
                                           eventsOfInterest: CGEventMask(1) << 29 | CGEventMask(1) << CGEventMask(NSEvent.EventType.magnify.rawValue), // pinches come as gesture events (29)
                                           callback: callback, userInfo: Unmanaged.passUnretained(self).toOpaque())
-        else { NSLog("agents-notch: no event tap for trackpad pinches"); return }
+        else { if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: true, created: false)) }; pinchLogged = true; return }
         CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         pinchTap = tap
+        if !pinchLogged { NSLog("%@", HousePinch.statusLine(allowed: true, created: true, enabled: CGEvent.tapIsEnabled(tap: tap))) }
+        pinchLogged = true
     }
 
     private func stopPinchTap() {
@@ -312,6 +300,7 @@ final class RoomWallpaper: NSObject {
         window = w
         house = view
         syncPower()
+        startPointer()
         syncHouseActivity(working: store.shown.contains { $0.state == .working }, changed: true)
         observeRoomSettings()
         lastJSON = Self.rows(store.shown, contexts: info.contexts)
@@ -577,7 +566,7 @@ final class RoomWallpaper: NSObject {
             // a click, not the end of a drag across the desktop
             let click = pressed.map { hypot($0.0.x - p.x, $0.0.y - p.y) < 6 && CACurrentMediaTime() - $0.1 < 0.6 } ?? true
             pressed = nil
-            if bare, click { if let web { web.evaluateJavaScript("room.click(\(x), \(y))") } else { scene?.pointerClicked(x: Double(x), y: Double(y)) } }
+            if bare, click { if let web { web.evaluateJavaScript("room.click(\(x), \(y))") } else { scene?.pointerClicked(x: Double(x), y: Double(y)); pinchHint(scene, x: x, y: y) } }
             return
         case .magnify:
             if bare { if let web { web.evaluateJavaScript("room.zoom(\(1 + magnify), \(x), \(y))") } else { scene?.zoom(1 + Double(magnify), x: Double(x), y: Double(y)) } }
@@ -611,6 +600,21 @@ final class RoomWallpaper: NSObject {
     }
 
     private var lastPinchNote: CFTimeInterval = 0
+    private var pinchHinted = false
+
+    /// Without Input Monitoring a pinch never arrives. The first time a click zooms the SpriteKit house in, a small card says what else
+    /// works and where pinch is switched on (once per run; the tip panel is the app's own, nothing new is added to the desktop).
+    private func pinchHint(_ scene: HouseScene2?, x: CGFloat, y: CGFloat) {
+        guard let scene, let w = window,
+              HousePinch.hintDue(tapActive: pinchTap != nil, alreadyShown: pinchHinted, zoomTarget: scene.houseCamera?.target.zoom ?? 1) else { return }
+        pinchHinted = true
+        NSLog("agents-notch: pinch zoom is off (no Input Monitoring); showed the one-time hint")
+        tip.show(["title": Loc.t("Pinch zoom is off", "Масштаб жестом выключен"),
+                  "status": Loc.t("Click a room, scroll to pan, double tap goes back", "Клик по комнате, прокрутка двигает, двойное касание возвращает"),
+                  "color": "#e0a030", "detail": Loc.t("Settings > House > Pinch zoom", "Настройки > Дом > Масштаб жестом"),
+                  "x": Double(x), "y": Double(y)], in: w.frame)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.tip.hide() }
+    }
     /// True when no app window is over this point, so the cursor is over the wallpaper itself.
     private func desktopIsBare(at p: NSPoint) -> Bool { coveringWindow(at: p) == nil }
 
