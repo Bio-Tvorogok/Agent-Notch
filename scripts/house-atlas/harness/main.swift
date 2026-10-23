@@ -171,6 +171,7 @@ case "live":
         let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
+        behaviour.enableSkyLife() // the page draws its sky life in this proof (live-ref.js), with the sim's random numbers
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
@@ -179,6 +180,10 @@ case "live":
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
                 if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
                 bt += 50
+            }
+            if ProcessInfo.processInfo.environment["SKY_DEBUG"] != nil {
+                let k = behaviour.skyLife, ps = (s.meta["sky"] as? [String: Any])?["birds"] as? [[Double]] ?? []
+                print("  sky t=\(s.t) mine", k.birds.map { String(format: "%.1f/%.1f", $0.x, $0.y) }, "plane", k.plane.map { String(format: "%.1f", $0.x) } ?? "-", "page", ps.map { String(format: "%.1f/%.1f", $0[0], $0[1]) })
             }
             let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
             let pxd = meta["PXD"] as! Double
@@ -618,13 +623,13 @@ case "addproject":
 
 case "saver":
     // saver <atlas> <out.png>: the screen saver's SpriteKit house (SaverSpriteHouse) from a snapshot, as the saver builds it. Gates: it is built for the
-    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), and refuses what the atlas cannot draw (spring, another layout).
+    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), draws every season, and refuses what the atlas cannot draw (another layout).
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), out = args[3]
     let agentsJSON = { (n: Int) in String(data: try! JSONEncoder().encode((0..<n).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") }), encoding: .utf8)! }
     func snap(_ n: Int, config: String = #"{"layout":"islands","themes":{}}"#) -> HouseSnapshot { HouseSnapshot(agents: agentsJSON(n), usage: nil, config: config, fps: 30, written: Date(), renderer: "spritekit") }
     var bad = 0
     func check(_ ok: Bool, _ what: String) { print(ok ? "ok   \(what)" : "FAIL \(what)"); if !ok { bad += 1 } }
-    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) == nil, "spring: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) != nil, "spring: a SpriteKit house")
     check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), month: 10, onFailure: {}) == nil, "another layout: no SpriteKit house")
     check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), month: 10, onFailure: {}) == nil, "no atlas: no SpriteKit house")
     var failed = false

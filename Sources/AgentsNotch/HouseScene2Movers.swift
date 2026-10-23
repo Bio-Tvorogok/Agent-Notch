@@ -193,6 +193,7 @@ extension HouseScene2 {
         }
         for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil; infoRects[id] = nil; markRects[id] = nil; hitBoxes[id] = nil }
         updateEffects(sim: sim, simT: simT, t: clockMillis)
+        updateSkyLife(t: clockMillis)
         for (id, n) in canopyNodes where !seen.contains(id) { n.removeFromParent(); canopyNodes[id] = nil }
     }
 

@@ -11,10 +11,10 @@
   setActive(false);
   weather = 'clear';
   // The life layer (residents, the cat and the dog, scenes), the speech bubbles, the marks over the Clawds and the scene overlays are all
-  // live now. Not drawn by the SpriteKit house and so off here, like in Tests/HouseChecks/life-fixtures.mjs: the sky life (birds, a plane,
-  // a balloon: stage 3), and the eggs (the season is the case's: leaves, snow, flowers). No demo: the context batteries come from the rows only.
+  // live now, and so are the sky life (birds, a plane, a balloon: HouseSkyLife draws the same numbers) and the case's season (leaves,
+  // snow, flowers). Not drawn by the SpriteKit house and so off here: the eggs. No demo: the context batteries come from the rows only.
   demo = false;
-  eggStep = () => {}; eggSky = () => {}; eggOver = () => {}; eggItems = () => {}; drawSkyLife = () => {};
+  eggStep = () => {}; eggSky = () => {}; eggOver = () => {}; eggItems = () => {};
   METEORS.next = Infinity; METEORS.list = [];
   room.setInsets(O.insets);
   sprites.clear();
@@ -32,6 +32,8 @@
     for (const r of rooms) r.label.remove();
     rooms.length = 0; roomByKey.clear(); sprites.clear(); links = []; LIFT = null; PLAN = { hulls: [] };
     growth = {};
+    SC.ball = null; SC.puffs = []; SC.fireworks = []; SC.papers = []; SC.mailFlag = -1e9; // nothing of the last case's life layer carries over
+    Object.assign(SKYLIFE, { birds: [], plane: null, balloon: null, next: null, last: 0 }); // a fresh sky per case, like the fresh HouseBehaviour
     ensureRoom('__bath', 'Ванная', 'bath'); ensureRoom('__kitchen', 'Кухня', 'kitchen'); ensureRoom('__roof', 'Крыша', 'roof');
     for (const r of rooms) { r.born = -1e9; r.drop = 0; r.cache = null; }
     let bs = c.seed;
@@ -44,6 +46,11 @@
       if (bt) {
         updateResidents(bt); updateErrands(bt); stepSprites(50); updateLifts(bt, 50);
         updateScenes(bt, now()); updateStairs(bt);
+        // the page turns a pet toward where it walks when it DRAWS it (drawCat/drawDog), every frame; the sim loop here draws only at the samples
+        for (const sp of sprites.values()) if (sp.kind === 'cat' || sp.kind === 'dog') { const n = sp.path[0];
+          if (sp.onBridge) sp.face = sp.onBridge.forward ? 1 : -1;
+          else if (n && n.p) { const dx = (n.p[0] - sp.x) - (n.p[1] - sp.y); if (Math.abs(dx) > .05) sp.face = Math.sign(dx); }
+          else if (sp.kind === 'dog' && sp.look) { const dx = (sp.look[0] - sp.x) - (sp.look[1] - sp.y); if (Math.abs(dx) > .05) sp.face = Math.sign(dx); } }
         for (const r of rooms) r.drop = Math.round(-Math.pow(1 - Math.min(1, Math.max(0, (bt - r.born) / 900)), 3) * 140);
         drawFallers(bt);
       }
@@ -55,7 +62,7 @@
         const shift = 100000 - bt, ball = SC.ball, flag = SC.mailFlag;
         if (ball) SC.ball = Object.assign(Object.create(Object.getPrototypeOf(ball)), ball, { t0: ball.t0 + shift, t1: (ball.t1 ?? 0) + shift });
         SC.mailFlag = flag + shift;
-        updateResidents = () => false; updateScenes = () => false;
+        updateResidents = () => false; updateScenes = () => { drawSkyLife(bt); return false; }; // the sky life is drawn by the frame at the sim's time (no step: the sim loop moved it)
         try { frame(100000); } finally { performance.now = () => bt; SC.ball = ball; SC.mailFlag = flag; updateResidents = life.updateResidents; updateScenes = life.updateScenes; } }; // the atlas cut the room's animated items at t=100000; the Clawds keep the sample time (drawClawd below)
       drawBackground = (t, d) => { real.drawBackground(t, d); bgc.getContext('2d').drawImage(cv, 0, 0); };
       try { draw(); } finally { drawBackground = real.drawBackground; }
@@ -66,7 +73,8 @@
       bs = rngKept;
       const d = now(), tag = `${c.name}-t${bt}`;
       const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
-      const meta = { case: c.name, t: bt, hour: c.hour, season: c.season || 'autumn', weather: c.weather || 'clear', W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
+      const sky = { birds: SKYLIFE.birds.map(f => [f.x, f.y, f.dir, f.v, f.n, f.seed]), plane: SKYLIFE.plane && [SKYLIFE.plane.x, SKYLIFE.plane.y], balloon: SKYLIFE.balloon && [SKYLIFE.balloon.x, SKYLIFE.balloon.y, SKYLIFE.balloon.seed] };
+      const meta = { case: c.name, sky, t: bt, hour: c.hour, season: c.season || 'autumn', weather: c.weather || 'clear', W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
         rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
         agents: [...sprites.values()].filter(sp => sp.kind === 'agent').length, falling: [...sprites.values()].filter(sp => sp.fall).length, links: links.map(L => L.id + ':' + L.kind + ':' + (L.lift ?? '') + ':' + (L.aim ?? '')), sprites: [...sprites.values()].map(sp => [sp.id, sp.kind, sp.state || '', (sp.room && sp.room.key) || sp.room || '-', Math.round(sp.x), Math.round(sp.y), Math.round(sp.alpha * 100), sp.moving ? 'mv' : 'st', sp.seated ? 'seat' : '-', sp.waving ? 'wave' : '-'].join('|')), cabins: LIFT ? LIFT.cabins.map(c => [Math.round(c.z * 10) / 10, c.state]) : [] };
       for (const [f, data] of [['.png', full], ['-bare.png', bare], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {

@@ -1,0 +1,1 @@
+{"input": {"seed": 211, "duration": 330000, "events": [{"at": 0, "rows": [{"id": "a", "project": "alpha", "state": "working", "vendor": "claude", "activity": "Bash \u00b7 build"}, {"id": "b", "project": "alpha", "state": "working", "vendor": "claude", "activity": "Bash \u00b7 build"}]}]}}
