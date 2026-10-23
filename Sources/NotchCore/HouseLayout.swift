@@ -165,6 +165,16 @@ public struct HouseLayout: Encodable, Sendable {
         HouseLayoutBuilder(projects: projects, style: layout, canvas: canvas, insets: insets, themes: themes).make()
     }
 
+    /// The page's extra screen (`?scene=extra`, layoutEmpty): no rooms, no links, only the canvas and its scale (VIEW.base = max(1, round(innerHeight * DPR / 170) / 4)).
+    public static func extraScreen(canvas: Canvas) -> HouseLayout {
+        let blank = make(projects: [], canvas: canvas)
+        let dpr = canvas.dpr == 0 ? 1 : canvas.dpr
+        let base = max(1, houseRound(canvas.height * dpr / 170) / 4)
+        let w = ceil(canvas.width * dpr / base), h = ceil(canvas.height * dpr / base)
+        let view = View(PXD: base, DPR: dpr, width: w, height: h, cssWidth: w * base / dpr, cssHeight: h * base / dpr, base: base, home: [0, 0], at: [0, 0])
+        return HouseLayout(rooms: [], lift: nil, links: [], hulls: [], yard: blank.yard, escapes: [], escapeShapes: [:], drawOrder: [], view: view, worldFrame: blank.worldFrame)
+    }
+
     static let projectThemes = ["bedroom", "server", "library", "greenhouse", "arcade"]
     // projectTheme / nameHash: FNV-1a over UTF-16 (including surrogate pairs).
     static func projectTheme(_ name: String, choices: [ThemeChoice]) -> String {

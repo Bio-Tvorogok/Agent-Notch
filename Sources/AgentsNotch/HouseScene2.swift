@@ -23,6 +23,8 @@ final class HouseScene2: SKScene {
     /// a harness that sizes the scene to the canvas sets `followsLayoutScale` off.
     private(set) var unit: CGFloat
     var followsLayoutScale = true
+    /// An extra screen (the page's `?scene=extra`): the sky and the city of an empty layout (`HouseLayout.extraScreen`), without the sun and the moon.
+    var extraScreen = false
     struct LiveItem { weak var node: SKSpriteNode?; let make: (HousePainter) -> (CGImage, CGPoint, CGSize)?; let clock: Bool }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }

@@ -456,7 +456,7 @@ extension HousePainter {
         }
         func arc(_ k: Double) -> Double { gnd + 5 * Double(S) - sin(Double.pi * k) * (gnd - Double(H) * 0.1) }
         let km = (hour >= 12 ? hour - 19.5 : hour + 4.5) / 10.5
-        if km > -0.08 && km < 1.08 {
+        if !extraScreen && km > -0.08 && km < 1.08 {
             let ph = moonPhase(), lum = 1 - abs(ph - 0.5) * 2
             let mx = HouseLight.round(Self.sunX(km, Double(W))), my = HouseLight.round(arc(km))
             if lum > 0.04 {
@@ -476,7 +476,7 @@ extension HousePainter {
             } }
         }
         let k = (hour - 6) / 13.5
-        if k > -0.08 && k < 1.08 {
+        if !extraScreen && k > -0.08 && k < 1.08 {
             let low = 1 - min(1, max(0, sin(Double.pi * k)) * 3.2), x = HouseLight.round(Self.sunX(k, Double(W))), y = HouseLight.round(arc(k))
             let core = mixHex("#fff4c0", "#ff9a50", low), halo = mixHex("#fff0b4", "#ff8a50", low)
             radial(halo, 0.55 + low * 0.2, Double(x), Double(y), (26 + low * 14) * Double(S), clip: CGRect(x: x - 40 * S, y: y - 40 * S, width: 80 * S, height: 80 * S))

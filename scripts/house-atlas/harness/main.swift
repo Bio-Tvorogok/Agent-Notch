@@ -565,6 +565,53 @@ case "saver":
     print(bad == 0 ? "SAVER PROOF: ok" : "SAVER PROOF: \(bad) failed")
     exit(bad == 0 ? 0 : 3)
 
+case "extra":
+    // extra <atlas> <ref dir> <out dir>: the extra screen's sky and city (HouseScene2.extraScreen, an empty layout, no sun or moon) against the page's own
+    // ?scene=extra frames (harness/extra-ref.js, islets left out), whole frame, with the scene proof's frame gates.
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), refDir = URL(fileURLWithPath: args[3], isDirectory: true), out = URL(fileURLWithPath: args[4], isDirectory: true)
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let metas = try FileManager.default.contentsOfDirectory(atPath: refDir.path).filter { $0.hasPrefix("ref-x") && $0.hasSuffix(".json") }.sorted()
+    var failed = metas.isEmpty
+    print("fixture      var | frame%24  frame%6  MAE/ch")
+    for m in metas {
+        let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent(m))) as! [String: Any]
+        let hour = meta["hour"] as! Double, W = meta["W"] as! Int, H = meta["H"] as! Int, dpr = meta["DPR"] as! Double
+        let layout = HouseLayout.extraScreen(canvas: .init(width: meta["innerW"] as! Double, height: meta["innerH"] as! Double, dpr: dpr))
+        guard Int(layout.view.width) == W, Int(layout.view.height) == H, layout.view.PXD == meta["PXD"] as! Double, layout.rooms.isEmpty else {
+            print("canvas mismatch \(layout.view.width)x\(layout.view.height)@\(layout.view.PXD) vs \(W)x\(H)@\(meta["PXD"]!)"); exit(1)
+        }
+        let (scene, view) = makeScene(atlas: atlas, layout: layout)
+        scene.extraScreen = ProcessInfo.processInfo.environment["PROOF_SUN"] == nil // PROOF_SUN: a deliberate defect (the main screen's sun and moon on an extra screen), to prove the gate fails
+        scene.env = HouseSkyEnv(innerHeight: meta["innerH"] as! Double, insetBottom: 0)
+        scene.freezeClock = true; scene.clockMillis = meta["T"] as! Double; scene.colon = false
+        scene.setTime(hour: hour, day: meta["day"] as! Int)
+        let ours = render(scene, view: view)
+        let tag = String(m.dropFirst(4).dropLast(5))
+        let ref = pixels(load(refDir.appendingPathComponent("ref-\(tag).png"))), mineRaw = pixels(ours)
+        guard mineRaw.w >= ref.w, mineRaw.h >= ref.h, mineRaw.w - ref.w <= 8, mineRaw.h - ref.h <= 8 else { print("size mismatch \(mineRaw.w)x\(mineRaw.h) vs \(ref.w)x\(ref.h)"); exit(1) }
+        let mine = crop(mineRaw, ref.w, ref.h)
+        var off24 = 0, off6 = 0, sumAbs = 0
+        var diff = [UInt8](repeating: 255, count: ref.w * ref.h * 4)
+        var side = [UInt8](repeating: 255, count: ref.w * 2 * ref.h * 4)
+        for p in 0..<(ref.w * ref.h) {
+            let i = p * 4
+            var mx = 0
+            for c in 0..<3 { let d = abs(Int(ref.data[i + c]) - Int(mine.data[i + c])); mx = max(mx, d); sumAbs += d }
+            if mx > 6 { off6 += 1 }
+            if mx > 24 { off24 += 1 }
+            for c in 0..<3 { diff[i + c] = mx > 24 ? (c == 0 ? 255 : 0) : ref.data[i + c] >> 2 }
+            let y = p / ref.w, x = p % ref.w
+            for c in 0..<4 { side[(y * ref.w * 2 + x) * 4 + c] = ref.data[i + c]; side[(y * ref.w * 2 + ref.w + x) * 4 + c] = mine.data[i + c] }
+        }
+        save(diff, ref.w, ref.h, to: out.appendingPathComponent("\(tag)-diff.png"))
+        save(side, ref.w * 2, ref.h, to: out.appendingPathComponent("\(tag)-side.png"))
+        let n = Double(ref.w * ref.h), f24 = 100 * Double(off24) / n, f6 = 100 * Double(off6) / n, mae = Double(sumAbs) / (n * 3)
+        print(String(format: "%-12@ %3d | %8.4f %8.4f %7.4f", tag as NSString, scene.light.variant, f24, f6, mae))
+        if f24 > GATE_FRAME24 || f6 > GATE_FRAME6 { failed = true; print("    ^ over a gate") }
+    }
+    print(failed ? "EXTRA PROOF: FAILED" : "EXTRA PROOF: all fixtures within the gates")
+    exit(failed ? 3 : 0)
+
 case "snapdemo":
     // snapdemo <atlas> <projects> <hour> <seconds> <out.png>
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, hour = Double(args[4]) ?? 12, secs = Double(args[5]) ?? 20

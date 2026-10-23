@@ -68,6 +68,7 @@ final class HousePainter {
     var stars: [Star] = [], starKey = ""
     var cityPlan: HouseCityPlan?, cityPlanKey = "", cityLightKey = ""
     var cityImages: [CGImage] = [], cityBoards: [Int: (Int, Int, Int)] = [:]
+    var extraScreen = false
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
 
@@ -80,11 +81,13 @@ final class HousePainter {
     struct Inputs {
         var light: HouseLightState, hour: Double, clockHM: (Int, Int), colon: Bool, clockMillis: Double
         var layout: HouseLayout, env: HouseSkyEnv?
+        /// An extra screen leaves the sun and the moon to the main one (the page's `SCENE !== 'extra'`).
+        var extraScreen = false
     }
     func set(_ i: Inputs) {
         light = i.light; hour = i.hour; clockHM = i.clockHM; colon = i.colon; clockMillis = i.clockMillis
         if i.layout.view.width != layout.view.width || i.layout.view.height != layout.view.height { cityPlanKey = "" }
-        layout = i.layout; env = i.env
+        layout = i.layout; env = i.env; extraScreen = i.extraScreen
     }
 }
 
