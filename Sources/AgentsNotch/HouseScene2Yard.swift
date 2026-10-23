@@ -71,7 +71,7 @@ struct HouseRoomCanvas {
 extension HouseScene2 {
     /// The yard's swing with a Clawd on it, and the mailbox flag while it is up: redrawn here, the atlas layers hidden meanwhile.
     func updateYardDyn(_ b: HouseBehaviour, sim: HouseSim, simT: Double) {
-        let layer = yardRects ?? { let r = HouseRects(); root.addChild(r); yardRects = r; return r }()
+        let layer = yardRects ?? { let r = rectPool(); root.addChild(r); yardRects = r; return r }()
         if layer.parent !== root { layer.removeFromParent(); root.addChild(layer) }
         let up = simT - b.life.mailFlag < 15000
         let G = -parts.SLAB
@@ -141,6 +141,6 @@ extension HouseScene2 {
 
     func flagRects(_ k: String) -> HouseRects {
         if let r = flagPools[k], r.parent === root { return r }
-        let r = HouseRects(); root.addChild(r); flagPools[k] = r; return r
+        let r = rectPool(); root.addChild(r); flagPools[k] = r; return r
     }
 }

@@ -9,7 +9,7 @@ extension HouseScene2 {
 
     func fxLayer() -> HouseRects {
         if let f = fxRects, f.parent === movers { return f }
-        let f = HouseRects(); movers.addChild(f); fxRects = f
+        let f = rectPool(); movers.addChild(f); fxRects = f
         return f
     }
 

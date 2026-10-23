@@ -77,12 +77,27 @@ final class HouseShaders {
             """)
             vec3 o = clamp(ec + (fc - ec) * u_amb / \(fa), 0.0, 1.0);
             float a = clamp(ea + (f.a - ea) * u_amb.r / \(fa), 0.0, 1.0) * v_color_mix.a;
-            gl_FragColor = vec4(o * a, a);
+            vec3 tint = v_color_mix.a > 0.0 ? v_color_mix.rgb / v_color_mix.a : vec3(1.0); // 1 unless a rectangle is tinted (ink)
+            gl_FragColor = vec4(o * tint * a, a);
         }
         """
     }
 
     func set(_ a: SIMD3<Double>) { amb.vectorFloat3Value = vector_float3(Float(a.x), Float(a.y), Float(a.z)) }
+
+    private func general(_ page: Int) -> SKShader {
+        if let s = general[page] { return s }
+        let d = pages.dims(page)
+        let s = SKShader(source: source(black: false, w: d.w, h: d.h), uniforms: [amb, SKUniform(name: "u_e", texture: pages.ePage(page))])
+        general[page] = s
+        return s
+    }
+
+    /// A plain rectangle that batches with the parts: the white texel of the main page, tinted by the node's colour.
+    func ink(_ n: SKSpriteNode) {
+        guard let m = pages.main, let t = pages.ink() else { return }
+        n.texture = t; n.shader = general(m); n.colorBlendFactor = 1
+    }
 
     /// Shades a sprite with its page's shader (none for a constant sprite of a page that is not unified).
     func apply(to n: SKSpriteNode, id: Int) {
@@ -91,15 +106,11 @@ final class HouseShaders {
 
     /// The shader for a sprite: its page's for any sprite of a unified page, otherwise E black for flag 1 and nil for flag 2.
     func shader(_ id: Int) -> SKShader? {
-        let r = pages.rect(id), pg = pages.parts.pages[r.page]
-        if pages.unifies(r.page) {
-            if let s = general[r.page] { return s }
-            let s = SKShader(source: source(black: false, w: pg.w, h: pg.h), uniforms: [amb, SKUniform(name: "u_e", texture: pages.ePage(r.page))])
-            general[r.page] = s
-            return s
-        }
+        let r = pages.rect(id), page = pages.drawPage(id)
+        if pages.unifies(page) { return general(page) }
         guard r.flag == 1 else { return nil }
-        let (w, h) = pages.sparsePages.contains(r.page) ? (r.w, r.h) : (pg.w, pg.h)
+        let pg = pages.dims(page)
+        let (w, h) = pages.sparsePages.contains(page) ? (r.w, r.h) : (pg.w, pg.h)
         if let s = black["\(w)x\(h)"] { return s }
         let s = SKShader(source: source(black: true, w: w, h: h), uniforms: [amb])
         black["\(w)x\(h)"] = s

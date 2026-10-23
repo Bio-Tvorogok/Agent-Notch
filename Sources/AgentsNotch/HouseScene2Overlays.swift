@@ -11,6 +11,8 @@ final class HouseRects: SKNode {
     private var pending: [Rect] = []  // what this frame asked for
     /// Nodes ever made by any pool: a steady scene makes none after its first frames (the benchmark checks it).
     nonisolated(unsafe) static var created = 0
+    /// Draws a new rect from the parts' texture and shader (HouseShaders.ink), so the rects batch with the sprites around them.
+    var ink: ((SKSpriteNode) -> Void)?
     func begin() { pending.removeAll(keepingCapacity: true) }
     func add(_ c: [Int], _ x: Int, _ y: Int, _ w: Int, _ h: Int, alpha: Double = 1, blend: SKBlendMode = .alpha) {
         guard w > 0, h > 0, alpha > 0 else { return }
@@ -23,6 +25,7 @@ final class HouseRects: SKNode {
             if i < pool.count { n = pool[i] } else {
                 n = SKSpriteNode(color: .white, size: .zero)
                 n.anchorPoint = CGPoint(x: 0, y: 1)
+                ink?(n)
                 n.zPosition = CGFloat(i + 1) * 0.0001
                 addChild(n); pool.append(n); shown.append(Rect(c: [], x: 0, y: 0, w: 0, h: 0, alpha: 0, add: false)); Self.created += 1
                 n.isHidden = true
@@ -73,8 +76,8 @@ extension HouseScene2 {
     /// whose children they are: its alpha fades the info with the sprite (the marks too: the page draws them opaque, a fade-in is short).
     func updateMarks(_ sp: HouseSprite, node n: SKSpriteNode, ax0: Int, ay0: Int, look: HouseLook, t: Double, napFace: Int? = nil, feetX: Double = 0) {
         let id = sp.id
-        let info = infoRects[id] ?? { let r = HouseRects(); r.zPosition = 0.001; n.addChild(r); infoRects[id] = r; return r }()
-        let marks = markRects[id] ?? { let r = HouseRects(); r.zPosition = 0.002; n.addChild(r); markRects[id] = r; return r }()
+        let info = infoRects[id] ?? { let r = rectPool(); r.zPosition = 0.001; n.addChild(r); infoRects[id] = r; return r }()
+        let marks = markRects[id] ?? { let r = rectPool(); r.zPosition = 0.002; n.addChild(r); markRects[id] = r; return r }()
         if info.parent !== n { info.removeFromParent(); n.addChild(info) }
         if marks.parent !== n { marks.removeFromParent(); n.addChild(marks) }
         info.position = CGPoint(x: ax0, y: -ay0); marks.position = info.position

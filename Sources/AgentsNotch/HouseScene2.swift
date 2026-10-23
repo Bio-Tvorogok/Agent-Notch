@@ -387,7 +387,7 @@ final class HouseScene2: SKScene {
         for p in fl.pieces { items.append((p.key, { [unowned self] z in self.sprite(p.sprite, x: self.wf.ox + p.x, y: self.wf.oy + p.y, z: z) })) }
         for i in 0..<(layout.lift?.cabins.count ?? 0) {
             items.append((Double(i) * 0.01 + 0.001, { [unowned self] z in
-                let n = SKSpriteNode(color: .black, size: CGSize(width: 1, height: 1))
+                let n = SKSpriteNode(color: .black, size: CGSize(width: 1, height: 1)); self.shaders.ink(n)
                 n.anchorPoint = CGPoint(x: 0, y: 1); n.zPosition = z; self.root.addChild(n)
                 self.cagePieces.append(CagePiece(node: n, cabin: i, floor: f, part: "rope", cage: nil, zlo: fl.zlo, zhi: fl.zhi, rope: true))
             }))
@@ -400,6 +400,11 @@ final class HouseScene2: SKScene {
             }
         }
         for it in items.sorted(by: { $0.0 < $1.0 }) { it.1(next()) }
+    }
+
+    /// A pool of plain rects drawn like the parts (see HouseShaders.ink).
+    func rectPool() -> HouseRects {
+        let r = HouseRects(); r.ink = { [unowned self] in self.shaders.ink($0) }; return r
     }
 
     /// Cabins at their z: each cage piece shows in the slice that holds the cabin, open or closed.

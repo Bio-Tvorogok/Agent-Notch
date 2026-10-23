@@ -136,6 +136,16 @@ final class HousePages {
     let sparsePages: Set<Int>
     private var unusedSky = Set<Int>()
     private var cutPages = Set<Int>()
+    /// The page every kept sprite is drawn from: the shaded page, grown at runtime to also hold the sprites of the sparse pages and
+    /// a block of white for the plain rectangles (`ink`). One texture pair and one shader for the whole house: SpriteKit draws the
+    /// house in a few batches instead of one per change of texture. nil when the atlas has no shaded page.
+    let main: Int?
+    /// Where a sparse page's sprite lies in the main page, and the main page's height with them.
+    private(set) var moved: [Int: (x: Int, y: Int)] = [:]
+    private(set) var mainH = 0
+    private var whiteAt = (x: 0, y: 0)
+    /// The moved sprites' pixels while the main page's F and E are being composed.
+    private var movedImages: [Int: CGImage]?
     /// For measurements: the pages loaded so far.
     var loaded: (f: [Int], e: [Int]) { (f.keys.sorted(), e.keys.sorted()) }
 
@@ -157,6 +167,25 @@ final class HousePages {
             if Double(used) < 0.4 * Double(p.w * p.h) { sparse.insert(i) }
         }
         sparsePages = sparse
+        // the main page: the shaded page with the most sprites; the free rows under its sprites (and more rows if need be) take a 4x4
+        // white block and every sprite of the sparse pages that is ever drawn, packed on shelves with 2 px between them
+        let shaded = needsE.subtracting(sparse)
+        let mainPage = shaded.max { a, b in parts.sprites.filter { $0[0] == a }.count < parts.sprites.filter { $0[0] == b }.count }
+        main = mainPage
+        if let m = mainPage {
+            let pg = parts.pages[m], pad = 2
+            let top = (parts.sprites.filter { $0[0] == m }.map { $0[2] + $0[4] }.max() ?? 0) + pad
+            whiteAt = (pad, top)
+            var x = pad + 4 + pad, y = top, shelf = 4
+            let ids = parts.sprites.indices.filter { sparse.contains(parts.sprites[$0][0]) && !unused.contains($0) && parts.sprites[$0][3] + 2 * pad <= pg.w }
+            for id in ids.sorted(by: { parts.sprites[$0][4] > parts.sprites[$1][4] }) {
+                let w = parts.sprites[id][3], h = parts.sprites[id][4]
+                if x + w + pad > pg.w { x = pad; y += shelf + pad; shelf = 0 }
+                moved[id] = (x, y)
+                x += w + pad; shelf = max(shelf, h)
+            }
+            mainH = max(pg.h, ((y + shelf + pad + 63) / 64) * 64)
+        }
         for p in parts.pages {
             // the header of every page must be a PNG of the size parts.json says (the pixels are decoded on first use)
             for name in [p.file, p.fileE] {
@@ -190,16 +219,86 @@ final class HousePages {
 
     func fPage(_ i: Int) -> SKTexture {
         if let t = f[i] { return t }
-        let t = load(parts.pages[i].file) ?? SKTexture()
+        let t = (i == main ? composed(i, e: false) : nil) ?? load(parts.pages[i].file) ?? SKTexture()
         f[i] = t
+        if i == main && e[i] != nil { movedImages = nil }
         return t
     }
 
+    /// The page a sprite is drawn from (its own, or the main page for a moved sprite) and the size of that page's texture.
+    func drawPage(_ id: Int) -> Int { moved[id] != nil ? main! : parts.sprites[id][0] }
+    func dims(_ page: Int) -> (w: Int, h: Int) { (parts.pages[page].w, page == main ? mainH : parts.pages[page].h) }
+
     func ePage(_ i: Int) -> SKTexture {
         if let t = e[i] { return t }
-        let t = (unifies(i) ? unifiedE(i) : nil) ?? load(parts.pages[i].fileE) ?? SKTexture()
+        let t = (i == main ? composed(i, e: true) : nil) ?? (unifies(i) ? unifiedE(i) : nil) ?? load(parts.pages[i].fileE) ?? SKTexture()
         e[i] = t
+        if i == main && f[i] != nil { movedImages = nil }
         return t
+    }
+
+    /// A plain rectangle drawn like the parts: the centre texel of the main page's white block, for a sprite tinted by its colour
+    /// (colorBlendFactor 1) with the main page's shader. nil without a main page.
+    func ink() -> SKTexture? {
+        guard let m = main else { return nil }
+        if let t = inkTexture { return t }
+        let d = dims(m), x = Double(whiteAt.x + 1), y = Double(whiteAt.y + 1)
+        let t = SKTexture(rect: CGRect(x: x / Double(d.w), y: 1 - (y + 1) / Double(d.h), width: 1 / Double(d.w), height: 1 / Double(d.h)), in: fPage(m))
+        t.filteringMode = .nearest
+        inkTexture = t
+        return t
+    }
+    private var inkTexture: SKTexture?
+
+    /// The main page grown to `mainH` rows: its own F (or E, made like unifiedE), the moved sprites under it (in E: black of their
+    /// alpha for flag 1, themselves for flag 2) and the white block.
+    private func composed(_ i: Int, e: Bool) -> SKTexture? {
+        autoreleasepool {
+            let pg = parts.pages[i], H = mainH
+            guard let base: CGImage = e ? unifiedEImage(i) : decode(pg.file),
+                  let ctx = CGContext(data: nil, width: pg.w, height: H, bitsPerComponent: 8, bytesPerRow: 0, space: base.colorSpace ?? HousePixels.space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            ctx.interpolationQuality = .none
+            ctx.setBlendMode(.copy)
+            ctx.draw(base, in: CGRect(x: 0, y: H - pg.h, width: pg.w, height: pg.h))
+            ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+            ctx.fill(CGRect(x: whiteAt.x, y: H - whiteAt.y - 4, width: 4, height: 4))
+            if movedImages == nil { movedImages = cutMoved() }
+            for (id, at) in moved {
+                guard let img = movedImages?[id] else { continue }
+                let s = parts.sprites[id], dst = CGRect(x: at.x, y: H - at.y - s[4], width: s[3], height: s[4])
+                ctx.setBlendMode(.copy)
+                ctx.draw(img, in: dst)
+                if e && s[5] == 1 { ctx.setBlendMode(.sourceAtop); ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(dst) }
+            }
+            guard let img = ctx.makeImage() else { return nil }
+            let t = SKTexture(cgImage: img)
+            t.filteringMode = .nearest
+            return t
+        }
+    }
+
+    private func decode(_ name: String) -> CGImage? {
+        guard let src = CGImageSourceCreateWithURL(dir.appendingPathComponent(name) as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { fail(name); return nil }
+        return img
+    }
+
+    /// The moved sprites' F pixels, each copied out of its decoded page so that the page itself is not kept.
+    private func cutMoved() -> [Int: CGImage] {
+        var out: [Int: CGImage] = [:]
+        for page in Set(moved.keys.map { parts.sprites[$0][0] }) {
+            guard let img = decode(parts.pages[page].file) else { continue }
+            for id in moved.keys where parts.sprites[id][0] == page {
+                let s = parts.sprites[id]
+                guard let c = img.cropping(to: CGRect(x: s[1], y: s[2], width: s[3], height: s[4])),
+                      let ctx = CGContext(data: nil, width: s[3], height: s[4], bitsPerComponent: 8, bytesPerRow: 0, space: c.colorSpace ?? HousePixels.space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { continue }
+                ctx.setBlendMode(.copy)
+                ctx.draw(c, in: CGRect(x: 0, y: 0, width: s[3], height: s[4]))
+                out[id] = ctx.makeImage()
+            }
+        }
+        return out
     }
 
     /// A page drawn with one shader for all its sprites: it holds flag-0 sprites (so its E page is loaded anyway) and is kept whole.
@@ -209,6 +308,15 @@ final class HousePages {
     /// black of F's alpha under a flag-1 sprite (E black), F itself under a flag-2 sprite (constant). Every sprite of the page then
     /// shares one shader and one texture pair, so SpriteKit draws runs of them as one batch whatever their flags.
     private func unifiedE(_ i: Int) -> SKTexture? {
+        autoreleasepool {
+            guard let img = unifiedEImage(i) else { return nil }
+            let t = SKTexture(cgImage: img)
+            t.filteringMode = .nearest
+            return t
+        }
+    }
+
+    private func unifiedEImage(_ i: Int) -> CGImage? {
         autoreleasepool {
             let pg = parts.pages[i]
             guard let es = CGImageSourceCreateWithURL(dir.appendingPathComponent(pg.fileE) as CFURL, nil), let eImg = CGImageSourceCreateImageAtIndex(es, 0, nil),
@@ -224,10 +332,7 @@ final class HousePages {
                 ctx.draw(f, in: dst)
                 if s[5] == 1 { ctx.setBlendMode(.sourceAtop); ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(dst) }
             }
-            guard let img = ctx.makeImage() else { return nil }
-            let t = SKTexture(cgImage: img)
-            t.filteringMode = .nearest
-            return t
+            return ctx.makeImage()
         }
     }
 
@@ -254,9 +359,10 @@ final class HousePages {
     /// The sprite's rectangle of its F page (nearest filtering, y up in texture space).
     func texture(_ id: Int) -> SKTexture {
         if let t = subs[id] { return t }
-        let s = rect(id)
-        if sparsePages.contains(s.page) { cutOut(page: s.page); if let t = subs[id] { return t } }
-        let pg = parts.pages[s.page], pw = Double(pg.w), ph = Double(pg.h)
+        var s = rect(id)
+        if let at = moved[id] { s.page = main!; s.x = at.x; s.y = at.y } // a sparse page's sprite, moved into the main page
+        else if sparsePages.contains(s.page) { cutOut(page: s.page); if let t = subs[id] { return t } }
+        let d = dims(s.page), pw = Double(d.w), ph = Double(d.h)
         let t = SKTexture(rect: CGRect(x: Double(s.x) / pw, y: 1 - Double(s.y + s.h) / ph, width: Double(s.w) / pw, height: Double(s.h) / ph),
                           in: fPage(s.page))
         t.filteringMode = .nearest
