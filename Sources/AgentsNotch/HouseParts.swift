@@ -219,9 +219,15 @@ final class HousePages {
 
     func fPage(_ i: Int) -> SKTexture {
         if let t = f[i] { return t }
-        let t = (i == main ? composed(i, e: false) : nil) ?? load(parts.pages[i].file) ?? SKTexture()
+        if i == main {
+            // Every rectangle on the main page is measured against mainH rows, so the bare page file cannot stand in for it.
+            let t = composed(i, e: false) ?? { fail("\(parts.pages[i].file) (composed)"); return SKTexture() }()
+            f[i] = t
+            if e[i] != nil { movedImages = nil }
+            return t
+        }
+        let t = load(parts.pages[i].file) ?? SKTexture()
         f[i] = t
-        if i == main && e[i] != nil { movedImages = nil }
         return t
     }
 
@@ -231,9 +237,14 @@ final class HousePages {
 
     func ePage(_ i: Int) -> SKTexture {
         if let t = e[i] { return t }
-        let t = (i == main ? composed(i, e: true) : nil) ?? (unifies(i) ? unifiedE(i) : nil) ?? load(parts.pages[i].fileE) ?? SKTexture()
+        if i == main {
+            let t = composed(i, e: true) ?? { fail("\(parts.pages[i].fileE) (composed)"); return SKTexture() }()
+            e[i] = t
+            if f[i] != nil { movedImages = nil }
+            return t
+        }
+        let t = (unifies(i) ? unifiedE(i) : nil) ?? load(parts.pages[i].fileE) ?? SKTexture()
         e[i] = t
-        if i == main && f[i] != nil { movedImages = nil }
         return t
     }
 
@@ -268,8 +279,11 @@ final class HousePages {
                 guard let img = movedImages?[id] else { continue }
                 let s = parts.sprites[id], dst = CGRect(x: at.x, y: H - at.y - s[4], width: s[3], height: s[4])
                 ctx.setBlendMode(.copy)
+                // Edge texels repeated one pixel into the padding, as the clamp of a standalone texture did: at fractional zoom a
+                // fragment on a sprite's edge can sample just outside it.
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] { ctx.draw(img, in: dst.offsetBy(dx: CGFloat(dx), dy: CGFloat(dy))) }
                 ctx.draw(img, in: dst)
-                if e && s[5] == 1 { ctx.setBlendMode(.sourceAtop); ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(dst) }
+                if e && s[5] == 1 { ctx.setBlendMode(.sourceAtop); ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(dst.insetBy(dx: -1, dy: -1)) }
             }
             guard let img = ctx.makeImage() else { return nil }
             let t = SKTexture(cgImage: img)
