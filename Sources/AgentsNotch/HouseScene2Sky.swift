@@ -10,7 +10,7 @@ extension HouseScene2 {
     // MARK: painting off the main thread
 
     func paintInputs() -> HousePainter.Inputs {
-        .init(light: light, hour: hour, clockHM: clockHM, colon: colon, clockMillis: clockMillis, layout: layout, env: env, extraScreen: extraScreen)
+        .init(light: light, hour: hour, clockHM: clockHM, colon: colon, clockMillis: clockMillis, layout: layout, env: env, extraScreen: extraScreen, season: season, weather: weather)
     }
 
     struct PaintResult {

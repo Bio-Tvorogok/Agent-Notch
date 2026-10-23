@@ -11,16 +11,16 @@ mkdir -p .build/house-atlas "$P/obj" "$P/live-out" "$P/live-ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
 # case:hour:sample times (ms); the page and the scene both stop at every sample
 # `label=fixture:hour:times` runs a fixture again under another label (another hour: the night lamps, the stars)
-CASES=${LIVE_CASES:-'03-projects:12:3500,9500,14000,46000 subagents-return:20:5000,8000,17500 churn-growth:12:5500,8200,10500,20000 marks:12:4000,9000,25000 fire-handover:12:12000,22000,26000,31500,45000 celebrate-mail-leave:12:10500,25000,36750,50000 yard-fetch:12:100000,120000,150000 quiet-day:12:95000,193000 night-projects=03-projects:22:9500,14000,46000 night-yard=yard-fetch:23:100000,150000'}
+CASES=${LIVE_CASES:-'03-projects:12:3500,9500,14000,46000 subagents-return:20:5000,8000,17500 churn-growth:12:5500,8200,10500,20000 marks:12:4000,9000,25000 fire-handover:12:12000,22000,26000,31500,45000 celebrate-mail-leave:12:10500,25000,36750,50000 yard-fetch:12:100000,120000,150000 quiet-day:12:95000,193000 night-projects=03-projects:22:9500,14000,46000 night-yard=yard-fetch:23:100000,150000 winter-projects=03-projects:12:9500,46000:winter spring-projects=03-projects:12:9500,46000:spring summer-projects=03-projects:12:9500:summer winter-night=03-projects:22:9500:winter spring-night=yard-fetch:23:100000:spring'}
 python3 - "$CASES" "$P/x" > "$P/live-cases.js" <<'PY'
 import json, sys
 cases = []
 for spec in sys.argv[1].split():
-    name, hour, samples = spec.split(':')
+    name, hour, samples, *extra = spec.split(':')   # optional 4th field: season, 5th: weather
     import os
     label, name = (name.split('=') + [None])[:2] if '=' in name else (name, name)
     d = json.load(open(next(f for f in ('Tests/Fixtures/%s/%s.json' % (x, name) for x in ('house-behaviour', 'house-life', 'house-overlays')) if os.path.exists(f))))['input']
-    cases.append({'name': label, 'fixture': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')],
+    cases.append({'name': label, 'fixture': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')], 'season': extra[0] if extra else 'autumn', 'weather': extra[1] if len(extra) > 1 else 'clear',
                   'events': [{'at': e['at'], 'rows': e['rows']} for e in d['events'] if 'rows' in e]})
 print('window.__LIVE_CASES = ' + json.dumps(cases) + ';')
 open(os.path.join(os.path.dirname(sys.argv[2]) if len(sys.argv) > 2 else '.', 'live-aliases.txt'), 'w').write(''.join('%s %s\n' % (c['name'], c['fixture']) for c in cases if c['name'] != c['fixture']))

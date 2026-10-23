@@ -12,9 +12,9 @@
   weather = 'clear';
   // The life layer (residents, the cat and the dog, scenes), the speech bubbles, the marks over the Clawds and the scene overlays are all
   // live now. Not drawn by the SpriteKit house and so off here, like in Tests/HouseChecks/life-fixtures.mjs: the sky life (birds, a plane,
-  // a balloon: stage 3), the seasons' leaves and snow, and the eggs. No demo: the context batteries come from the rows only.
+  // a balloon: stage 3), and the eggs (the season is the case's: leaves, snow, flowers). No demo: the context batteries come from the rows only.
   demo = false;
-  eggStep = () => {}; eggSky = () => {}; eggOver = () => {}; eggItems = () => {}; drawSeason = () => {}; drawSkyLife = () => {};
+  eggStep = () => {}; eggSky = () => {}; eggOver = () => {}; eggItems = () => {}; drawSkyLife = () => {};
   METEORS.next = Infinity; METEORS.list = [];
   room.setInsets(O.insets);
   sprites.clear();
@@ -36,6 +36,7 @@
     for (const r of rooms) { r.born = -1e9; r.drop = 0; r.cache = null; }
     let bs = c.seed;
     Math.random = () => { bs = (Math.imul(bs, 1664525) + 1013904223) >>> 0; return bs / 4294967296; };
+    Q.set('season', c.season || 'autumn'); weather = c.weather || 'clear';
     fixedHour = c.hour; setTime(c.hour);
     const end = Math.max(...c.samples);
     for (bt = 0; bt <= end; bt += 50) {
@@ -65,7 +66,7 @@
       bs = rngKept;
       const d = now(), tag = `${c.name}-t${bt}`;
       const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
-      const meta = { case: c.name, t: bt, hour: c.hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
+      const meta = { case: c.name, t: bt, hour: c.hour, season: c.season || 'autumn', weather: c.weather || 'clear', W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
         rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
         agents: [...sprites.values()].filter(sp => sp.kind === 'agent').length, falling: [...sprites.values()].filter(sp => sp.fall).length, links: links.map(L => L.id + ':' + L.kind + ':' + (L.lift ?? '') + ':' + (L.aim ?? '')), sprites: [...sprites.values()].map(sp => [sp.id, sp.kind, sp.state || '', (sp.room && sp.room.key) || sp.room || '-', Math.round(sp.x), Math.round(sp.y), Math.round(sp.alpha * 100), sp.moving ? 'mv' : 'st', sp.seated ? 'seat' : '-', sp.waving ? 'wave' : '-'].join('|')), cabins: LIFT ? LIFT.cabins.map(c => [Math.round(c.z * 10) / 10, c.state]) : [] };
       for (const [f, data] of [['.png', full], ['-bare.png', bare], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {

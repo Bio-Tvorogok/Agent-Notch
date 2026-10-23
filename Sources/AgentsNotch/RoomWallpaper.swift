@@ -222,7 +222,7 @@ final class RoomWallpaper: NSObject {
         ProcessInfo.processInfo.environment["HOUSE_RENDERER"] == "spritekit" || UserDefaults.standard.string(forKey: "houseRenderer") == "spritekit"
     }
 
-    /// Why parts.json cannot draw the user's house, nil when it can: it has the islands layout, the autumn season and clear weather
+    /// Why parts.json cannot draw the user's house, nil when it can: it has the islands layout, any season and clear weather
     /// (the app never sets another weather) of the page's atlas. Custom themes are only the five rooms the atlas has.
     static func spriteKitReason(_ prefs: RoomPrefs, date: Date = Date()) -> String? {
         HouseSpriteKitRules.reason(layout: prefs.layout.rawValue, month: Calendar.current.component(.month, from: date))
@@ -234,6 +234,9 @@ final class RoomWallpaper: NSObject {
         return [screen.frame.width, screen.frame.height, screen.backingScaleFactor, screen.frame.maxY - screen.visibleFrame.maxY,
                 screen.visibleFrame.minY - screen.frame.minY, icons ? 120 : 0]
     }
+
+    /// The season of the running scene's atlas (the yard art is baked into the atlas, so a new season needs a new scene).
+    private var skSeason = "autumn"
 
     /// True when the last makeSKScene failed because of the screen, not the atlas.
     private var skFailedOnScreen = false
@@ -253,7 +256,10 @@ final class RoomWallpaper: NSObject {
             NSLog("agents-notch: screen too short for the SpriteKit house"); skFailedOnScreen = true; return nil
         }
         let unit = CGFloat(behaviour.layout.view.PXD / behaviour.layout.view.DPR)
-        guard let scene = HouseScene2.load(from: page.deletingLastPathComponent().appendingPathComponent("atlas"), layout: behaviour.layout, unit: unit, size: screen.frame.size) else { return nil }
+        let season = HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1)
+        let atlas = HouseScene2.atlasDir(page.deletingLastPathComponent().appendingPathComponent("atlas"), season: season)
+        guard let scene = HouseScene2.load(from: atlas, layout: behaviour.layout, unit: unit, size: screen.frame.size) else { return nil }
+        scene.setSeason(season); skSeason = season
         scene.env = env
         scene.attach(behaviour)
         if let why = scene.missingParts() { NSLog("agents-notch: the atlas has no \(why)"); return nil }
@@ -374,8 +380,9 @@ final class RoomWallpaper: NSObject {
 
     /// The 20 s tick: the month can leave the atlas's season while the house runs.
     private func checkRenderer() {
-        guard house != nil, let why = Self.spriteKitReason(AppSettings.shared.room) else { return }
-        fallBackToPage(why)
+        guard house != nil else { return }
+        if let why = Self.spriteKitReason(AppSettings.shared.room) { fallBackToPage(why); return }
+        if HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1) != skSeason { restart() }
     }
 
     private func observeRenderer() {

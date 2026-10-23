@@ -191,7 +191,7 @@ case "live":
             let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 }
             let size = CGSize(width: even(Double(W)), height: even(Double(H)))
             if scene == nil {
-                guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
+                guard let sc = HouseScene2.load(from: HouseScene2.atlasDir(atlas, season: meta["season"] as? String ?? "autumn"), layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
                 sc.followsLayoutScale = false; sc.freezeClock = true; sc.freezeSim = true; sc.colon = false
                 sc.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
                 sc.attach(behaviour)
@@ -204,6 +204,7 @@ case "live":
             sc.followBehaviour(behaviour) // a project that joined relays the house out (the app does it in update)
             if sc.size != size { sc.size = size; v.frame = NSRect(origin: .zero, size: size) }
             sc.clockMillis = Double(s.t); sc.roomClockOverride = 100_000
+            sc.setSeason(meta["season"] as? String ?? "autumn"); sc.weather = meta["weather"] as? String ?? "clear"
             sc.setTime(hour: hour, day: meta["day"] as! Int)
             sc.repaint(sync: true)
             if let sim = sc.sim { sc.sync(sim: sim) }
@@ -327,6 +328,7 @@ case "bench":
     }
     exit(bad ? 3 : 0)
 
+#if !OLDREV // the pointer: not in the revisions bench.sh compares against
 case "interact":
     // interact <atlas> <ref dir> <fixtures dir> <out dir>: replays the page's pointer / pinch / scroll / click sequence (interact-ref.js) on the
     // scene and compares the camera, the overview button, the hovered agent, the hover card and the click's {open} at every record;
@@ -493,6 +495,7 @@ case "interact":
     print(failed ? "INTERACT PROOF: FAILED" : "INTERACT PROOF: the scene answers like the page (\(recs.count) records)")
     exit(failed ? 3 : 0)
 
+#endif
 case "selftest":
     // selftest <atlas>: the atlas guards (exact variant, short arrays, corrupt page) and the growth store; exits 1 on the first failure
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true)
@@ -537,6 +540,7 @@ case "selftest":
     print(bad == 0 ? "SELFTEST: ok" : "SELFTEST: \(bad) failed")
     exit(bad == 0 ? 0 : 1)
 
+#if !OLDREV // the pointer, the saver and the extra screen: not in the revisions bench.sh compares against
 case "hitch":
     // hitch <atlas> <projects>: main-thread cost of the per-minute refresh and of a light-variant change
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 14
@@ -727,6 +731,7 @@ case "snapdemo":
     try! NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: args[6]))
     print("snapdemo \(img.width)x\(img.height) sprites \(sim.sprites.map { "\($0.id)@\($0.room ?? "transit")" })")
 
+#endif
 case "idle", "demo":
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, secs = Double(args[4]) ?? 20
     let screen = NSScreen.screens[0]

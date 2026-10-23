@@ -180,7 +180,7 @@ final class HouseSaverView: ScreenSaverView {
         guard snap.renderer == "spritekit", !isPreview || bounds.width > 0,
               let atlas = Bundle(for: HouseSaverView.self).resourceURL?.appendingPathComponent("room/atlas", isDirectory: true),
               let house = SaverSpriteHouse(size: bounds.size, scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
-                                           atlas: atlas, snapshot: snap, onFailure: { [weak self] in MainActor.assumeIsolated { self?.spriteGaveUp() } })
+                                           atlas: HouseScene2.atlasDir(atlas, season: HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1)), snapshot: snap, onFailure: { [weak self] in MainActor.assumeIsolated { self?.spriteGaveUp() } })
         else { return false }
         house.view.autoresizingMask = [.width, .height]
         addSubview(house.view)

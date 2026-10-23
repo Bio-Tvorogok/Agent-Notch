@@ -38,6 +38,7 @@ xcrun swiftc -O -target "$TARGET" -parse-as-library -module-name AgentNotchHouse
 cp room/index.html "$SAVER/Contents/Resources/room/index.html"
 # the SpriteKit house's atlas (used only when the app's snapshot asks for SpriteKit)
 mkdir -p "$SAVER/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$SAVER/Contents/Resources/room/atlas/"
+for d in room/atlas-*/; do n=$(basename "$d"); mkdir -p "$SAVER/Contents/Resources/room/$n" && cp "$d"parts.json "$d"parts-*.png "$SAVER/Contents/Resources/room/$n/"; done
 for t in thumbnail.png thumbnail@2x.png; do [ -f "assets/saver/$t" ] && cp "assets/saver/$t" "$SAVER/Contents/Resources/$t"; done
 cat > "$SAVER/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -88,6 +89,7 @@ python3 scripts/update-config.py "$APP/Contents/Info.plist"
 mkdir -p "$APP/Contents/Resources/room" && cp room/index.html "$APP/Contents/Resources/room/index.html"
 # the SpriteKit prototype's atlas (scripts/export-house-parts.sh), used only with `houseRenderer spritekit`
 if [ -f room/atlas/parts.json ] && [ -f room/atlas/parts-0.png ]; then mkdir -p "$APP/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$APP/Contents/Resources/room/atlas/"; fi
+for d in room/atlas-*/; do n=$(basename "$d"); [ -f "$d"parts.json ] && mkdir -p "$APP/Contents/Resources/room/$n" && cp "$d"parts.json "$d"parts-*.png "$APP/Contents/Resources/room/$n/"; done
 # The app installs the saver from its own bundle (Settings → Desktop house).
 ditto "$SAVER" "$APP/Contents/Resources/Agent Notch House.saver"
 
