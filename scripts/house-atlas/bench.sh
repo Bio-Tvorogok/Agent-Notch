@@ -21,8 +21,9 @@ fi
 for d in house-behaviour house-life house-overlays; do for f in Tests/Fixtures/$d/*.json; do ln -sf "$PWD/$f" "$P/fixtures/"; done; done
 xcrun swiftc -O -target arm64-apple-macos14.0 -parse-as-library -module-name NotchCore -emit-module -emit-module-path "$P/obj/NotchCore.swiftmodule" \
   -emit-library -static -o "$P/obj/libNotchCore.a" "$SRC"/Sources/NotchCore/*.swift
+SAVER=Sources/AgentNotchSaver/SaverSpriteHouse.swift; [ -n "${REV:-}" ] && SAVER= # an older revision has no SpriteKit saver
 xcrun swiftc -O ${REV:+-D OLDREV} -target arm64-apple-macos14.0 -I "$P/obj" -L "$P/obj" -lNotchCore -o "$P/harness" "$MAIN" \
-  "$SRC"/Sources/AgentsNotch/HouseParts.swift "$SRC"/Sources/AgentsNotch/HouseLight.swift "$SRC"/Sources/AgentsNotch/HouseScene2*.swift Sources/AgentNotchSaver/SaverSpriteHouse.swift
+  "$SRC"/Sources/AgentsNotch/HouseParts.swift "$SRC"/Sources/AgentsNotch/HouseLight.swift "$SRC"/Sources/AgentsNotch/HouseScene2*.swift $SAVER
 rc=0
 for kind in ${KINDS:-walk type idle life}; do
   "$P/harness" bench "$SRC/room/atlas" "$P/fixtures" marks "$kind" "$SECS" "${REV:-tree}/$kind" ${CHECK:+$CHECK} || rc=$?

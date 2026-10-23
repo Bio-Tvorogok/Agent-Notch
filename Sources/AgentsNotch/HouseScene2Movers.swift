@@ -209,6 +209,7 @@ extension HouseScene2 {
     /// Anything that visibly moves (walking, the lift, falls, particles, fades, rooms arriving, the host's direct manipulation): draws at the full rate.
     /// What stays awake without it (agents typing or waiting at their desks, a held or burning resident: frames of 110-130 ms) only steps frames, so it draws at half that.
     var isBursting: Bool {
+        if houseCamera?.isMoving == true { return true } // a zoom, pan or glide is direct manipulation
         guard let sim else { return false }
         if sim.roomsSettling || pendingRows != nil || burstExtra() { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
