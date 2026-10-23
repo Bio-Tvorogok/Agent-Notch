@@ -11,7 +11,7 @@ mkdir -p .build/house-atlas "$P/obj" "$P/live-out" "$P/live-ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
 # case:hour:sample times (ms); the page and the scene both stop at every sample
 # `label=fixture:hour:times` runs a fixture again under another label (another hour: the night lamps, the stars)
-CASES=${LIVE_CASES:-'03-projects:12:3500,9500,14000,46000 subagents-return:20:5000,8000,17500 churn-growth:12:5500,8200,10500,20000 marks:12:4000,9000,25000 fire-handover:12:12000,22000,26000,31500,45000 celebrate-mail-leave:12:10500,25000,36750,50000 yard-fetch:12:100000,120000,150000 quiet-day:12:95000,193000 night-projects=03-projects:22:9500,14000,46000 night-yard=yard-fetch:23:100000,150000'}
+CASES=${LIVE_CASES:-'03-projects:12:3500,9500,14000,46000 subagents-return:20:5000,8000,17500 churn-growth:12:5500,8200,10500,20000 marks:12:4000,9000,25000 fire-handover:12:12000,22000,26000,31500,45000 celebrate-mail-leave:12:10500,25000,36750,50000 yard-fetch:12:100000,120000,150000 quiet-day:12:95000,193000 night-projects=03-projects:22:9500,14000,46000 night-yard=yard-fetch:23:100000,150000 sky-life:12:60000,100000,200000,260000 night-sky=sky-life:23:100000 shower-escort:12:20000,37750,56000 pets-work:12:74500,166250'}
 python3 - "$CASES" "$P/x" > "$P/live-cases.js" <<'PY'
 import json, sys
 cases = []
@@ -19,7 +19,7 @@ for spec in sys.argv[1].split():
     name, hour, samples = spec.split(':')
     import os
     label, name = (name.split('=') + [None])[:2] if '=' in name else (name, name)
-    d = json.load(open(next(f for f in ('Tests/Fixtures/%s/%s.json' % (x, name) for x in ('house-behaviour', 'house-life', 'house-overlays')) if os.path.exists(f))))['input']
+    d = json.load(open(next(f for f in ('Tests/Fixtures/%s/%s.json' % (x, name) for x in ('house-behaviour', 'house-life', 'house-overlays', 'house-sky')) if os.path.exists(f))))['input']
     cases.append({'name': label, 'fixture': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')],
                   'events': [{'at': e['at'], 'rows': e['rows']} for e in d['events'] if 'rows' in e]})
 print('window.__LIVE_CASES = ' + json.dumps(cases) + ';')
@@ -33,6 +33,6 @@ xcrun swiftc -O -target arm64-apple-macos14.0 -parse-as-library -module-name Not
 xcrun swiftc -O -target arm64-apple-macos14.0 -I "$P/obj" -L "$P/obj" -lNotchCore -o "$P/harness" \
   scripts/house-atlas/harness/main.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift Sources/AgentNotchSaver/SaverSpriteHouse.swift
 rm -rf "$P/fixtures"; mkdir -p "$P/fixtures"
-for d in house-behaviour house-life house-overlays; do for f in Tests/Fixtures/$d/*.json; do ln -sf "$PWD/$f" "$P/fixtures/"; done; done
+for d in house-behaviour house-life house-overlays house-sky; do for f in Tests/Fixtures/$d/*.json; do ln -sf "$PWD/$f" "$P/fixtures/"; done; done
 while read -r a f; do ln -sf "$PWD/$(ls Tests/Fixtures/house-*/$f.json | head -1)" "$P/fixtures/$a.json"; done < "$P/live-aliases.txt"
 "$P/harness" live room/atlas "$P/live-ref" "$P/fixtures" "$P/live-out"

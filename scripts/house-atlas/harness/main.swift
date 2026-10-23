@@ -171,6 +171,7 @@ case "live":
         let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
+        behaviour.enableSkyLife() // the page draws its sky life in this proof (live-ref.js), with the sim's random numbers
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
@@ -179,6 +180,10 @@ case "live":
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
                 if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
                 bt += 50
+            }
+            if ProcessInfo.processInfo.environment["SKY_DEBUG"] != nil {
+                let k = behaviour.skyLife, ps = (s.meta["sky"] as? [String: Any])?["birds"] as? [[Double]] ?? []
+                print("  sky t=\(s.t) mine", k.birds.map { String(format: "%.1f/%.1f", $0.x, $0.y) }, "plane", k.plane.map { String(format: "%.1f", $0.x) } ?? "-", "page", ps.map { String(format: "%.1f/%.1f", $0[0], $0[1]) })
             }
             let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
             let pxd = meta["PXD"] as! Double
