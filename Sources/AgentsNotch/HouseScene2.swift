@@ -101,6 +101,7 @@ final class HouseScene2: SKScene {
     var infoRects: [String: HouseRects] = [:], markRects: [String: HouseRects] = [:]
     var hitBoxes: [String: [Int]] = [:]
     var fxRects: HouseRects?
+    let skyLifeLayer = HouseSkyLifeLayer()
     var yardRects: HouseRects?
     var flagPools: [String: HouseRects] = [:]
     static let screenDepths: [String: Double] = ["bedroom": 6.65, "server": 7.05, "library": 11.41, "greenhouse": 8.01, "arcade": 8.81]
@@ -204,6 +205,7 @@ final class HouseScene2: SKScene {
     /// only uniforms, glow alphas and the live parts change.
     func setTime(hour: Double, day: Int) {
         self.hour = hour; self.day = day
+        defer { feedLife(hour: hour, dark: light.dark, exact: false) }
         let h = floor(hour), m = floor((hour.truncatingRemainder(dividingBy: 1)) * 60)
         clockHM = (Int(h), Int(m))
         light = HouseLight.state(parts, hour: hour)

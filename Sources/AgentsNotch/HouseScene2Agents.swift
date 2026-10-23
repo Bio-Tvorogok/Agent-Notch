@@ -16,6 +16,7 @@ extension HouseScene2 {
     /// Hands the scene a behaviour that is already laid out: the scene is built for its rooms and growth levels at once.
     func attach(_ b: HouseBehaviour) {
         behaviour = b
+        installSkyLife(b)
         builtProjects = b.projects.count
         growth = growthLevels(b)
     }
