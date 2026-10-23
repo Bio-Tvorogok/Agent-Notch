@@ -90,6 +90,8 @@ public final class HouseBehaviour {
     }
     public let life = HouseLifeState()
     public var stage3 = HouseLifeStage3Hooks()
+    /// The page's birds, plane and balloon (HouseSkyLife.swift); runs only after enableSkyLife().
+    public let skyLife = HouseSkyLife()
     public let sim: HouseSim
     public var hooks = HouseBehaviourHooks()
     public internal(set) var projects: [String] = []
