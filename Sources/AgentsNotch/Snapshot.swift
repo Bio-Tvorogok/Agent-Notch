@@ -323,6 +323,15 @@ enum Snapshot {
                 .environmentObject(settings).environment(\.themeSnapshot, true)
             ok = host(scene, to: url.appendingPathComponent("widget-\(id.rawValue).png")) && ok
         }
+        // The widget's card wears the widget's style, not the app theme.
+        settings.theme = .terminal
+        settings.widget.style = .paper
+        let card = HStack(alignment: .top, spacing: 24) {
+            widget(list)
+            CardView(agent: CardFixture.agent, detail: CardFixture.detail, style: settings.widgetTheme).frame(width: 340)
+        }.padding(28).background(ThemeWallpaper())
+            .environmentObject(settings).environment(\.themeSnapshot, true)
+        ok = host(card, to: url.appendingPathComponent("widget-card.png")) && ok
         settings.widget.style = nil
         for size in WidgetSize.allCases {
             settings.widget.size = size

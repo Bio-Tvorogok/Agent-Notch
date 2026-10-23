@@ -38,7 +38,7 @@ final class CardPanel {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         model.readsUsage = { settings.cardBlockShown(.contextCost) }
-        panel.contentView = NSHostingView(rootView: LiveCardView(model: model, settings: settings) { [weak store] in store?.open($0) })
+        panel.contentView = NSHostingView(rootView: LiveCardView(model: model, settings: settings, widget: !movesList) { [weak store] in store?.open($0) })
         self.selection = (selection ?? store.$selected.eraseToAnyPublisher()).receive(on: RunLoop.main).sink { [weak self] id in
             self?.apply(id, retry: true)
         }
