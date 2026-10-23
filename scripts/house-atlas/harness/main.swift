@@ -495,6 +495,45 @@ case "hitch":
     print("n=\(n) first build \(first) ms; per-minute main ms: \(mStr); variant changes main ms: \(vStr)")
     exit(0)
 
+case "addproject":
+    // addproject <atlas> <projects>: the main-thread cost of a project joining, through the path the app takes: scene.deliver(rows) then the
+    // next frame's advanceBehaviour (HouseBehaviour relays out, followBehaviour rebuilds the scene), plus the paint that is swapped in after.
+    // Warm-up first; the figure is the median of five joins (each from n projects to n+1, the scene fresh each time).
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 5
+    let ins = HouseLayout.Insets(top: 32, bottom: 70, right: 120)
+    func rows(_ k: Int) -> [HouseAgentRow] { (0..<k).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") } }
+    func ms(_ f: () -> Void) -> Double { let t = CACurrentMediaTime(); f(); return (CACurrentMediaTime() - t) * 1000 }
+    var advances: [Double] = [], applies: [Double] = [], gaps: [Double] = []
+    for k in 0..<7 {
+        let rng = HouseRandom(seed: 7 + UInt32(k))
+        let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: 2), insets: ins, random: { rng.nextDouble() })
+        behaviour.setAgents(rows(n))
+        let (scene, view) = makeScene(atlas: atlas, layout: behaviour.layout)
+        scene.env = HouseSkyEnv(innerHeight: 1117, insetBottom: 70)
+        scene.freezeClock = true; scene.colon = true; scene.freezeSim = true
+        scene.attach(behaviour)
+        view.presentScene(scene)
+        scene.setTime(hour: 12, day: 294)
+        spin(1.0)
+        var applied: [Double] = []
+        scene.onApply = { applied.append($0) }
+        // the longest stall of the main run loop over the join and the second after it (a 2 ms ticker that records the gap between ticks)
+        var last = CACurrentMediaTime(), worst = 0.0
+        let ticker = Timer(timeInterval: 0.002, repeats: true) { _ in let t = CACurrentMediaTime(); worst = max(worst, (t - last) * 1000); last = t }
+        RunLoop.main.add(ticker, forMode: .common)
+        scene.deliver(rows(n + 1))
+        let a = ms { scene.advanceBehaviour(ms: 16) }
+        spin(1.2)
+        ticker.invalidate()
+        if k >= 2 { advances.append(a); applies.append(applied.reduce(0, +)); gaps.append(worst) }
+    }
+    func med(_ a: [Double]) -> Double { a.sorted()[a.count / 2] }
+    print(String(format: "ADDPROJECT n=%d->%d: advanceBehaviour main %.1f ms (median of %d, max %.1f), async apply on main %.1f ms; total %.1f ms; longest main-loop stall in the next 1.2 s %.1f ms (max %.1f)",
+                 n, n + 1, med(advances), advances.count, advances.max()!, med(applies), med(advances) + med(applies), med(gaps), gaps.max()!))
+    // gate: a join must stay well inside one 60 Hz frame (measured 1.4-3.5 ms; 4x headroom for a loaded machine)
+    if med(advances) + med(applies) > 8 { print("ADDPROJECT: over the 8 ms gate"); exit(3) }
+    exit(0)
+
 case "snapdemo":
     // snapdemo <atlas> <projects> <hour> <seconds> <out.png>
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, hour = Double(args[4]) ?? 12, secs = Double(args[5]) ?? 20
