@@ -30,3 +30,19 @@ struct HouseSnapshotChecks {
         XCTAssertEqual(HouseSnapshot.url(home: URL(fileURLWithPath: "/Users/x")).path, "/Users/x/Library/Application Support/AgentsNotch/house.json")
     }
 }
+
+extension HouseSnapshotChecks {
+    func renderer() throws {
+        let now = Date()
+        let sk = HouseSnapshot(agents: "[]", usage: nil, config: "{}", fps: 30, written: now, renderer: "spritekit")
+        let read = try XCTUnwrap(HouseSnapshot.decode(try XCTUnwrap(sk.encoded()), now: now))
+        XCTAssertEqual(read.renderer ?? "", "spritekit", "the renderer survives the file")
+        let old = try XCTUnwrap(HouseSnapshot.decode(Data(#"{"written":\#(now.timeIntervalSince1970),"agents":[]}"#.utf8), now: now))
+        XCTAssertTrue(old.renderer == nil, "a file from an older app means the page")
+        XCTAssertTrue(!sk.sameHouse(as: HouseSnapshot(agents: "[]", usage: nil, config: "{}", fps: 30, written: now)), "a renderer change is a change")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 10) == nil, "autumn islands: drawable")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 3) != nil, "spring: the page")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "tower", month: 10) != nil, "another layout: the page")
+        print("houseSnapshotRenderer: field round trip, old file, rules")
+    }
+}

@@ -31,7 +31,7 @@ HOUSE_REF_ONLY=1 .build/house-atlas/export room/index.html "$P/live-run.js" "$P/
 xcrun swiftc -O -target arm64-apple-macos14.0 -parse-as-library -module-name NotchCore -emit-module \
   -emit-module-path "$P/obj/NotchCore.swiftmodule" -emit-library -static -o "$P/obj/libNotchCore.a" Sources/NotchCore/*.swift
 xcrun swiftc -O -target arm64-apple-macos14.0 -I "$P/obj" -L "$P/obj" -lNotchCore -o "$P/harness" \
-  scripts/house-atlas/harness/main.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift
+  scripts/house-atlas/harness/main.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift Sources/AgentNotchSaver/SaverSpriteHouse.swift
 rm -rf "$P/fixtures"; mkdir -p "$P/fixtures"
 for d in house-behaviour house-life house-overlays; do for f in Tests/Fixtures/$d/*.json; do ln -sf "$PWD/$f" "$P/fixtures/"; done; done
 while read -r a f; do ln -sf "$PWD/$(ls Tests/Fixtures/house-*/$f.json | head -1)" "$P/fixtures/$a.json"; done < "$P/live-aliases.txt"

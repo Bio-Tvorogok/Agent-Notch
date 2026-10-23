@@ -79,7 +79,7 @@ extension HouseScene2 {
                     let rc = pages.rect(lamp.sprite)
                     let m = SKSpriteNode(texture: pages.texture(lamp.sprite), size: CGSize(width: rc.w, height: rc.h))
                     m.anchorPoint = CGPoint(x: 0, y: 1); m.blendMode = .add
-                    if let sh = shaders.shader(page: rc.page, flag: rc.flag) { m.shader = sh }
+                    shaders.apply(to: m, id: lamp.sprite)
                     movers.addChild(m); lampNodes[sp.id] = m; return m
                 }()
                 n.isHidden = false

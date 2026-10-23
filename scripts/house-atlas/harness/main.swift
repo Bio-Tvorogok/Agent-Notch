@@ -327,6 +327,172 @@ case "bench":
     }
     exit(bad ? 3 : 0)
 
+case "interact":
+    // interact <atlas> <ref dir> <fixtures dir> <out dir>: replays the page's pointer / pinch / scroll / click sequence (interact-ref.js) on the
+    // scene and compares the camera, the overview button, the hovered agent, the hover card and the click's {open} at every record;
+    // two settled zoomed views are also compared as frames (house and agent pixels, the same gates as the live proof; the sky is magnified
+    // here and repainted by the page, so its difference is printed but not gated).
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), refDir = URL(fileURLWithPath: args[3], isDirectory: true)
+    let fixDir = URL(fileURLWithPath: args[4], isDirectory: true), out = URL(fileURLWithPath: args[5], isDirectory: true)
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let info = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent("interact.json"))) as! [String: Any]
+    let name = info["case"] as! String, T0 = info["T0"] as! Int, hour = info["hour"] as! Double
+    let ops = info["ops"] as! [[String: Any]], recs = info["recs"] as! [[String: Any]]
+    let ins = info["insets"] as! [String: Double], dpr = info["DPR"] as! Double
+    let innerW = info["innerWidth"] as! Double, innerH = info["innerHeight"] as! Double
+    let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: fixDir.appendingPathComponent(name + ".json"))) as! [String: Any]
+    let input = fixture["input"] as! [String: Any]
+    let events = (input["events"] as! [[String: Any]]).filter { $0["rows"] != nil }
+    func rows(_ e: [String: Any]) -> [HouseAgentRow] { try! JSONDecoder().decode([HouseAgentRow].self, from: JSONSerialization.data(withJSONObject: e["rows"]!)) }
+    let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
+    let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: innerW, height: innerH, dpr: dpr),
+                                   insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
+    var bt = 0
+    while bt <= T0 {
+        let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
+        if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
+        bt += 50
+    }
+    let lay = behaviour.layout
+    let even = { (v: Double) in (v / texScale / 2).rounded(.up) * 2 }
+    let size = CGSize(width: even(lay.view.width), height: even(lay.view.height))
+    guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
+    sc.followsLayoutScale = false; sc.freezeClock = true; sc.freezeSim = true; sc.colon = false
+    sc.env = HouseSkyEnv(innerHeight: innerH, insetBottom: ins["bottom"]!)
+    sc.attach(behaviour)
+    let v = SKView(frame: NSRect(origin: .zero, size: size)); v.ignoresSiblingOrder = true
+    sc.setTime(hour: hour, day: 294)
+    sc.clockMillis = Double(T0)
+    v.presentScene(sc)
+    sc.repaint(sync: true)
+    if let sim = sc.sim { sc.sync(sim: sim) }
+    spin(0.5)
+    var VT = 1e6
+    sc.nowMs = { VT }
+    sc.hudEnabled = false
+    sc.installCamera(HouseCamera(layout: lay, innerWidth: innerW, innerHeight: innerH, insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!)))
+    var opened: String?
+    sc.onOpen = { opened = $0 }
+    var failed = false, ri = 0, fresh = false
+    func num(_ x: Any?) -> Double { (x as? NSNumber)?.doubleValue ?? .nan }
+    func hexNorm(_ h: String) -> String { var s = h.lowercased(); if s.count == 4 { s = "#" + s.dropFirst().map { "\($0)\($0)" }.joined() }; return s }
+    print("record             page zoom  scene zoom  |d at|     home hovered tip   opened")
+    for op in ops {
+        switch op["op"] as! String {
+        case "pointer": sc.pointerMoved(x: num(op["x"]), y: num(op["y"])); fresh = true
+        case "leave": sc.pointerLeft(); fresh = true
+        case "zoom": sc.zoom(num(op["f"]), x: num(op["x"]), y: num(op["y"])); fresh = false
+        case "pan": sc.pan(dx: num(op["dx"]), dy: num(op["dy"])); fresh = false
+        case "click": sc.pointerClicked(x: num(op["x"]), y: num(op["y"])); fresh = true
+        case "reset": sc.resetView(); fresh = false
+        case "ticks":
+            for _ in 0..<Int(num(op["n"])) { VT += num(op["dt"]); sc.stepInteraction(frameMs: num(op["dt"])) }
+            fresh = false
+        case "draw": sc.updateHover(); fresh = true
+        case "frame":
+            sc.updateHover(); fresh = true
+            let fname = op["name"] as! String
+            let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent("interact-\(fname)-meta.json"))) as! [String: Any]
+            let k = Int((meta["zoom"] as! Double).rounded())
+            guard abs(Double(k) - (meta["zoom"] as! Double)) < 1e-9, k >= 1 else { print("frame \(fname): zoom \(meta["zoom"]!) is not whole"); exit(1) }
+            sc.repaint(sync: true)
+            if let sim = sc.sim { sc.sync(sim: sim) }
+            spin(0.8)
+            if let sim = sc.sim { sc.sync(sim: sim) }
+            var img = v.texture(from: sc)!.cgImage()
+            spin(0.3)
+            img = v.texture(from: sc)!.cgImage()
+            func up(_ p: (data: [UInt8], w: Int, h: Int)) -> (data: [UInt8], w: Int, h: Int) {
+                var d = [UInt8](repeating: 0, count: p.w * k * p.h * k * 4)
+                for y in 0..<(p.h * k) { for x in 0..<(p.w * k) { for c in 0..<4 { d[(y * p.w * k + x) * 4 + c] = p.data[((y / k) * p.w + x / k) * 4 + c] } } }
+                return (d, p.w * k, p.h * k)
+            }
+            let ref = up(pixels(load(refDir.appendingPathComponent("interact-\(fname).png"))))
+            // the house's pixels are the ones that differ from the scene's own sky with its glows (house hidden; the halos of lamps lie over the sky): the page's sky-only frame has its own
+            // regenerated city (a disc of it differs around a lit window), which is not the house
+            let hid = sc.root.children.filter { $0 !== sc.skyGroup && $0 !== sc.mistGroup && !$0.isHidden && ($0 as? SKSpriteNode)?.blendMode != .add }
+            hid.forEach { $0.isHidden = true }; sc.movers.isHidden = true
+            spin(0.3)
+            _ = v.texture(from: sc)
+            let skyImg = v.texture(from: sc)!.cgImage()
+            hid.forEach { $0.isHidden = false }; sc.movers.isHidden = false
+            let skyM = pixels(skyImg)
+            let bare = up(pixels(load(refDir.appendingPathComponent("interact-\(fname)-bare.png"))))
+            let mineRaw = pixels(img)
+            let cw = min(ref.w, mineRaw.w), chh = min(ref.h, mineRaw.h)
+            guard ref.w - cw <= 8, ref.h - chh <= 8, mineRaw.w - cw <= 8, mineRaw.h - chh <= 8 else { print("frame \(fname): size \(mineRaw.w)x\(mineRaw.h) vs \(ref.w)x\(ref.h)"); exit(1) }
+            // the house is what the scene draws over its own sky inside a room's outline (an island slab, a tower), widened by 8 art pixels;
+            // the page repaints sky, city and mist for the zoomed canvas, so what lies outside is the sky's and is only printed
+            let pose = sc.houseCamera!.pose, sh = sc.houseCamera!.shiftFromHome(pose)
+            let polys = lay.rooms.map { HouseHit.roomOutline($0, in: lay, world: false, island: true) }
+            let boxes = polys.map { p in (p.map { $0[0] }.min()! - 8, p.map { $0[0] }.max()! + 8, p.map { $0[1] }.min()! - 8, p.map { $0[1] }.max()! + 8) }
+            let aw = cw / k + 2, ah = chh / k + 2
+            var inRoom = [Bool](repeating: false, count: aw * ah)
+            for ay in 0..<ah { for ax in 0..<aw {
+                let lx = Double(ax) + 0.5 - sh.x, ly = Double(ay) + 0.5 - sh.y
+                for (i, b) in boxes.enumerated() where lx >= b.0 && lx <= b.1 && ly >= b.2 && ly <= b.3 {
+                    if [(0.0, 0.0), (8, 0), (-8, 0), (0, 8), (0, -8)].contains(where: { HouseHit.inside(polys[i], lx + $0.0, ly + $0.1) }) { inRoom[ay * aw + ax] = true; break }
+                }
+            } }
+            var house = 0, off24 = 0, off6 = 0, sumAbs = 0, agent = 0, aOff24 = 0, aOff6 = 0, skyN = 0, skyOff = 0
+            var diff = [UInt8](repeating: 255, count: cw * chh * 4), side = [UInt8](repeating: 255, count: cw * 2 * chh * 4)
+            for y in 0..<chh { for x in 0..<cw {
+                let ri = (y * ref.w + x) * 4, mi = (y * mineRaw.w + x) * 4, p = y * cw + x
+                var mx = 0, dBare = 0, dSky = 0
+                let si = (y * skyM.w + x) * 4
+                for c in 0..<3 {
+                    mx = max(mx, abs(Int(ref.data[ri + c]) - Int(mineRaw.data[mi + c])))
+                    dBare += abs(Int(ref.data[ri + c]) - Int(bare.data[ri + c])); dSky += abs(Int(mineRaw.data[mi + c]) - Int(skyM.data[si + c]))
+                }
+                if dSky > 0 && inRoom[(y / k) * aw + x / k] { house += 1; sumAbs += (0..<3).reduce(0) { $0 + abs(Int(ref.data[ri + $1]) - Int(mineRaw.data[mi + $1])) }; if mx > 24 { off24 += 1 }; if mx > 6 { off6 += 1 } }
+                else { skyN += 1; if mx > 24 { skyOff += 1 } }
+                if dBare > 0 { agent += 1; if mx > 24 { aOff24 += 1 }; if mx > 6 { aOff6 += 1 } }
+                for c in 0..<3 { diff[p * 4 + c] = mx > 24 ? (c == 0 ? 255 : 0) : ref.data[ri + c] >> 2 }
+                for c in 0..<4 { side[(y * cw * 2 + x) * 4 + c] = ref.data[ri + c]; side[(y * cw * 2 + cw + x) * 4 + c] = mineRaw.data[mi + c] }
+            } }
+            save(diff, cw, chh, to: out.appendingPathComponent("\(fname)-diff.png"))
+            save(side, cw * 2, chh, to: out.appendingPathComponent("\(fname)-side.png"))
+            let h = Double(max(1, house)), a = Double(max(1, agent))
+            let p24 = 100 * Double(off24) / h, p6 = 100 * Double(off6) / h, mae = Double(sumAbs) / (h * 3), a24 = 100 * Double(aOff24) / a, a6 = 100 * Double(aOff6) / a
+            print(String(format: "frame %@ (zoom %d): house %d px, %%24 %.4f, %%6 %.4f, MAE %.3f | agent %d px, %%24 %.3f, %%6 %.3f | sky (not gated) %d px, %.2f%% off", fname as NSString, k, house, p24, p6, mae, agent, a24, a6, skyN, 100 * Double(skyOff) / Double(max(1, skyN))))
+            if p24 > 0.1 || p6 > GATE_PCT6 || mae > GATE_MAE || a24 > GATE_AGENT24 || a6 > GATE_AGENT6 { failed = true; print("    ^ over a gate") }
+        case "record":
+            let r = recs[ri]; ri += 1
+            let cam = sc.houseCamera!, pose = cam.pose
+            var bad: [String] = []
+            let pz = num(r["zoom"]), pat = r["at"] as! [Double]
+            let dat = hypot(pat[0] - pose.at[0], pat[1] - pose.at[1])
+            if abs(pz - pose.zoom) > 1e-6 { bad.append("zoom") }
+            if dat > 1e-6 { bad.append("at") }
+            if abs(num(r["tz"]) - cam.target.zoom) > 1e-6 { bad.append("target") }
+            if (r["home"] as! Bool) != cam.homeOn { bad.append("home") }
+            let po = r["opened"] as? String
+            if po != opened { bad.append("opened") }
+            var hv = "-", tp = "-"
+            if fresh {
+                let ph = r["hovered"] as? String
+                if ph != sc.hoveredId { bad.append("hovered") }
+                hv = ph == sc.hoveredId ? (ph ?? "none") : "\(ph ?? "none")!=\(sc.hoveredId ?? "none")"
+                let t = sc.lastTip
+                if let pt = r["tip"] as? [String: Any] {
+                    let m = pt["mouse"] as Any?; _ = m
+                    if let t, t.title == pt["title"] as? String, t.status == pt["status"] as? String, t.detail == pt["detail"] as? String,
+                       hexNorm(t.color) == hexNorm(pt["color"] as? String ?? "") { tp = "same" } else { bad.append("tip"); tp = "DIFF" }
+                    if let mo = r["mouse"] as? [Double], let t, abs(t.x - mo[0]) > 1e-9 || abs(t.y - mo[1]) > 1e-9 { bad.append("tip xy") }
+                } else if t != nil { bad.append("tip"); tp = "extra" } else { tp = "none" }
+            }
+            opened = nil
+            func pad(_ t: String, _ n: Int) -> String { t.count >= n ? t : t + String(repeating: " ", count: n - t.count) }
+            print(pad(r["name"] as! String, 18) + String(format: "%9.6f %11.6f  %9.2e  ", pz, pose.zoom, dat) + pad(cam.homeOn ? "on" : "off", 5) + pad(hv, 8) + pad(tp, 6) + (po ?? "-")
+                  + (bad.isEmpty ? "" : "   <-- DIFF: " + bad.joined(separator: ",")))
+            if !bad.isEmpty { failed = true }
+        default: break
+        }
+    }
+    guard ri == recs.count else { print("replayed \(ri) of \(recs.count) records"); exit(1) }
+    print(failed ? "INTERACT PROOF: FAILED" : "INTERACT PROOF: the scene answers like the page (\(recs.count) records)")
+    exit(failed ? 3 : 0)
+
 case "selftest":
     // selftest <atlas>: the atlas guards (exact variant, short arrays, corrupt page) and the growth store; exits 1 on the first failure
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true)
@@ -407,6 +573,123 @@ case "hitch":
     print("n=\(n) first build \(first) ms; per-minute main ms: \(mStr); variant changes main ms: \(vStr)")
     exit(0)
 
+case "addproject":
+    // addproject <atlas> <projects>: the main-thread cost of a project joining, through the path the app takes: scene.deliver(rows) then the
+    // next frame's advanceBehaviour (HouseBehaviour relays out, followBehaviour rebuilds the scene), plus the paint that is swapped in after.
+    // Warm-up first; the figure is the median of five joins (each from n projects to n+1, the scene fresh each time).
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 5
+    let ins = HouseLayout.Insets(top: 32, bottom: 70, right: 120)
+    func rows(_ k: Int) -> [HouseAgentRow] { (0..<k).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") } }
+    func ms(_ f: () -> Void) -> Double { let t = CACurrentMediaTime(); f(); return (CACurrentMediaTime() - t) * 1000 }
+    var advances: [Double] = [], applies: [Double] = [], gaps: [Double] = []
+    for k in 0..<7 {
+        let rng = HouseRandom(seed: 7 + UInt32(k))
+        let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: 2), insets: ins, random: { rng.nextDouble() })
+        behaviour.setAgents(rows(n))
+        let (scene, view) = makeScene(atlas: atlas, layout: behaviour.layout)
+        scene.env = HouseSkyEnv(innerHeight: 1117, insetBottom: 70)
+        scene.freezeClock = true; scene.colon = true; scene.freezeSim = true
+        scene.attach(behaviour)
+        view.presentScene(scene)
+        scene.setTime(hour: 12, day: 294)
+        spin(1.0)
+        var applied: [Double] = []
+        scene.onApply = { applied.append($0) }
+        // the longest stall of the main run loop over the join and the second after it (a 2 ms ticker that records the gap between ticks)
+        var last = CACurrentMediaTime(), worst = 0.0
+        let ticker = Timer(timeInterval: 0.002, repeats: true) { _ in let t = CACurrentMediaTime(); worst = max(worst, (t - last) * 1000); last = t }
+        RunLoop.main.add(ticker, forMode: .common)
+        scene.deliver(rows(n + 1))
+        let a = ms { scene.advanceBehaviour(ms: 16) }
+        spin(1.2)
+        ticker.invalidate()
+        if k >= 2 { advances.append(a); applies.append(applied.reduce(0, +)); gaps.append(worst) }
+    }
+    func med(_ a: [Double]) -> Double { a.sorted()[a.count / 2] }
+    print(String(format: "ADDPROJECT n=%d->%d: advanceBehaviour main %.1f ms (median of %d, max %.1f), async apply on main %.1f ms; total %.1f ms; longest main-loop stall in the next 1.2 s %.1f ms (max %.1f)",
+                 n, n + 1, med(advances), advances.count, advances.max()!, med(applies), med(advances) + med(applies), med(gaps), gaps.max()!))
+    // gate: a join must stay well inside one 60 Hz frame (measured 1.4-3.5 ms; 4x headroom for a loaded machine)
+    if med(advances) + med(applies) > 8 { print("ADDPROJECT: over the 8 ms gate"); exit(3) }
+    exit(0)
+
+case "saver":
+    // saver <atlas> <out.png>: the screen saver's SpriteKit house (SaverSpriteHouse) from a snapshot, as the saver builds it. Gates: it is built for the
+    // snapshot's projects, takes a later snapshot's agents, shows a house (not blank), and refuses what the atlas cannot draw (spring, another layout).
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), out = args[3]
+    let agentsJSON = { (n: Int) in String(data: try! JSONEncoder().encode((0..<n).map { HouseAgentRow(id: "a\($0)", project: NAMES[$0], state: "working", title: "t\($0)") }), encoding: .utf8)! }
+    func snap(_ n: Int, config: String = #"{"layout":"islands","themes":{}}"#) -> HouseSnapshot { HouseSnapshot(agents: agentsJSON(n), usage: nil, config: config, fps: 30, written: Date(), renderer: "spritekit") }
+    var bad = 0
+    func check(_ ok: Bool, _ what: String) { print(ok ? "ok   \(what)" : "FAIL \(what)"); if !ok { bad += 1 } }
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 3, onFailure: {}) == nil, "spring: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2, config: #"{"layout":"tower","themes":{}}"#), month: 10, onFailure: {}) == nil, "another layout: no SpriteKit house")
+    check(SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: URL(fileURLWithPath: "/nonexistent"), snapshot: snap(2), month: 10, onFailure: {}) == nil, "no atlas: no SpriteKit house")
+    var failed = false
+    guard let house = SaverSpriteHouse(size: CGSize(width: 1728, height: 1117), scale: 2, atlas: atlas, snapshot: snap(2), month: 10, onFailure: { failed = true }) else { print("FAIL cannot build"); exit(3) }
+    house.scene.setTime(hour: 12, day: 294)
+    spin(1.5)
+    let projects = { house.scene.layout.rooms.filter { !$0.key.hasPrefix("__") }.count }
+    check(projects() == 2, "built for the snapshot's 2 projects (got \(projects()))")
+    house.apply(snap(4))
+    house.scene.advanceBehaviour(ms: 16)
+    spin(1.5)
+    check(projects() == 4, "a later snapshot with 4 projects grows the house (got \(projects()))")
+    check(!failed, "no failure callback")
+    let img = house.view.texture(from: house.scene)!.cgImage()
+    let px = pixels(img)
+    var distinct = Set<UInt32>()
+    for i in stride(from: 0, to: px.data.count - 3, by: 4 * 37) { distinct.insert(UInt32(px.data[i]) << 16 | UInt32(px.data[i + 1]) << 8 | UInt32(px.data[i + 2])) }
+    check(distinct.count > 40, "the frame shows a house (\(distinct.count) distinct colours sampled)")
+    if let d = CGImageDestinationCreateWithURL(URL(fileURLWithPath: out) as CFURL, "public.png" as CFString, 1, nil) { CGImageDestinationAddImage(d, img, nil); CGImageDestinationFinalize(d) }
+    print(bad == 0 ? "SAVER PROOF: ok" : "SAVER PROOF: \(bad) failed")
+    exit(bad == 0 ? 0 : 3)
+
+case "extra":
+    // extra <atlas> <ref dir> <out dir>: the extra screen's sky and city (HouseScene2.extraScreen, an empty layout, no sun or moon) against the page's own
+    // ?scene=extra frames (harness/extra-ref.js, islets left out), whole frame, with the scene proof's frame gates.
+    let atlas = URL(fileURLWithPath: args[2], isDirectory: true), refDir = URL(fileURLWithPath: args[3], isDirectory: true), out = URL(fileURLWithPath: args[4], isDirectory: true)
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let metas = try FileManager.default.contentsOfDirectory(atPath: refDir.path).filter { $0.hasPrefix("ref-x") && $0.hasSuffix(".json") }.sorted()
+    var failed = metas.isEmpty
+    print("fixture      var | frame%24  frame%6  MAE/ch")
+    for m in metas {
+        let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent(m))) as! [String: Any]
+        let hour = meta["hour"] as! Double, W = meta["W"] as! Int, H = meta["H"] as! Int, dpr = meta["DPR"] as! Double
+        let layout = HouseLayout.extraScreen(canvas: .init(width: meta["innerW"] as! Double, height: meta["innerH"] as! Double, dpr: dpr))
+        guard Int(layout.view.width) == W, Int(layout.view.height) == H, layout.view.PXD == meta["PXD"] as! Double, layout.rooms.isEmpty else {
+            print("canvas mismatch \(layout.view.width)x\(layout.view.height)@\(layout.view.PXD) vs \(W)x\(H)@\(meta["PXD"]!)"); exit(1)
+        }
+        let (scene, view) = makeScene(atlas: atlas, layout: layout)
+        scene.extraScreen = ProcessInfo.processInfo.environment["PROOF_SUN"] == nil // PROOF_SUN: a deliberate defect (the main screen's sun and moon on an extra screen), to prove the gate fails
+        scene.env = HouseSkyEnv(innerHeight: meta["innerH"] as! Double, insetBottom: 0)
+        scene.freezeClock = true; scene.clockMillis = meta["T"] as! Double; scene.colon = false
+        scene.setTime(hour: hour, day: meta["day"] as! Int)
+        let ours = render(scene, view: view)
+        let tag = String(m.dropFirst(4).dropLast(5))
+        let ref = pixels(load(refDir.appendingPathComponent("ref-\(tag).png"))), mineRaw = pixels(ours)
+        guard mineRaw.w >= ref.w, mineRaw.h >= ref.h, mineRaw.w - ref.w <= 8, mineRaw.h - ref.h <= 8 else { print("size mismatch \(mineRaw.w)x\(mineRaw.h) vs \(ref.w)x\(ref.h)"); exit(1) }
+        let mine = crop(mineRaw, ref.w, ref.h)
+        var off24 = 0, off6 = 0, sumAbs = 0
+        var diff = [UInt8](repeating: 255, count: ref.w * ref.h * 4)
+        var side = [UInt8](repeating: 255, count: ref.w * 2 * ref.h * 4)
+        for p in 0..<(ref.w * ref.h) {
+            let i = p * 4
+            var mx = 0
+            for c in 0..<3 { let d = abs(Int(ref.data[i + c]) - Int(mine.data[i + c])); mx = max(mx, d); sumAbs += d }
+            if mx > 6 { off6 += 1 }
+            if mx > 24 { off24 += 1 }
+            for c in 0..<3 { diff[i + c] = mx > 24 ? (c == 0 ? 255 : 0) : ref.data[i + c] >> 2 }
+            let y = p / ref.w, x = p % ref.w
+            for c in 0..<4 { side[(y * ref.w * 2 + x) * 4 + c] = ref.data[i + c]; side[(y * ref.w * 2 + ref.w + x) * 4 + c] = mine.data[i + c] }
+        }
+        save(diff, ref.w, ref.h, to: out.appendingPathComponent("\(tag)-diff.png"))
+        save(side, ref.w * 2, ref.h, to: out.appendingPathComponent("\(tag)-side.png"))
+        let n = Double(ref.w * ref.h), f24 = 100 * Double(off24) / n, f6 = 100 * Double(off6) / n, mae = Double(sumAbs) / (n * 3)
+        print(String(format: "%-12@ %3d | %8.4f %8.4f %7.4f", tag as NSString, scene.light.variant, f24, f6, mae))
+        if f24 > GATE_FRAME24 || f6 > GATE_FRAME6 { failed = true; print("    ^ over a gate") }
+    }
+    print(failed ? "EXTRA PROOF: FAILED" : "EXTRA PROOF: all fixtures within the gates")
+    exit(failed ? 3 : 0)
+
 case "snapdemo":
     // snapdemo <atlas> <projects> <hour> <seconds> <out.png>
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), n = Int(args[3]) ?? 3, hour = Double(args[4]) ?? 12, secs = Double(args[5]) ?? 20
@@ -476,6 +759,6 @@ case "idle", "demo":
     app.run()
 
 default:
-    print("usage: harness proof <atlas> <ref dir> <out dir> | snapdemo <atlas> <n> <hour> <secs> <png> | idle|demo <atlas> <n> <secs>")
+    print("usage: harness interact <atlas> <ref dir> <fixtures> <out> | proof <atlas> <ref dir> <out dir> | snapdemo <atlas> <n> <hour> <secs> <png> | idle|demo <atlas> <n> <secs>")
     exit(2)
 }

@@ -13,6 +13,9 @@ final class HouseSaverView: ScreenSaverView {
     static let poll: TimeInterval = 2
 
     private var web: WKWebView?
+    /// The SpriteKit house, when the app says it draws that way and the bundle's atlas can; the page otherwise (and after any failure).
+    private var sprite: SaverSpriteHouse?
+    private var spriteFailed = false
     private var timer: Timer?
     private var loaded = false
     private var shown: HouseSnapshot?
@@ -53,7 +56,7 @@ final class HouseSaverView: ScreenSaverView {
         log("start")
         running = true
         activity = SaverActivity.State()
-        if web == nil { makeWeb() } else if !loaded { reload() }
+        if !startSprite() { if web == nil { makeWeb() } else if !loaded { reload() } }
         timer?.invalidate()
         let t = Timer(timeInterval: Self.poll, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refresh() } }
         RunLoop.main.add(t, forMode: .common)
@@ -96,6 +99,9 @@ final class HouseSaverView: ScreenSaverView {
         sentActive = nil
         timer?.invalidate()
         timer = nil
+        sprite?.setActive(false)
+        sprite?.view.removeFromSuperview()
+        sprite = nil
         guard let web else { return }
         if loaded { send("room.setActive(false)") }
         Self.occlusionDetection(web, enabled: true)
@@ -142,6 +148,7 @@ final class HouseSaverView: ScreenSaverView {
                                         running: running, visible: onScreen, preview: isPreview)
         if activity.exitHost { saverWillStop(); return }
         let visible = activity.draw
+        if sprite != nil || (web == nil && !spriteFailed) { refreshSprite(visible: visible); return }
         // ScreenSaverEngine mirrors an occluded host. Only a currently presented saver may ignore that
         // occlusion; hidden-page timer and process throttling retain WebKit's defaults throughout.
         if sentActive != visible, let web { Self.occlusionDetection(web, enabled: isPreview || !visible) }
@@ -157,6 +164,50 @@ final class HouseSaverView: ScreenSaverView {
         if old?.fps != next.fps { send("room.setFps(\(next.fps))") }
         if old?.agents != next.agents { send("room.setAgents(\(next.agents))") }
         if let usage = next.usage, old?.usage != usage { send("room.setUsage(\(usage))") }
+    }
+
+    // MARK: SpriteKit
+
+    private func snapshotNow() -> HouseSnapshot {
+        let now = Date()
+        return (try? Data(contentsOf: file)).flatMap { HouseSnapshot.decode($0, now: now) } ?? .empty(at: now)
+    }
+
+    /// Builds the SpriteKit house when the snapshot asks for it; false keeps the page.
+    private func startSprite() -> Bool {
+        guard !spriteFailed, sprite == nil else { return sprite != nil }
+        let snap = snapshotNow()
+        guard snap.renderer == "spritekit", !isPreview || bounds.width > 0,
+              let atlas = Bundle(for: HouseSaverView.self).resourceURL?.appendingPathComponent("room/atlas", isDirectory: true),
+              let house = SaverSpriteHouse(size: bounds.size, scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
+                                           atlas: atlas, snapshot: snap, onFailure: { [weak self] in MainActor.assumeIsolated { self?.spriteGaveUp() } })
+        else { return false }
+        house.view.autoresizingMask = [.width, .height]
+        addSubview(house.view)
+        sprite = house
+        shown = snap
+        log("SpriteKit house")
+        return true
+    }
+
+    private func refreshSprite(visible: Bool) {
+        guard let sprite else { return }
+        sprite.setActive(visible)
+        guard visible else { return }
+        let next = snapshotNow()
+        if next.renderer != "spritekit" { spriteGaveUp(); return } // the app went back to the page, or is gone
+        sprite.apply(next)
+    }
+
+    /// The atlas failed (or the app stopped asking for it): the page takes over for the rest of this run.
+    private func spriteGaveUp() {
+        guard sprite != nil else { return }
+        log("leaving the SpriteKit house")
+        spriteFailed = true
+        sprite?.setActive(false)
+        sprite?.view.removeFromSuperview()
+        sprite = nil
+        if running { makeWeb() }
     }
 
     private func send(_ js: String) {

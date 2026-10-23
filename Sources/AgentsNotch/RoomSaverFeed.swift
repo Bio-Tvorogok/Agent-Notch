@@ -66,7 +66,8 @@ final class RoomSaverFeed {
         let prefs = AppSettings.shared.room
         let now = HouseSnapshot(agents: RoomWallpaper.rows(store.shown, contexts: info.contexts),
                                 usage: info.lastUsage.isEmpty ? nil : info.lastUsage, config: prefs.pageConfig,
-                                fps: RoomWallpaper.fps, written: Date())
+                                fps: RoomWallpaper.fps, written: Date(),
+                                renderer: RoomWallpaper.wantsSpriteKit && RoomWallpaper.spriteKitReason(prefs) == nil ? "spritekit" : nil)
         if !force, let last, last.sameHouse(as: now) { return }
         guard let data = now.encoded() else { return }
         do {

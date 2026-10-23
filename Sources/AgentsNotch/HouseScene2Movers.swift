@@ -174,7 +174,7 @@ extension HouseScene2 {
                     c.size = CGSize(width: r.w, height: r.h)
                     c.position = CGPoint(x: Double(ax0 - ly.ax), y: -Double(ay0 - ly.ay))
                     c.zPosition = (k < pose.layers.count ? 0 : 0.003) + CGFloat(k) * 0.0001
-                    c.shader = shaders.shader(page: r.page, flag: r.flag)
+                    c.shader = nil; shaders.apply(to: c, id: ly.sprite)
                     c.name = glow ? "glow" : "ly"
                     c.blendMode = ly.blend == "add" ? .add : .alpha
                     c.isHidden = false; c.alpha = 1
@@ -199,7 +199,8 @@ extension HouseScene2 {
     /// The page's houseAwake: the house draws while an agent works or anything moves, and may rest until the next minute otherwise.
     /// Marks, idle residents and a still camera do not keep it awake (the page does not animate them on their own either).
     var isMoving: Bool {
-        guard let sim else { return false }
+        guard let sim else { return houseCamera?.isMoving == true }
+        if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
         return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil || ($0.kind == "agent" && $0.state == "working") }
@@ -224,6 +225,7 @@ extension HouseScene2 {
 
     override func update(_ currentTime: TimeInterval) {
         let raw = lastTime.map { max(0, currentTime - $0) } ?? 0
+        stepInteraction(frameMs: min(1500, raw * 1000))
         let dt = min(0.1, raw)
         lastTime = currentTime
         if !freezeClock { clockMillis += dt * 1000 }

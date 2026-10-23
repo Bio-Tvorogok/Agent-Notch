@@ -133,7 +133,7 @@ final class HousePages {
     private var subs: [Int: SKTexture] = [:]
     /// Pages with at least one flag-0 sprite: the only ones whose E page is ever loaded.
     let needsE: Set<Int>
-    private let sparsePages: Set<Int>
+    let sparsePages: Set<Int>
     private var unusedSky = Set<Int>()
     private var cutPages = Set<Int>()
     /// For measurements: the pages loaded so far.

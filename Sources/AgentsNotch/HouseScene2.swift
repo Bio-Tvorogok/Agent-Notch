@@ -23,6 +23,8 @@ final class HouseScene2: SKScene {
     /// a harness that sizes the scene to the canvas sets `followsLayoutScale` off.
     private(set) var unit: CGFloat
     var followsLayoutScale = true
+    /// An extra screen (the page's `?scene=extra`): the sky and the city of an empty layout (`HouseLayout.extraScreen`), without the sun and the moon.
+    var extraScreen = false
     struct LiveItem { weak var node: SKSpriteNode?; let make: (HousePainter) -> (CGImage, CGPoint, CGSize)?; let clock: Bool }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
@@ -127,6 +129,27 @@ final class HouseScene2: SKScene {
     /// Frames since the last report, for measurements.
     var onFrame: ((Double) -> Void)?
 
+    // the pointer and the view (HouseScene2Camera.swift, HouseScene2Pointer.swift)
+    /// The page's VIEW; nil keeps the overview and no pointer (the proof harness's scenes).
+    var houseCamera: HouseCamera?
+    var mistGroup = SKNode()
+    var hudNode: SKNode?
+    var hudSize = CGSize.zero
+    var hudEnabled = true
+    /// The cursor in the window's points (the page's `mouse`), nil when it is not over the bare desktop.
+    var pointer: (x: Double, y: Double)?
+    var hoveredId: String?
+    var lastTip: HouseHit.Tip?
+    /// The hover card changed (nil: hide it); the host shows it above the desktop icons.
+    var onTip: ((HouseHit.Tip?) -> Void)?
+    /// A click on an agent: its id.
+    var onOpen: ((String) -> Void)?
+    /// The clock of the camera in ms (the harness replaces it with a virtual one).
+    var nowMs: () -> Double = { CACurrentMediaTime() * 1000 }
+    var lastCameraNow: Double?
+    var autoResetTimer: Timer?
+    var signHits: [String: [Double]] = [:]
+
     init(parts: HouseParts, pages: HousePages, layout: HouseLayout, unit: CGFloat, size: CGSize) {
         self.parts = parts; self.pages = pages; self.layout = layout; self.unit = unit
         painter = HousePainter(parts: parts, layout: layout)
@@ -138,8 +161,7 @@ final class HouseScene2: SKScene {
         backgroundColor = .black
         anchorPoint = .zero
         addChild(world)
-        world.setScale(unit)
-        world.position = CGPoint(x: 0, y: size.height)
+        applyCamera()
         world.addChild(root)
         world.addChild(movers)
     }
@@ -156,14 +178,16 @@ final class HouseScene2: SKScene {
         return HouseScene2(parts: parts, pages: pages, layout: layout, unit: unit, size: size)
     }
 
-    override func didChangeSize(_ oldSize: CGSize) { world.position = CGPoint(x: 0, y: size.height) }
+    override func didChangeSize(_ oldSize: CGSize) { applyCamera(); layoutHud() }
 
     // MARK: public control
 
     /// A new project list: the layout changes, the house is built again.
     func setLayout(_ l: HouseLayout) {
         layout = l; builtKey = ""
-        if followsLayoutScale { unit = CGFloat(l.view.PXD / l.view.DPR); world.setScale(unit) }
+        if followsLayoutScale { unit = CGFloat(l.view.PXD / l.view.DPR) }
+        houseCamera = houseCamera?.rebased(layout: l)
+        signHits = [:]
         rebuild()
     }
 
@@ -200,7 +224,7 @@ final class HouseScene2: SKScene {
         n.anchorPoint = CGPoint(x: 0, y: 1)
         n.position = CGPoint(x: x, y: -y)
         n.zPosition = z
-        if let sh = shaders.shader(page: r.page, flag: r.flag) { n.shader = sh }
+        shaders.apply(to: n, id: id)
         if blend == "add" { n.blendMode = .add }
         (parent ?? root).addChild(n)
         return n
@@ -237,6 +261,7 @@ final class HouseScene2: SKScene {
         builtVariant = vi; builtKey = layoutKey
         let oldSky = skyGroup
         skyGroup = SKNode(); root.addChild(skyGroup)
+        mistGroup = SKNode(); root.addChild(mistGroup)
         for c in oldSky.children { c.removeFromParent(); skyGroup.addChild(c) } // until the new paint arrives
         buildSkyNodes()
         let rooms = Dictionary(layout.rooms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
@@ -254,6 +279,7 @@ final class HouseScene2: SKScene {
         applyCabins()
         refreshLight()
         if let sim { sync(sim: sim) }
+        applyCamera()
     }
     var painted = false
     var buildId = 0

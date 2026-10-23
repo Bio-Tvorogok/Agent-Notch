@@ -22,7 +22,7 @@ for d in house-behaviour house-life house-overlays; do for f in Tests/Fixtures/$
 xcrun swiftc -O -target arm64-apple-macos14.0 -parse-as-library -module-name NotchCore -emit-module -emit-module-path "$P/obj/NotchCore.swiftmodule" \
   -emit-library -static -o "$P/obj/libNotchCore.a" "$SRC"/Sources/NotchCore/*.swift
 xcrun swiftc -O ${REV:+-D OLDREV} -target arm64-apple-macos14.0 -I "$P/obj" -L "$P/obj" -lNotchCore -o "$P/harness" "$MAIN" \
-  "$SRC"/Sources/AgentsNotch/HouseParts.swift "$SRC"/Sources/AgentsNotch/HouseLight.swift "$SRC"/Sources/AgentsNotch/HouseScene2*.swift
+  "$SRC"/Sources/AgentsNotch/HouseParts.swift "$SRC"/Sources/AgentsNotch/HouseLight.swift "$SRC"/Sources/AgentsNotch/HouseScene2*.swift Sources/AgentNotchSaver/SaverSpriteHouse.swift
 rc=0
 for kind in ${KINDS:-walk type idle life}; do
   "$P/harness" bench "$SRC/room/atlas" "$P/fixtures" marks "$kind" "$SECS" "${REV:-tree}/$kind" ${CHECK:+$CHECK} || rc=$?

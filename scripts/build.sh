@@ -33,9 +33,11 @@ SAVER="$OUT/Agent Notch House.saver"
 rm -rf "$SAVER"
 mkdir -p "$SAVER/Contents/MacOS" "$SAVER/Contents/Resources/room"
 xcrun swiftc -O -target "$TARGET" -parse-as-library -module-name AgentNotchHouse -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
-  -framework ScreenSaver -framework WebKit -Xlinker -bundle \
-  -o "$SAVER/Contents/MacOS/Agent Notch House" Sources/AgentNotchSaver/*.swift
+  -framework ScreenSaver -framework WebKit -framework SpriteKit -Xlinker -bundle \
+  -o "$SAVER/Contents/MacOS/Agent Notch House" Sources/AgentNotchSaver/*.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift
 cp room/index.html "$SAVER/Contents/Resources/room/index.html"
+# the SpriteKit house's atlas (used only when the app's snapshot asks for SpriteKit)
+mkdir -p "$SAVER/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$SAVER/Contents/Resources/room/atlas/"
 for t in thumbnail.png thumbnail@2x.png; do [ -f "assets/saver/$t" ] && cp "assets/saver/$t" "$SAVER/Contents/Resources/$t"; done
 cat > "$SAVER/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

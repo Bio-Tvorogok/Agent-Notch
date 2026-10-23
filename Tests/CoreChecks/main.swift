@@ -396,7 +396,11 @@ run("houseLayoutRoomSeeds") { try HouseLayoutChecks().roomSeeds() }
 run("houseRouteGoldenFixtures") { try HouseRouteChecks().goldenFixtures() }
 run("houseBehaviourGoldenFixtures") { try HouseBehaviourChecks().goldenFixtures() }
 run("houseLifeGoldenFixtures") { try HouseLifeChecks().goldenFixtures() }
+run("houseCamera") { try HouseCameraChecks().all() }
+run("houseHit") { try HouseHitChecks().all() }
+run("housePinch") { try HousePinchChecks().all() }
 run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
+run("houseSnapshotRenderer") { try HouseSnapshotChecks().renderer() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
