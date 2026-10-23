@@ -143,6 +143,7 @@ final class RoomWallpaper: NSObject {
             .sink { [weak self] _ in self?.startPinchTap() }
             .store(in: &subs)
         startPinchTap()
+        if let mode = ProcessInfo.processInfo.environment["HOUSE_DEBUG_POINTER"] { startDebugPointer(mode) }
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp, .smartMagnify, .scrollWheel, .keyDown]) { [weak self] e in
             let type = e.type
             // Esc on the desktop goes back to the overview; macOS only delivers keys here with Accessibility access
@@ -156,6 +157,32 @@ final class RoomWallpaper: NSObject {
             }
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
             MainActor.assumeIsolated { self?.mouse(type, scroll: scroll) }
+        }
+    }
+
+    /// For CPU measurements only (HOUSE_DEBUG_POINTER=hover|zoom in the environment): the pointer, pinch and two-finger pan a person would make,
+    /// fed every 40 ms into the same calls `mouse()` makes for a bare desktop (a real pinch cannot be posted from a script).
+    private var debugStep = 0
+    private func startDebugPointer(_ mode: String) {
+        Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let w = self.window else { return }
+                self.debugStep += 1
+                let n = Double(self.debugStep), W = Double(w.frame.width), H = Double(w.frame.height)
+                let x = W / 2 + cos(n / 17) * W / 4, y = H / 2 + sin(n / 11) * H / 5
+                @MainActor func call(_ js: String, _ scene: (HouseScene2) -> Void) {
+                    if let web = self.web { web.evaluateJavaScript(js) } else if let sc = self.house?.scene as? HouseScene2 { scene(sc) }
+                }
+                if mode == "zoom" {
+                    // 12 s cycle: pinch in at the cursor for 4 s, two fingers back and forth for 4 s, pinch out for 4 s
+                    let ph = self.debugStep % 300
+                    if ph < 100 { call("room.zoom(1.025, \(x), \(y))") { $0.zoom(1.025, x: x, y: y) } }
+                    else if ph < 200 { let d = sin(n / 6) * 14; call("room.pan(\(d), \(d / 2))") { $0.pan(dx: d, dy: d / 2) } }
+                    else { call("room.zoom(0.975, \(x), \(y))") { $0.zoom(0.975, x: x, y: y) } }
+                } else {
+                    call("room.pointer(\(x), \(y))") { $0.pointerMoved(x: x, y: y) }
+                }
+            }
         }
     }
 
