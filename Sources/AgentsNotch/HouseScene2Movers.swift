@@ -22,6 +22,16 @@ extension HouseScene2 {
 
     /// The pose sprite name for a sprite at time t (ms), per parts.json poses.names and poses.timing.
     static func propFor(_ act: String) -> String? {
+        // asked for every working sprite in every frame: the regexes run once per activity text
+        if let hit = propCache[act] { return hit }
+        let v = propOf(act)
+        if propCache.count > 512 { propCache.removeAll() }
+        propCache[act] = v
+        return v
+    }
+    nonisolated(unsafe) private static var propCache: [String: String?] = [:]
+
+    private static func propOf(_ act: String) -> String? {
         let a = act.lowercased()
         if a.hasPrefix("bash"), a.range(of: #"\b(test|tests|jest|pytest|vitest|mocha|rspec|xctest|phpunit|unittest)\b"#, options: .regularExpression) != nil { return "flask" }
         if a.range(of: #"^(edit|write|multiedit|notebookedit)\b"#, options: .regularExpression) != nil { return "hammer" }
@@ -156,12 +166,12 @@ extension HouseScene2 {
             guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][lk.vendor + "/stand.0"] else { continue }
             let extra = overlayLayers(sp, look: lk, frame: fr, t: t, simT: simT, vi: vi)
             let all = pose.layers.map { ($0, false) } + extra.layers
-            let sig = all.map { String($0.0.sprite) + ($0.1 ? "g" : "") }.joined(separator: ",")
+            let sig = all.map { $0.0.sprite * 2 + ($0.1 ? 1 : 0) }
             let n = moverNodes[sp.id] ?? {
                 let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); movers.addChild(m); moverNodes[sp.id] = m; return m
             }()
             let ax0 = pose.layers[0].ax, ay0 = pose.layers[0].ay
-            if n.userData?["sig"] as? String != sig {
+            if moverSig[sp.id] != sig {
                 // the pose's layers are reused in place: a walk changes its pose every 110 ms and makes no node for it
                 var spare = n.children.compactMap { $0 as? SKSpriteNode }.filter { $0.name == "ly" || $0.name == "glow" }
                 for (k, (ly, glow)) in all.enumerated() {
@@ -174,13 +184,14 @@ extension HouseScene2 {
                     c.size = CGSize(width: r.w, height: r.h)
                     c.position = CGPoint(x: Double(ax0 - ly.ax), y: -Double(ay0 - ly.ay))
                     c.zPosition = (k < pose.layers.count ? 0 : 0.003) + CGFloat(k) * 0.0001
-                    c.shader = nil; shaders.apply(to: c, id: ly.sprite)
+                    let sh = shaders.shader(ly.sprite)
+                    if c.shader !== sh { c.shader = sh } // setting a shader again costs SpriteKit a remove and an add
                     c.name = glow ? "glow" : "ly"
                     c.blendMode = ly.blend == "add" ? .add : .alpha
                     c.isHidden = false; c.alpha = 1
                 }
                 for c in spare { c.removeFromParent() }
-                n.userData = ["sig": sig]
+                moverSig[sp.id] = sig
             }
             if let g = extra.glow { for c in n.children where c.name == "glow" { c.alpha = CGFloat(g) } }
             n.isHidden = false
@@ -191,7 +202,7 @@ extension HouseScene2 {
             updateMarks(sp, node: n, ax0: ax0, ay0: ay0, look: lk, t: t, napFace: nap ? face : nil, feetX: at.x)
             if sp.kind != "cat", sp.kind != "dog", let g = parts.poses.looks?[lookKey(sp, lk)] { hitBoxes[sp.id] = hitBox(sp, geo: g, t: t) } else { hitBoxes[sp.id] = nil }
         }
-        for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; lastPos[id] = nil; faceMemory[id] = nil; infoRects[id] = nil; markRects[id] = nil; hitBoxes[id] = nil }
+        for (id, n) in moverNodes where !seen.contains(id) { n.removeFromParent(); moverNodes[id] = nil; moverSig[id] = nil; lastPos[id] = nil; faceMemory[id] = nil; infoRects[id] = nil; markRects[id] = nil; hitBoxes[id] = nil }
         updateEffects(sim: sim, simT: simT, t: clockMillis)
         for (id, n) in canopyNodes where !seen.contains(id) { n.removeFromParent(); canopyNodes[id] = nil }
     }
@@ -233,7 +244,7 @@ extension HouseScene2 {
         if behaviour != nil, !freezeSim { advanceBehaviour(ms: raw * 1000) }
         else if driveSim, let sim { var left = dt * 1000; while left > 0 { let step = min(50, left); left -= step; sim.step(dt: step) } }
         if followClock {
-            let c = Calendar.current, d = Date(), h = c.component(.hour, from: d), m = c.component(.minute, from: d)
+            let c = Calendar.current, d = wallClock(), h = c.component(.hour, from: d), m = c.component(.minute, from: d)
             if h * 60 + m != lastMinute {
                 lastMinute = h * 60 + m
                 // the page's setTime takes the seconds too

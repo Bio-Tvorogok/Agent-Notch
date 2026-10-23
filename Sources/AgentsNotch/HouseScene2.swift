@@ -97,6 +97,10 @@ final class HouseScene2: SKScene {
     var driveSim = false
     var look: (HouseSprite) -> HouseLook = { _ in HouseLook() }
     var moverNodes: [String: SKSpriteNode] = [:]
+    /// The layers (sprite * 2 + glow) each mover node shows now.
+    var moverSig: [String: [Int]] = [:]
+    /// The rope colour last set on the cage pieces (nil after a rebuild).
+    var ropeColor: [Int]?
     /// The info (battery, eyelids) and the status marks drawn over each Clawd, and its hit box (feet-relative) for the chat bubbles.
     var infoRects: [String: HouseRects] = [:], markRects: [String: HouseRects] = [:]
     var hitBoxes: [String: [Int]] = [:]
@@ -115,6 +119,8 @@ final class HouseScene2: SKScene {
     /// The sky follows the wall clock (the app); off for the proof and for fixed-hour runs.
     var followClock = false
     var lastMinute = -1
+    /// The wall clock the sky follows (a benchmark pins it to an hour).
+    var wallClock: () -> Date = { Date() }
     /// The highest rate this view may run at (60 on power, 30 on battery); `fixedFps` turns off the adaptive rate.
     var maxFps = 60 { didSet { rate = fixedFps ?? min(rate, maxFps); view?.preferredFramesPerSecond = rate } }
     var fixedFps: Int?
@@ -251,7 +257,7 @@ final class HouseScene2: SKScene {
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
 
     func rebuild() {
-        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; fxRects = nil; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
+        root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; moverSig = [:]; ropeColor = nil; fxRects = nil; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
         nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
@@ -429,6 +435,8 @@ final class HouseScene2: SKScene {
     func refreshRopes() {
         guard let lf = liftParts else { return }
         let v = lf.variants[min(light.variant, lf.variants.count - 1)], c = HouseLight.mix(v.rope, light.amb, fa: parts.light.fA)
+        guard c != ropeColor else { return } // applyCabins runs every frame; the colour changes with the light
+        ropeColor = c
         let col = NSColor(srgbRed: CGFloat(c[0]) / 255, green: CGFloat(c[1]) / 255, blue: CGFloat(c[2]) / 255, alpha: 1)
         for p in cagePieces where p.rope { p.node.color = col }
     }

@@ -197,9 +197,38 @@ final class HousePages {
 
     func ePage(_ i: Int) -> SKTexture {
         if let t = e[i] { return t }
-        let t = load(parts.pages[i].fileE) ?? SKTexture()
+        let t = (unifies(i) ? unifiedE(i) : nil) ?? load(parts.pages[i].fileE) ?? SKTexture()
         e[i] = t
         return t
+    }
+
+    /// A page drawn with one shader for all its sprites: it holds flag-0 sprites (so its E page is loaded anyway) and is kept whole.
+    func unifies(_ i: Int) -> Bool { needsE.contains(i) && !sparsePages.contains(i) }
+
+    /// The E page with the flag-1 and flag-2 sprites filled in so that the flag-0 shader draws them as their own shaders would:
+    /// black of F's alpha under a flag-1 sprite (E black), F itself under a flag-2 sprite (constant). Every sprite of the page then
+    /// shares one shader and one texture pair, so SpriteKit draws runs of them as one batch whatever their flags.
+    private func unifiedE(_ i: Int) -> SKTexture? {
+        autoreleasepool {
+            let pg = parts.pages[i]
+            guard let es = CGImageSourceCreateWithURL(dir.appendingPathComponent(pg.fileE) as CFURL, nil), let eImg = CGImageSourceCreateImageAtIndex(es, 0, nil),
+                  let fs = CGImageSourceCreateWithURL(dir.appendingPathComponent(pg.file) as CFURL, nil), let fImg = CGImageSourceCreateImageAtIndex(fs, 0, nil),
+                  let ctx = CGContext(data: nil, width: pg.w, height: pg.h, bitsPerComponent: 8, bytesPerRow: 0, space: fImg.colorSpace ?? HousePixels.space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+            ctx.interpolationQuality = .none
+            ctx.draw(eImg, in: CGRect(x: 0, y: 0, width: pg.w, height: pg.h))
+            for s in parts.sprites where s[0] == i && s[5] != 0 {
+                let src = CGRect(x: s[1], y: s[2], width: s[3], height: s[4]), dst = CGRect(x: s[1], y: pg.h - s[2] - s[4], width: s[3], height: s[4])
+                guard let f = fImg.cropping(to: src) else { continue }
+                ctx.setBlendMode(.copy)
+                ctx.draw(f, in: dst)
+                if s[5] == 1 { ctx.setBlendMode(.sourceAtop); ctx.setFillColor(CGColor(gray: 0, alpha: 1)); ctx.fill(dst) }
+            }
+            guard let img = ctx.makeImage() else { return nil }
+            let t = SKTexture(cgImage: img)
+            t.filteringMode = .nearest
+            return t
+        }
     }
 
     func rect(_ id: Int) -> (page: Int, x: Int, y: Int, w: Int, h: Int, flag: Int) {
