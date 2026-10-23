@@ -94,8 +94,10 @@ final class HouseLayoutBuilder {
         let view = H.View(PXD: base, DPR: dpr, width: w, height: h, cssWidth: w * base / dpr, cssHeight: h * base / dpr,
                           base: base, home: home, at: home)
         let (escapes, shapes) = escapePlan()
-        return H(rooms: rooms, lift: lift, links: links, hulls: hulls, yard: yardPlan(), escapes: escapes, escapeShapes: shapes,
+        var made = H(rooms: rooms, lift: lift, links: links, hulls: hulls, yard: yardPlan(), escapes: escapes, escapeShapes: shapes,
                  drawOrder: drawOrder(), view: view, worldFrame: H.Frame(ox: rooms[0].ox, oy: rooms[0].oy, drop: 0))
+        made.style = style
+        return made
     }
 
     // liftPlan(s), liftSlice(f), liftZ(k). Cabins start on the yard's grass.

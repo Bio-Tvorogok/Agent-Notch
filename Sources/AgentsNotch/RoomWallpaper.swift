@@ -244,7 +244,7 @@ final class RoomWallpaper: NSObject {
         skFailedOnScreen = false
         let g = skGeometry(of: screen)
         let themes = prefs.themes.filter { RoomTheme(rawValue: $0.value) != nil }.map { HouseLayout.ThemeChoice(project: $0.key, theme: $0.value) }
-        let behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: .islands, canvas: .init(width: g[0], height: g[1], dpr: g[2]),
+        let behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: HouseLayout.Style(rawValue: prefs.layout.rawValue) ?? .islands, canvas: .init(width: g[0], height: g[1], dpr: g[2]),
                                        insets: .init(top: g[3], bottom: g[4], right: g[5]), themes: themes)
         growth.seed(behaviour)
         if let rows = currentRows() { behaviour.setAgents(rows); growth.capture(from: behaviour) }
@@ -366,7 +366,7 @@ final class RoomWallpaper: NSObject {
         guard isRunning else { return }
         if Self.wantsSpriteKit, !forceWeb, Self.spriteKitReason(prefs) == nil {
             if house == nil { restart(); return }
-            if prefs.themes != skPrefs.themes { restart() } // the behaviour's themes are fixed when it is made
+            if prefs.themes != skPrefs.themes || prefs.layout != skPrefs.layout { restart() } // the behaviour's themes are fixed when it is made
         } else if house != nil {
             fallBackToPage(Self.spriteKitReason(prefs) ?? "the renderer was turned off")
         }

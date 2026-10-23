@@ -100,6 +100,10 @@ var u = URLComponents(url: page, resolvingAgainstBaseURL: false)!
 u.queryItems = [URLQueryItem(name: "nodemo", value: "1"), URLQueryItem(name: "hour", value: String(hour)), URLQueryItem(name: "weather", value: "clear")]
 if partsMode { u.queryItems!.append(URLQueryItem(name: "season", value: "autumn")) }
 if let scene = ProcessInfo.processInfo.environment["HOUSE_SCENE"] { u.queryItems!.append(URLQueryItem(name: "scene", value: scene)) } // "extra": the page's extra-screen scene (harness/extra-ref.js)
+if let layout = ProcessInfo.processInfo.environment["HOUSE_LAYOUT"] {
+    guard ["islands", "steps", "towers"].contains(layout) else { fputs("unknown HOUSE_LAYOUT\n", stderr); exit(2) }
+    u.queryItems!.append(URLQueryItem(name: "layout", value: layout))
+}
 web.loadFileURL(u.url!, allowingReadAccessTo: page.deletingLastPathComponent())
 
 func data(fromURL s: String) -> Data? {

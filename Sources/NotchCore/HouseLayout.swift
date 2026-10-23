@@ -131,6 +131,8 @@ public struct HouseLayout: Encodable, Sendable {
     public let drawOrder: [DrawItem]
     public let view: View
     public let worldFrame: Frame
+    /// How the rooms stand (islands: lift, yard and links; towers and steps: stacks joined by outside stairs). Not part of the page fixtures.
+    public var style: Style = .islands
 
     // Keep lift:null explicit, just like the JS fixture; other optional fields
     // denote absent JS properties and are omitted by their synthesized encoders.

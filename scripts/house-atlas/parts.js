@@ -152,6 +152,7 @@
   // Offsets are art pixels from iso(0, 0, 0) of the room. kind: back (under everything: shell A, window glass, shell B, clock,
   // sunlight), item (depth = the x+y the page sorts by), lift (the room's slice of the lift goes here), sign (the post or
   // the plaque is drawn by the renderer), and overlay (drawn after every room: the porch landing).
+  let STACKED = false;
   function cutRoom(r) {
     const saved = [r.ox, r.oy, r.drop, R, g]; r.ox = OX; r.oy = OY; r.drop = 0;
     const cache = buildCache(r), byImage = new Map();
@@ -185,7 +186,10 @@
       for (const [it, f] of dynDraw) it.draw = f;
       [r.ox, r.oy, r.drop, R, g] = saved;
     }
-    const overlay = cache.escTop ? [{ sprite: ph(cache.escTop.img), x: cache.escTop.dx, y: cache.escTop.dy }] : [];
+    const sp = b => b ? { sprite: ph(b.img), x: b.dx, y: b.dy } : undefined;
+    // stacked styles (no lift): the outside stairs of a stack go on top of every room, with the Clawds that are out on them between the two flights
+    if (STACKED) return { layers, lights, overlay: [], esc: { back: sp(cache.escBack || cache.escTop), front: sp(cache.escFront) } };
+    const overlay = cache.escTop ? [sp(cache.escTop)] : [];
     return { layers, lights, overlay };
   }
   const roomMeta = r => ({ growth: r.theme.shared ? undefined : growthLevel(r), clock: r.theme.clock || undefined, theme: themeOf(r), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, hub: r.theme.hub, lowH: r.theme.lowH, shared: !!r.theme.shared, open: !!r.theme.open });
@@ -444,6 +448,37 @@
     // the desk lamp's glow over a busy desk at night (drawSceneOverlays): the page's own gradient, '#ffc870' at 26*S, stamped at alpha .55*(DARK-.3)
     poses.lamp = { sprite: glowSprite('#ffc870', 26 * S), r: 26 * S };
     log('poses', jobs.length);
+  }
+
+
+  // ---------- stacked styles: the rooms of 'steps' and 'towers' (stacks of three joined by outside stairs, no lift, yard or links) ----------
+  // A room's art depends on its place in the stack: the ground floor has the grass and the post sign, a room with another above has
+  // taller walls and the stairs' two flights (esc.back/front), the top one has the landing alone (esc.back), a lone ground room none.
+  // Steps and towers draw each room the same way; only where the stacks stand differs (HouseLayout). Keys: theme/stk/role/gN, bath|kitchen|roof/stk.
+  if (want('stacked')) {
+    const saved = LAYOUT; LAYOUT = 'steps'; STACKED = true;
+    try {
+      const roleOf = r => r.floor === 0 ? (roomAt(r.tower, 1) ? 'g2' : 'g1') : (roomAt(r.tower, r.floor + 1) ? 'm' : 't');
+      const cutStack = (th, wants) => { // five projects: tower 0 holds the first (middle), tower 1 three (ground, middle, top), tower 2 one (lone ground)
+        fixture(NAMES.slice(0, 5).map(n => [n, th]));
+        const out = [];
+        for (const r of rooms) { const role = roleOf(r), id = r.theme.shared ? themeOf(r) + '/stk' : th + '/stk/' + role;
+          if (r.theme.shared ? wants.shared : wants.role.includes(role) && (role !== 'm' || r.key === 'p:' + NAMES[2])) out.push({ id, r, role }); }
+        return out;
+      };
+      for (const th of themeKeys) {
+        for (let gl = 0; gl < GROWTH_STEPS.length; gl++) {
+          const jobs = cutStack(th, { role: ['g1', 'g2', 'm', 't'], shared: th === themeKeys[0] && gl === 0 });
+          for (const j of jobs) { const id = j.r.theme.shared ? j.id : j.id + '/g' + gl; if (!parts[id]) { if (!j.r.theme.shared) growth[j.r.name] = { n: GROWTH_STEPS[gl], ids: [] }; parts[id] = { ...roomMeta(j.r), role: j.role, variants: [] }; if (!j.r.theme.shared) delete growth[j.r.name]; } j.id = id; }
+          VARS.forEach((v, vi) => {
+            fixedHour = 12;
+            for (const j of jobs) { const r = j.r; if (!r.theme.shared) growth[r.name] = { n: GROWTH_STEPS[gl], ids: [] }; parts[j.id].variants[vi] = dual(v.d, () => { r.cache = null; r.still = null; return cutRoom(r); }, true); if (!r.theme.shared) delete growth[r.name]; }
+          });
+        }
+      }
+    } finally { LAYOUT = saved; STACKED = false; }
+    fixture(natural(1)); // back to the islands for what follows
+    log('stacked', Object.keys(parts).filter(k => k.includes('/stk')).length);
   }
 
   // ---------- packing: shelves on pages of up to 4096 px, 2 px of air around each sprite; F pages and E pages share every rect ----------

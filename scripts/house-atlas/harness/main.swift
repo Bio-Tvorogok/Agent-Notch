@@ -43,8 +43,8 @@ func save(_ d: [UInt8], _ w: Int, _ h: Int, to url: URL) {
     try! rep.representation(using: .png, properties: [:])!.write(to: url)
 }
 
-func makeLayout(projects: Int, innerW: Double, innerH: Double, insets: HouseLayout.Insets) -> HouseLayout {
-    HouseLayout.make(projects: Array(NAMES.prefix(projects)), canvas: .init(width: innerW, height: innerH, dpr: 2), insets: insets)
+func makeLayout(projects: Int, innerW: Double, innerH: Double, insets: HouseLayout.Insets, style: HouseLayout.Style = .islands) -> HouseLayout {
+    HouseLayout.make(projects: Array(NAMES.prefix(projects)), layout: style, canvas: .init(width: innerW, height: innerH, dpr: 2), insets: insets)
 }
 
 /// Renders a scene headless: the canvas at 1 device pixel per art pixel (the view is the canvas at backing scale 2, the world at .5).
@@ -82,6 +82,7 @@ case "proof":
     let atlas = URL(fileURLWithPath: args[2], isDirectory: true), refDir = URL(fileURLWithPath: args[3], isDirectory: true), out = URL(fileURLWithPath: args[4], isDirectory: true)
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     let metas = try FileManager.default.contentsOfDirectory(atPath: refDir.path).filter { $0.hasPrefix("ref-") && $0.hasSuffix(".json") }.sorted()
+    guard !metas.isEmpty else { print("no proof fixtures"); exit(1) }
     var failed = false
     print("fixture             var  house px  off>24  %house24  %house6  MAE/ch | frame%24  frame%6")
     for m in metas {
@@ -89,8 +90,12 @@ case "proof":
         let growthTag = (meta["rooms"] as! [[String: Any]]).map { $0["growth"] as? Int ?? 0 }.max() ?? 0
         let n = meta["n"] as! Int, hour = meta["hour"] as! Double, W = meta["W"] as! Int, H = meta["H"] as! Int
         let pxd = meta["PXD"] as! Double, dpr = meta["DPR"] as! Double, ins = meta["insets"] as! [String: Double]
-        let layout = makeLayout(projects: n, innerW: (Double(W) * pxd / dpr).rounded(), innerH: floor(Double(H) * pxd / dpr),
-                                insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!))
+        // ceil(canvas * DPR / PXD) loses the original viewport (not invertible).
+        let innerW = meta["innerWidth"] as? Double ?? (Double(W) * pxd / dpr).rounded()
+        let innerH = meta["innerHeight"] as? Double ?? floor(Double(H) * pxd / dpr)
+        let layout = makeLayout(projects: n, innerW: innerW, innerH: innerH,
+                                insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!),
+                                style: HouseLayout.Style(rawValue: meta["layout"] as? String ?? "islands")!)
         // the same layout as the page's
         guard Int(layout.view.width) == W, Int(layout.view.height) == H else { print("canvas mismatch \(layout.view.width)x\(layout.view.height) vs \(W)x\(H)"); exit(1) }
         for r in meta["rooms"] as! [[String: Any]] {
@@ -100,7 +105,8 @@ case "proof":
         }
         let (scene, view) = makeScene(atlas: atlas, layout: layout)
         for r in meta["rooms"] as! [[String: Any]] { if let g = r["growth"] as? Int, g > 0 { scene.growth[r["key"] as! String] = g } }
-        scene.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
+        if let missing = scene.missingParts() { print("missing room parts: \(missing)"); exit(1) }
+        scene.env = HouseSkyEnv(innerHeight: innerH, insetBottom: ins["bottom"]!)
         scene.freezeClock = true; scene.clockMillis = meta["T"] as! Double; scene.colon = false
         scene.setTime(hour: hour, day: meta["day"] as! Int)
         // deliberate defects, to prove the gate fails: PROOF_BREAK (house 2px right), PROOF_AMB=k (light scaled by k), PROOF_CITYSHIFT=n (city n art px right)
@@ -152,6 +158,7 @@ case "live":
     let fixDir = URL(fileURLWithPath: args[4], isDirectory: true), out = URL(fileURLWithPath: args[5], isDirectory: true)
     try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
     let metas = try FileManager.default.contentsOfDirectory(atPath: refDir.path).filter { $0.hasPrefix("live-") && $0.hasSuffix(".json") }
+    guard !metas.isEmpty else { print("no live proof fixtures"); exit(1) }
     var byCase: [String: [(t: Int, file: String, meta: [String: Any])]] = [:]
     for m in metas {
         let meta = try JSONSerialization.jsonObject(with: Data(contentsOf: refDir.appendingPathComponent(m))) as! [String: Any]
@@ -168,7 +175,8 @@ case "live":
         let first = samples[0].meta, ins = first["insets"] as! [String: Double], dpr = first["DPR"] as! Double
         // the page runs its life layer too (live-ref.js), so the behaviour does: same randoms, the case's hour and the page's DARK
         let rng = HouseRandom(seed: UInt32(input["seed"] as! Int))
-        let behaviour = HouseBehaviour(layout: .islands, canvas: .init(width: 1728, height: 1117, dpr: dpr),
+        let behaviour = HouseBehaviour(layout: HouseLayout.Style(rawValue: first["layout"] as? String ?? "islands")!,
+                                       canvas: .init(width: first["innerWidth"] as? Double ?? 1728, height: first["innerHeight"] as? Double ?? 1117, dpr: dpr),
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
         var scene: HouseScene2?, view: SKView?
@@ -193,7 +201,7 @@ case "live":
             if scene == nil {
                 guard let sc = HouseScene2.load(from: atlas, layout: lay, unit: CGFloat(1 / texScale), size: size) else { print("no atlas"); exit(1) }
                 sc.followsLayoutScale = false; sc.freezeClock = true; sc.freezeSim = true; sc.colon = false
-                sc.env = HouseSkyEnv(innerHeight: floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
+                sc.env = HouseSkyEnv(innerHeight: meta["innerHeight"] as? Double ?? floor(Double(H) * pxd / dpr), insetBottom: ins["bottom"]!)
                 sc.attach(behaviour)
                 let v = SKView(frame: NSRect(origin: .zero, size: size)); v.ignoresSiblingOrder = true
                 scene = sc; view = v

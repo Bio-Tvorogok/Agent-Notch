@@ -42,7 +42,9 @@ extension HouseSnapshotChecks {
         XCTAssertTrue(!sk.sameHouse(as: HouseSnapshot(agents: "[]", usage: nil, config: "{}", fps: 30, written: now)), "a renderer change is a change")
         XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 10) == nil, "autumn islands: drawable")
         XCTAssertTrue(HouseSpriteKitRules.reason(layout: "islands", month: 3) != nil, "spring: the page")
-        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "tower", month: 10) != nil, "another layout: the page")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "steps", month: 10) == nil, "autumn steps: drawable")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "towers", month: 10) == nil, "autumn towers: drawable")
+        XCTAssertTrue(HouseSpriteKitRules.reason(layout: "tower", month: 10) != nil, "an unknown layout: the page")
         print("houseSnapshotRenderer: field round trip, old file, rules")
     }
 }

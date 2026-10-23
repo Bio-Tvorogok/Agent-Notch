@@ -52,6 +52,7 @@ final class HouseScene2: SKScene {
     var linkInfo: [String: LinkInfo] = [:]
     var glows: [(SKSpriteNode, HouseParts.Light)] = []
     var cagePieces: [CagePiece] = []
+    var escZ: [String: (back: CGFloat, front: CGFloat)] = [:] // stacked styles: room -> the z of its outside stairs' two flights
     var riderZ: [Int: [Int: CGFloat]] = [:] // cabin -> floor -> z between the cage's back and front
     var cabinState: [(z: Double, state: String)] = []
     var skyGroup = SKNode()
@@ -242,10 +243,29 @@ final class HouseScene2: SKScene {
     }
 
     func partsKey(_ r: HouseLayout.Room) -> String {
+        if layout.style != .islands { return stackedKey(r) }
         if r.key == "__bath" { return "bath/g\(layout.links.filter { $0.a == "__yard" }.count)" }
         if r.key == "__kitchen" { return "kitchen" }
         if r.key == "__roof" { return "roof" }
         return "\(r.theme)/\(r.tower == 0 ? "tower" : "island")/g\(growth[r.key] ?? 0)"
+    }
+
+    /// A room of a stack is drawn by its place in it: the ground floor (g1 alone, g2 with a floor above), a middle one (m) or the top (t).
+    func stackedRole(_ r: HouseLayout.Room) -> String {
+        func has(_ f: Int) -> Bool { layout.rooms.contains { $0.tower == r.tower && $0.floor == f } }
+        return r.floor == 0 ? (has(1) ? "g2" : "g1") : (has(r.floor + 1) ? "m" : "t")
+    }
+
+    /// The shared rooms were cut in one place each (the bathroom on the ground with a floor above, the kitchen in the middle, the roof on top):
+    /// a stack that puts them elsewhere has no part, and the key says so.
+    func stackedKey(_ r: HouseLayout.Room) -> String {
+        let role = stackedRole(r)
+        switch r.key {
+        case "__bath", "__kitchen", "__roof":
+            let base = String(r.key.dropFirst(2)) + "/stk"
+            return parts.rooms[base]?.role == role ? base : base + "/" + role
+        default: return "\(r.theme)/stk/\(role)/g\(growth[r.key] ?? 0)"
+        }
     }
 
     static let sharedNames = ["__bath": "Ванная", "__kitchen": "Кухня", "__roof": "Крыша"]
@@ -253,7 +273,7 @@ final class HouseScene2: SKScene {
     func rebuild() {
         root.removeFromParent(); movers.removeAllChildren(); moverNodes = [:]; fxRects = nil; yardRects = nil; flagPools = [:]; yardSig = [:]; dynNodes = [:]; lampNodes = [:]; canopyNodes = [:]
         root = SKNode(); world.insertChild(root, at: 0)
-        nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; clouds = []; mistBands = []; mistWisps = []
+        nextZ = 0; roomInfo = [:]; linkInfo = [:]; glows = []; liveItems = []; cagePieces = []; riderZ = [:]; escZ = [:]; clouds = []; mistBands = []; mistWisps = []
         cabinState = (layout.lift?.cabins ?? []).map { ($0.z, "idle") }
         let vi = light.variant
         buildId += 1
@@ -273,6 +293,13 @@ final class HouseScene2: SKScene {
         for r in layout.rooms {
             guard let pr = parts.rooms[partsKey(r)], vi < pr.variants.count else { continue }
             for o in pr.variants[vi].overlay { sprite(o.sprite, x: r.ox + o.x, y: r.oy + o.y, z: next()) }
+            guard let e = pr.variants[vi].esc else { continue }
+            // the page draws a room's stairs after every room: the back flight, the Clawds out on them, the front flight
+            let back = next()
+            if let b = e.back { sprite(b.sprite, x: r.ox + b.x, y: r.oy + b.y, z: back) }
+            let front = next() + 8
+            if let f = e.front { sprite(f.sprite, x: r.ox + f.x, y: r.oy + f.y, z: front) }
+            escZ[r.key] = (back, front)
         }
         topZ = next() + 8
         buildMist()

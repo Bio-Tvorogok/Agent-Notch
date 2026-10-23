@@ -4,10 +4,10 @@
 # Output: .build/scene-proof/ref (page frames), .build/scene-proof/out (<fixture>-side.png / -diff.png / -scene.png).
 set -eu
 cd "$(dirname "$0")/../.."
-P=.build/scene-proof
+P=${HOUSE_PROOF_DIR:-.build/scene-proof}
 mkdir -p .build/house-atlas "$P/obj" "$P/out" "$P/ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
-FIX='[[2,12],[5,20],[5,6.5],[14,19.416666666666668],[0,12],[5,12,2],[3,18.75,3]]'
+FIX=${SCENE_FIXTURES:-'[[2,12],[5,20],[5,6.5],[14,19.416666666666668],[0,12],[5,12,2],[3,18.75,3]]'}
 { echo "window.__REF_FIXTURES = $FIX;"; cat scripts/house-atlas/harness/ref.js; } > "$P/ref-run.js"
 rm -f "$P"/ref/ref-*
 HOUSE_REF_ONLY=1 .build/house-atlas/export room/index.html "$P/ref-run.js" "$P/junk" 12 parts "$P/ref"
