@@ -122,13 +122,15 @@ struct AttentionItem {
     let parent: String?
 }
 
-private struct AttentionRow: View {
+struct AttentionRow: View {
     let item: AttentionItem
     let multi: Bool
     @ObservedObject var store: Store
     let ask: PendingAsk?
     /// The first open request answers to the hotkeys; its row shows them.
     var first = false
+    /// The desktop widget opens its own card; the list selects in the store.
+    var select: ((Agent) -> Void)?
     @Environment(\.theme) private var theme
 
     private var requestAgent: Agent {
@@ -148,7 +150,7 @@ private struct AttentionRow: View {
                     if let parent = item.parent { Text("← \(parent)").foregroundStyle(dim).lineLimit(1) }
                     if multi { Text(item.project).foregroundStyle(dim).lineLimit(1) }
                 }
-                .contentShape(Rectangle()).onTapGesture { RowClick.isDouble ? store.open(a) : store.select(a) }
+                .contentShape(Rectangle()).onTapGesture { RowClick.isDouble ? store.open(a) : (select ?? store.select)(a) }
                 if let ask { DeliveryStatus(ask: ask, agent: a, store: store) }
                 if let ask, ask.delivery != .waiting {
                     Request(event: ask.event)
@@ -290,7 +292,7 @@ private struct Note: View {
 }
 
 /// The second click of a double click: the tap fires on every click, so a single click is never delayed.
-private enum RowClick {
+enum RowClick {
     @MainActor static var isDouble: Bool {
         // clickCount throws on anything but a mouse event (keyboard or VoiceOver activation).
         guard let e = NSApp.currentEvent, e.type == .leftMouseUp || e.type == .leftMouseDown else { return false }
@@ -322,7 +324,7 @@ private struct Row<Content: View>: View {
     }
 }
 
-private struct TreeLine: View {
+struct TreeLine: View {
     let last: Bool
     var body: some View {
         GeometryReader { g in
@@ -398,7 +400,7 @@ private struct PillBody: View {
 }
 
 /// Text that gives off light. Themes without it get no shadow at all: even a clear one moves the list offscreen and changes how it renders.
-private struct Glow: ViewModifier {
+struct Glow: ViewModifier {
     let color: Color?
     func body(content: Content) -> some View {
         if let color { content.shadow(color: color, radius: 3) } else { content }

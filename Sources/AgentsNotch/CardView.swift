@@ -40,23 +40,27 @@ struct CardView: View {
     var context: ContextUsage?
     var cost: SessionCost?
     var onOpen: () -> Void = {}
+    /// The desktop widget's card wears the widget's style; every other card follows the app theme.
+    var style: Theme?
     @State private var tab: CardTab
     @EnvironmentObject private var settings: AppSettings
 
     init(agent: Agent, detail: AgentDetail?, loading: Bool = false, blocks: [CardBlock] = CardBlock.allCases,
-         context: ContextUsage? = nil, cost: SessionCost? = nil, tab: CardTab = .done, onOpen: @escaping () -> Void = {}) {
+         context: ContextUsage? = nil, cost: SessionCost? = nil, tab: CardTab = .done, style: Theme? = nil,
+         onOpen: @escaping () -> Void = {}) {
         self.agent = agent; self.detail = detail; self.loading = loading; self.blocks = blocks
-        self.context = context; self.cost = cost; self.onOpen = onOpen
+        self.context = context; self.cost = cost; self.style = style; self.onOpen = onOpen
         _tab = State(initialValue: tab)
     }
 
+    private var theme: Theme { style ?? settings.currentTheme }
     private var tabs: [CardTab] { CardContent.tabs(blocks: blocks) }
     private var visibleTab: CardTab? { tabs.contains(tab) ? tab : tabs.first }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(12)
-            if settings.theme == .terminal { Divider().overlay(Color(white: 0.23)) } else { Rectangle().fill(Ink.rule).frame(height: 0.5) }
+            if theme.id == .terminal { Divider().overlay(Color(white: 0.23)) } else { Rectangle().fill(Ink.rule).frame(height: 0.5) }
             HStack(spacing: 6) {
                 ForEach(tabs, id: \.self) { item in
                     Button(CardText.tab(item)) {
@@ -78,9 +82,9 @@ struct CardView: View {
         }
         .frame(width: 340)
         .frame(maxHeight: .infinity, alignment: .top)
-        .themeSurface(settings.currentTheme)
-        .themed(settings.currentTheme)
-        .font(.system(size: 12, design: settings.currentTheme.design))
+        .themeSurface(theme)
+        .themed(theme)
+        .font(.system(size: 12, design: theme.design))
         .foregroundStyle(Ink.text)
     }
 
@@ -122,12 +126,14 @@ struct CardView: View {
 struct LiveCardView: View {
     @ObservedObject var model: CardDetailModel
     @ObservedObject var settings: AppSettings
+    var widget = false
     let onOpen: (Agent) -> Void
 
     var body: some View {
         if let agent = model.agent {
             CardView(agent: agent, detail: model.detail, loading: model.loading,
-                     blocks: DisplayOrder.visible(settings.cardBlocks), context: model.context, cost: model.cost, onOpen: { onOpen(agent) })
+                     blocks: DisplayOrder.visible(settings.cardBlocks), context: model.context, cost: model.cost,
+                     style: widget ? settings.widgetTheme : nil, onOpen: { onOpen(agent) })
                 .id(agent.id)
                 .environmentObject(settings)
         }

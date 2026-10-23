@@ -186,6 +186,12 @@ final class NotchController {
         item(Loc.t("Answer requests from the notch", "Решать запросы из чёлки"), #selector(AppActions.toggleAnswer), on: AppSettings.shared.answerFromNotch)
         item(Loc.t("Event sounds", "Звуки событий"), #selector(AppActions.toggleSounds), on: AppSettings.shared.sounds)
         item(ToastText.menu, #selector(AppActions.toggleFinishToast), on: AppSettings.shared.finishToast)
+        let widgetItem = NSMenuItem(title: WidgetMenuText.title, action: #selector(MenuAction.run), keyEquivalent: "")
+        let toggleWidget = MenuAction { AppSettings.shared.widget.enabled.toggle() }
+        widgetItem.target = toggleWidget
+        widgetItem.representedObject = toggleWidget
+        widgetItem.state = AppSettings.shared.widget.enabled ? .on : .off
+        menu.addItem(widgetItem)
         menu.addItem(.separator())
         item(Loc.t("Open at login", "Открывать при входе в систему"), #selector(AppActions.toggleLogin), on: SMAppService.mainApp.status == .enabled)
         item(AXIsProcessTrusted() ? Loc.t("Shrinking for menus is on", "Сжатие по меню включено")
