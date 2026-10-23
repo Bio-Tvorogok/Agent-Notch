@@ -1,6 +1,6 @@
 #!/bin/sh
-# Proves the extra screen's native sky and city (HouseScene2.extraScreen) against the page's own ?scene=extra frames: the page is loaded with
-# scene=extra (export.swift, HOUSE_SCENE=extra), its islets removed (they come with the islets export), and recorded at 4 hours (harness/extra-ref.js);
+# Proves the extra screen's native sky and city (HouseScene2.extraScreen: sky, city, islets) against the page's own ?scene=extra frames: the page is loaded with
+# scene=extra (export.swift, HOUSE_SCENE=extra), and recorded at 4 hours (harness/extra-ref.js);
 # the scene renders the same and the whole frame is compared with the scene proof's frame gates.
 # Output: .build/extra-proof/ref (page frames), .build/extra-proof/out (<hour>-side.png: page | scene, -diff.png). Exit status: 3 over a gate.
 set -eu

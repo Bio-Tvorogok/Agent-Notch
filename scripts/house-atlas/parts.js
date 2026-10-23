@@ -222,6 +222,18 @@
     log('rooms', Object.keys(parts).length);
   }
 
+  // ---------- the extra screens' islets: the page's isletDraw baked per light variant (clear weather), at the iso origin of the islet ----------
+  // x, y are art pixels from that origin (bake's own dx, dy); the page puts the origin at (round(W * fx), round(H * fy + sin(t / 2600 + i * 2.1) * 2 * S)).
+  // The camp's lamp glows (#ffc870, 30 * S) at alpha .1 + .25 * DARK while DARK > .3, at origin + the iso of lamp [x, y, z].
+  if (want('islets')) {
+    result.islets = ISLETS.map((it, i) => ({
+      fx: it.fx, fy: it.fy, NX: it.NX, NY: it.NY, kind: it.kind, phase: +(i * 2.1).toFixed(4),
+      lamp: it.lamp ? { x: round1((it.lamp[0] - it.lamp[1]) * 8 * S), y: round1((it.lamp[0] + it.lamp[1]) * 4 * S - it.lamp[2] * S), sprite: glowSprite('#ffc870', 30 * S), r: 30 * S, a: .1, b: .25, from: .3 } : undefined,
+      variants: VARS.map(v => dual(v.d, () => { const b = bake(it, () => isletDraw(it)); return b ? { sprite: ph(b.img), x: b.dx, y: b.dy } : null; })),
+    }));
+    log('islets', result.islets.length);
+  }
+
   // ---------- the village: links (bridges, stairs) and the lift, in the bathroom's frame ----------
   // Their shapes depend on the layout, and the layout (islandPlan) depends only on how many projects there are: every island is
   // 10x8 whatever its theme, and a new project never moves the earlier ones. So the links that occur for 0..14 projects are one

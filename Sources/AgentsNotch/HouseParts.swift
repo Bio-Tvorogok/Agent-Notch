@@ -75,6 +75,11 @@ struct HouseParts: Decodable {
     struct Edges: Decodable { let hi: Double; let d: Double?; let exact: Bool? }
     struct LightInfo: Decodable { let variants: [Edges]; let fA: Double }
 
+    /// An extra screen's islet (the page's ISLETS): baked per light variant at its iso origin, placed at (W * fx, H * fy) and bobbing with `phase`.
+    struct IsletPiece: Decodable { let sprite: Int; let x, y: Double }
+    struct IsletLamp: Decodable { let x, y: Double; let sprite, r: Int; let a, b, from: Double }
+    struct Islet: Decodable { let fx, fy, phase: Double; let kind: String; let lamp: IsletLamp?; let variants: [IsletPiece?] }
+
     let S: Int
     let WH, SLAB, FLOOR_STEP: Double
     let buckets: [Double]
@@ -90,6 +95,8 @@ struct HouseParts: Decodable {
     let light: LightInfo
     /// [page, x, y, w, h, flag] by sprite id; flag 0 general, 1 E is black, 2 constant.
     let sprites: [[Int]]
+    /// nil in an atlas cut before the islets (an extra screen then stays on the page).
+    let islets: [Islet]?
 
     var variantCount: Int { light.variants.count }
 
@@ -117,6 +124,7 @@ struct HouseParts: Decodable {
         for (k, r) in rooms where r.variants.count < n { return "room \(k) has \(r.variants.count) of \(n) variants" }
         for l in village.links where l.variants.count < n { return "link \(l.pa)-\(l.pb) has \(l.variants.count) of \(n) variants" }
         for (k, l) in village.lift where l.variants.count < n { return "lift \(k) has \(l.variants.count) of \(n) variants" }
+        for (i, it) in (islets ?? []).enumerated() where it.variants.count < n { return "islet \(i) has \(it.variants.count) of \(n) variants" }
         for a in ambk where a.amb.count < 3 || a.sky.count < 2 { return "bad hour row \(a.hour)" }
         for (i, s) in sprites.enumerated() where s.count < 6 || s[0] < 0 || s[0] >= pages.count || s[3] <= 0 || s[4] <= 0 { return "bad sprite \(i)" }
         return nil
