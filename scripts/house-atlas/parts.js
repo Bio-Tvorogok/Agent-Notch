@@ -397,9 +397,12 @@
     for (const [v, small] of looks) {
       const L = `${v}${small ? '-mini' : ''}`, eg = e => o => ({ ...o, __egg: { dy: 0, ...e } });
       const gold = eg({ gold: GOLD }), arms = eg({ arms: 0 });
-      for (const k of ['stand', 'walk', 'work', 'laptop', 'waiting', 'waitwalk', 'error', 'sleep']) { const [o, ts] = catalog[k]; ts.forEach((t, n) => jobs.push([`${L}/gold.${k}.${n}`, () => base(v, small, gold(o)), t])); }
-      jobs.push([`${L}/arms.stand.0`, () => base(v, small, arms({})), 0]);
-      for (const [tag, k] of [['p', 1], ['n', -1]]) for (const t of [0, 110]) jobs.push([`${L}/eye${tag}.walk.${t ? 1 : 0}`, () => base(v, small, eg({ eye: k })({ moving: true })), t]);
+      for (const [k, [o, ts]] of Object.entries(catalog)) { ts.forEach((t, n) => jobs.push([`${L}/gold.${k}.${n}`, () => base(v, small, gold(o)), t])); }
+      // raised arms (a high five: any still pose) and the April 1 eyes (any walk), each plain or golden: garms, geyep, geyen
+      for (const g of ['', 'g']) {
+        for (const k of ['stand', 'work', 'laptop', 'waiting']) { const [o, ts] = catalog[k]; ts.forEach((t, n) => jobs.push([`${L}/${g}arms.${k}.${n}`, () => base(v, small, g ? eg({ gold: GOLD, arms: 0 })(o) : arms(o)), t])); }
+        for (const [tag, kk] of [['p', 1], ['n', -1]]) for (const k of ['walk', 'waitwalk']) { const [o, ts] = catalog[k]; ts.forEach((t, n) => jobs.push([`${L}/${g}eye${tag}.${k}.${n}`, () => base(v, small, eg(g ? { gold: GOLD, eye: kk } : { eye: kk })(o)), t])); }
+      }
     }
     // the cat and the dog, both ways
     const pet = (kind, face, o) => ({ kind, alpha: 1, path: [], onBridge: null, moving: false, seed: 0, face, ...o });

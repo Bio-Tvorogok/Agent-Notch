@@ -160,6 +160,9 @@ final class HouseScene2: SKScene {
     /// The clock of the camera in ms (the harness replaces it with a virtual one).
     var nowMs: () -> Double = { CACurrentMediaTime() * 1000 }
     var lastCameraNow: Double?
+    var lastUpdateMs = 0.0
+    /// The egg poses picked for a Clawd so far (the proof asks for them).
+    var eggPoseSeen = Set<String>()
     var autoResetTimer: Timer?
     var signHits: [String: [Double]] = [:]
 

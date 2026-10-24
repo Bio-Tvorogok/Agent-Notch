@@ -162,8 +162,11 @@ extension HouseScene2 {
             let fr = frames[sp.id], lk = look(sp)
             if (sp.kind == "cat" || sp.kind == "dog"), let fr { face = fr.facing }
             let t = (sp.context ?? 0) >= 0.9 ? clockMillis * 0.5 : clockMillis
-            let plain = poseName(sp, look: lk, face: face, t: t, frame: fr, simT: simT), name = eggPoseName(sp, name: plain)
-            guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][plain] ?? parts.poses.variants[vi][lk.vendor + "/stand.0"] else { continue }
+            let plain = poseName(sp, look: lk, face: face, t: t, frame: fr, simT: simT)
+            let variants = parts.poses.variants[vi]
+            let name = eggPoseNames(sp, name: plain).first { variants[$0] != nil } ?? plain
+            if name != plain { eggPoseSeen.insert(name) }
+            guard let pose = variants[name] ?? variants[lk.vendor + "/stand.0"] else { continue }
             let extra = overlayLayers(sp, look: lk, frame: fr, t: t, simT: simT, vi: vi)
             let all = pose.layers.map { ($0, false) } + extra.layers
             let sig = all.map { $0.0.sprite * 2 + ($0.1 ? 1 : 0) }
@@ -242,6 +245,7 @@ extension HouseScene2 {
         stepInteraction(frameMs: min(1500, raw * 1000))
         let dt = min(0.1, raw)
         lastTime = currentTime
+        lastUpdateMs = nowMs()
         if !freezeClock { clockMillis += dt * 1000 }
         if behaviour != nil, !freezeSim { advanceBehaviour(ms: raw * 1000) }
         else if driveSim, let sim { var left = dt * 1000; while left > 0 { let step = min(50, left); left -= step; sim.step(dt: step) } }
