@@ -17,6 +17,7 @@ extension HouseScene2 {
     func attach(_ b: HouseBehaviour) {
         behaviour = b
         installSkyLife(b)
+        if !freezeSim { b.enableEggs(persist: true) }
         builtProjects = b.projects.count
         growth = growthLevels(b)
     }

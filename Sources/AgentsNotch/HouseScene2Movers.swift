@@ -166,8 +166,8 @@ extension HouseScene2 {
             let fr = frames[sp.id], lk = look(sp)
             if (sp.kind == "cat" || sp.kind == "dog"), let fr { face = fr.facing }
             let t = (sp.context ?? 0) >= 0.9 ? clockMillis * 0.5 : clockMillis
-            let name = poseName(sp, look: lk, face: face, t: t, frame: fr, simT: simT)
-            guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][lk.vendor + "/stand.0"] else { continue }
+            let plain = poseName(sp, look: lk, face: face, t: t, frame: fr, simT: simT), name = eggPoseName(sp, name: plain)
+            guard let pose = parts.poses.variants[vi][name] ?? parts.poses.variants[vi][plain] ?? parts.poses.variants[vi][lk.vendor + "/stand.0"] else { continue }
             let extra = overlayLayers(sp, look: lk, frame: fr, t: t, simT: simT, vi: vi)
             let all = pose.layers.map { ($0, false) } + extra.layers
             let sig = all.map { $0.0.sprite * 2 + ($0.1 ? 1 : 0) }
@@ -200,7 +200,7 @@ extension HouseScene2 {
             if let g = extra.glow { for c in n.children where c.name == "glow" { c.alpha = CGFloat(g) } }
             n.isHidden = false
             n.alpha = CGFloat(sp.alpha)
-            n.position = CGPoint(x: Double(HouseLight.round(at.x) - ax0), y: -Double(HouseLight.round(at.y) - ay0))
+            n.position = CGPoint(x: Double(HouseLight.round(at.x) - ax0), y: -Double(HouseLight.round(at.y) - ay0) + eggLift(sp))
             n.zPosition = at.z
             let nap = (sp.kind == "cat" || sp.kind == "dog") && name.contains("/nap.")
             updateMarks(sp, node: n, ax0: ax0, ay0: ay0, look: lk, t: t, napFace: nap ? face : nil, feetX: at.x)
@@ -218,6 +218,7 @@ extension HouseScene2 {
         guard let sim else { return !isletNodes.isEmpty || houseCamera?.isMoving == true } // the islets of an extra screen bob all the time
         if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
+        if eggsMoving { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
         return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil || ($0.kind == "agent" && $0.state == "working") }
     }
@@ -227,7 +228,7 @@ extension HouseScene2 {
     var isBursting: Bool {
         if houseCamera?.isMoving == true { return true } // a zoom, pan or glide is direct manipulation
         guard let sim else { return false }
-        if sim.roomsSettling || pendingRows != nil || burstExtra() { return true }
+        if sim.roomsSettling || pendingRows != nil || burstExtra() || eggsMoving { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty { return true }
         return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.alpha != $0.fade || $0.moving }

@@ -183,18 +183,41 @@ case "live":
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
         behaviour.enableSkyLife() // the page draws its sky life in this proof (live-ref.js), with the sim's random numbers
+        // the eggs the case names (live-ref.js: trigger names and date=YYYY-MM-DD), triggered at 1000 ms like the page
+        let eggSpec = first["egg"] as? [String]
+        if let eggSpec {
+            behaviour.enableEggs()
+            behaviour.eggs?.dark = first["dark"] as! Double
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+            let ds = eggSpec.first { $0.hasPrefix("date=") }.map { String($0.dropFirst(5)) } ?? "2026-10-15"
+            let f = DateFormatter(); f.calendar = cal; f.timeZone = cal.timeZone; f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            let hr = Int(first["hour"] as! Double)
+            let at = f.date(from: ds + String(format: "T%02d:00", hr))!
+            behaviour.eggs?.calendar = cal; behaviour.eggs?.date = { at }
+        }
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
             // the same timeline as the page: rows at their time, 50 ms steps in between
             while bt <= s.t {
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
+                if let eggSpec { for nm in eggSpec where !nm.hasPrefix("date=") { let parts = nm.split(separator: "@"); if bt == (parts.count > 1 ? Int(parts[1]) ?? 1000 : 1000) { _ = behaviour.eggs?.trigger(String(parts[0]), at: Double(bt)) } } }
                 if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
                 bt += 50
             }
             if ProcessInfo.processInfo.environment["SKY_DEBUG"] != nil {
                 let k = behaviour.skyLife, ps = (s.meta["sky"] as? [String: Any])?["birds"] as? [[Double]] ?? []
                 print("  sky t=\(s.t) mine", k.birds.map { String(format: "%.1f/%.1f", $0.x, $0.y) }, "plane", k.plane.map { String(format: "%.1f", $0.x) } ?? "-", "page", ps.map { String(format: "%.1f/%.1f", $0[0], $0[1]) })
+            }
+            if eggSpec != nil, ProcessInfo.processInfo.environment["EGG_DEBUG"] != nil { print("  ufoT page", s.meta["ufoT"] ?? "-"); print("  ufo page", ((s.meta["ufo"] as? [Double]) ?? []), "target", behaviour.eggs?.ufo.map { "\($0.target.id) \($0.target.x) \($0.target.y) \($0.target.z)" } ?? "-", "mine", behaviour.eggs?.ufo.map { [$0.x, $0.y, $0.lift, $0.beam] + ($0.at ?? []) } ?? []) }
+            if ProcessInfo.processInfo.environment["EGG_DEBUG"] != nil { for sp in behaviour.sprites { print("  native", s.t, sp.id, sp.state ?? "-", sp.room ?? "-", String(format: "%.2f %.2f %.2f", sp.x, sp.y, sp.z), sp.moving, sp.frozenUntil ?? 0) } }
+            if let want = s.meta["eggs"] as? [String: Any], let e = behaviour.eggs {
+                // the page's egg state and the native one must agree, and a case that names an egg must really fire it
+                let mineE: [String: Int] = ["party": e.party ? 1 : 0, "gold": behaviour.sprites.filter { $0.eggs.golden }.count, "hi5": e.highFives.count * 2, "fw": behaviour.life.fireworks.isEmpty ? 0 : 1]
+                let pageE: [String: Int] = ["party": (want["party"] as? Bool ?? false) ? 1 : 0, "gold": want["gold"] as? Int ?? 0, "hi5": want["hi5"] as? Int ?? 0, "fw": (want["fw"] as? Int ?? 0) > 0 ? 1 : 0]
+                for k in ["party", "gold", "hi5", "fw"] where mineE[k] != pageE[k] { print("\(s.file): egg state \(k): page \(pageE[k]!) native \(mineE[k]!)"); exit(1) }
+                let names = (eggSpec ?? []).map { String($0.split(separator: "@")[0]) }
+                for (n, k) in [("party", "party"), ("golden", "gold"), ("highfive", "hi5")] where names.contains(n) && s.t == samples.first(where: { $0.t >= 3000 })?.t && pageE[k] == 0 { print("\(s.file): the \(n) egg never fired in the page"); exit(1) }
             }
             let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
             let pxd = meta["PXD"] as! Double

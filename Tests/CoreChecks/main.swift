@@ -44,6 +44,11 @@ func run(_ name: String, _ body: () throws -> Void) {
     do { try body() } catch { report("threw \(error)", #fileID, #line) }
 }
 
+run("eggCalendar") { HouseEggChecks().calendar() }
+run("eggReplacementAndCounting") { HouseEggChecks().replacementAndCounting() }
+run("eggPhases") { HouseEggChecks().phases() }
+run("eggClicksAndIdle") { HouseEggChecks().clicksAndIdle() }
+
 // AN-0.5-T1: synthetic on-disk formats, exercised through the production readers.
 let sessionFixtures = SessionLogFixtureChecks()
 run("fixtureClaudeSubagents") { try sessionFixtures.claudeSubagents() }

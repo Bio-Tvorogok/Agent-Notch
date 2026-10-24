@@ -111,6 +111,9 @@ final class HouseScene2: SKScene {
     var season = "autumn", weather = "clear", seasonSig = ""
     var seasonStill: HouseRects?, seasonDrift: HouseRects?
     let skyLifeLayer = HouseSkyLifeLayer()
+    let eggDraw = HouseEggDraw()
+    /// The mailbox letter's tip: text and canvas position (nil hides it).
+    var onEggCard: ((String?, Double, Double) -> Void)?
     var yardRects: HouseRects?
     var flagPools: [String: HouseRects] = [:]
     static let screenDepths: [String: Double] = ["bedroom": 6.65, "server": 7.05, "library": 11.41, "greenhouse": 8.01, "arcade": 8.81]

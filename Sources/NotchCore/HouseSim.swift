@@ -55,6 +55,7 @@ public final class HouseSprite {
     public internal(set) var id: String
     public let behaviour = HouseBehaviourSpriteState()
     public let life = HouseLifeSpriteState()
+    public let eggs = HouseEggSpriteState()
     public var room: String?, homeRoom: String
     public var x, y, z: Double
     public var path: [HouseRouteNode] = []

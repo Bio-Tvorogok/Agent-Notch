@@ -43,6 +43,7 @@ final class RoomWallpaper: NSObject {
     private var hovering = false
     private var desktopHitTargets: Set<Int> = []
     private let tip = RoomTip()
+    private var eggCardShown = false
     private var powerTimer: Timer?
     private var sentActive: Bool?
     private var sentFps = 0
@@ -277,6 +278,13 @@ final class RoomWallpaper: NSObject {
                 guard let self else { return }
                 self.hintToken = nil
                 if let t, let w = self.window { self.tip.show(t.payload, in: w.frame) } else { self.tip.hide() }
+            }
+        }
+        scene.onEggCard = { [weak self] text, x, y in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let text, let w = self.window { self.eggCardShown = true; self.tip.show(["title": "✉ Совет дня", "note": text, "x": x, "y": y], in: w.frame) }
+                else if self.eggCardShown { self.eggCardShown = false; self.tip.hide() }
             }
         }
         scene.onOpen = { [weak self] id in
@@ -722,12 +730,13 @@ private final class RoomTip {
     /// `t` comes from the page: title, status, color, detail and the cursor (x, y) in page points.
     func show(_ t: [String: Any], in frame: NSRect) {
         let view = RoomTipView(title: t["title"] as? String ?? "", status: t["status"] as? String ?? "",
-                               color: Color(hex: t["color"] as? String ?? "#aaaaaa"), detail: t["detail"] as? String ?? "")
+                               color: Color(hex: t["color"] as? String ?? "#aaaaaa"), detail: t["detail"] as? String ?? "", note: t["note"] as? String)
         let host = NSHostingView(rootView: view)
         let size = host.fittingSize
         panel.contentView = host
         let x = (t["x"] as? Double ?? 0), y = (t["y"] as? Double ?? 0)
         var origin = NSPoint(x: frame.minX + x + 16, y: frame.maxY - y - 16 - size.height)
+        if t["note"] != nil { origin = NSPoint(x: min(max(frame.minX + x - size.width / 2, frame.minX + 8), frame.maxX - size.width - 8), y: frame.maxY - y - size.height) } // the letter's card hangs below the mailbox
         origin.x = min(origin.x, frame.maxX - size.width - 8)
         if origin.y < frame.minY + 8 { origin.y = frame.maxY - y + 16 }
         panel.setFrame(NSRect(origin: origin, size: size), display: true)
@@ -738,8 +747,21 @@ private final class RoomTip {
 }
 
 private struct RoomTipView: View {
-    let title: String, status: String, color: Color, detail: String
+    let title: String, status: String, color: Color, detail: String, note: String?
     var body: some View {
+        if let note {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 11, weight: .bold)).foregroundStyle(Color(hex: "#c0563a"))
+                Text(note).font(.system(size: 12)).foregroundStyle(Color(hex: "#2a1f2e")).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .frame(maxWidth: 230, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "#f8f4e8")))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: "#2a1f2e"), lineWidth: 2))
+            .fixedSize()
+        } else { plain }
+    }
+    private var plain: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
             HStack(spacing: 5) {
