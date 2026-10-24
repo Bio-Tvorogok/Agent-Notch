@@ -14,7 +14,7 @@ if (!check) fs.mkdirSync(dir, {recursive:true});
 let count=0, bytes=0, routeCount=0;
 // 'frames' runs one trace the way the page does: irregular frame deltas, a negative
 // first one and a 4 s stall (see frameDeltas); the others step a fixed 50 ms.
-for (const [n,style,mode] of [[2,'islands'],[5,'islands'],[14,'islands'],[5,'towers'],[5,'islands','frames']]) {
+for (const [n,style,mode] of [[2,'islands'],[5,'islands'],[14,'islands'],[5,'towers'],[5,'steps'],[5,'islands','frames']]) {
  const frames=mode==='frames';
  const s=scene();
  s.run(`active=false;looping=false;demo=false;sprites.clear();LAYOUT=${JSON.stringify(style)};

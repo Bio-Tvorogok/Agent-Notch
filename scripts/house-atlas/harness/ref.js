@@ -32,7 +32,7 @@
     fixedHour = hour; try { frame(T); } finally { drawBackground = realBG; }
     const d = now(), tag = `n${n}-h${hour}${grow ? '-g' + grow : ''}`;
     const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
-    const meta = { n, hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T,
+    const meta = { layout: LAYOUT, innerWidth, innerHeight, n, hour, W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T,
       rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
       world: worldFrame(), links: links.map(L => L.id) };
     for (const [f, data] of [['.png', cv.toDataURL('image/png')], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {

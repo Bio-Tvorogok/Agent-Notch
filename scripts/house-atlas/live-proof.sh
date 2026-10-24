@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Proves the real agents of the SpriteKit house against the page: replays behaviour fixtures (Tests/Fixtures/house-behaviour) through
 # the page (real setAgents, the fixtures' seed and 50 ms steps) and through HouseBehaviour + HouseScene2, and compares the frames at a
 # few sample times with the same gates as scene-proof.sh plus gates on the agents' own pixels.
@@ -6,7 +8,7 @@
 # Exit status: the harness exits 3 when any sample is over a gate.
 set -eu
 cd "$(dirname "$0")/../.."
-P=.build/scene-proof
+P=${HOUSE_PROOF_DIR:-.build/scene-proof}
 mkdir -p .build/house-atlas "$P/obj" "$P/live-out" "$P/live-ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
 # case:hour:sample times (ms); the page and the scene both stop at every sample

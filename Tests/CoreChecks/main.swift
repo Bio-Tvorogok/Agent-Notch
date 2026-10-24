@@ -407,6 +407,8 @@ run("houseHit") { try HouseHitChecks().all() }
 run("housePinch") { try HousePinchChecks().all() }
 run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
 run("houseSnapshotRenderer") { try HouseSnapshotChecks().renderer() }
+run("houseGrowthLegacyImport") { try HouseGrowthLegacyChecks().importsWhatThePageSaved() }
+run("houseGrowthLegacyMissing") { try HouseGrowthLegacyChecks().missingOrEmpty() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
 let widget = WidgetPlanChecks()

@@ -122,6 +122,10 @@ extension HouseScene2 {
         let atFoot = key == "__yard" && sp.x < 2.6
         let onStairs = layout.lift != nil ? (key == "__bath" && sp.y > r.NY - 0.05 && sp.x < 1.6) : false
         if atFoot || onStairs { return (p.0, p.1, topZ - 2 + CGFloat(sp.x + sp.y) * 0.01) }
+        // stacked styles: out front by the stairs, between the flights (the page's onStairs; drawEscapes)
+        if layout.style != .islands, sp.y > r.NY - 0.05, sp.x < 4.6, let e = escZ[key] {
+            return (p.0, p.1, (sp.y < r.NY + 0.7 ? e.back + 4 : e.front + 4) + CGFloat(sp.x + sp.y) * 0.01)
+        }
         let listKey = key == "__yard" ? "__bath" : key
         guard let info = roomInfo[listKey] else { return nil }
         let depth = sp.x + sp.y + 0.55 + (sp.z > 9 ? 0.3 : 0)
@@ -214,7 +218,7 @@ extension HouseScene2 {
     /// The page's houseAwake: the house draws while an agent works or anything moves, and may rest until the next minute otherwise.
     /// Marks, idle residents and a still camera do not keep it awake (the page does not animate them on their own either).
     var isMoving: Bool {
-        guard let sim else { return houseCamera?.isMoving == true }
+        guard let sim else { return !isletNodes.isEmpty || houseCamera?.isMoving == true } // the islets of an extra screen bob all the time
         if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if eggsMoving { return true }
@@ -268,6 +272,7 @@ extension HouseScene2 {
         }
         if let sim { sync(sim: sim) }
         updateClouds()
+        if !isletNodes.isEmpty { updateIslets() }
         if mistAmount > 0.02 { refreshMist() }
         onFrame?(clockMillis)
         pace(currentTime)

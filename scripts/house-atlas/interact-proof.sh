@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Proves the pointer of the SpriteKit house against the page: the same pointer / pinch / scroll / click sequence goes to room/index.html
 # (interact-ref.js, its real camera, hover and click code on a virtual clock) and to HouseScene2, and every record compares the camera
 # (zoom, at, target), the overview button, the hovered agent, the hover card and the click's {open}. Two settled zoomed views are also

@@ -1,13 +1,15 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Proves the SpriteKit house (Sources/AgentsNotch/HouseScene2*.swift) against the page itself: records the page's own frames for
 # 5 fixtures (projects, hour), renders the same with HouseScene2 (the pinned capture of the parts pipeline: 1728x1117@2, insets 32/70/120, so the canvases are 1728x1117, 2304x1490 and 3456x2234 by project count), and prints the share of house pixels off by > 24.
 # Output: .build/scene-proof/ref (page frames), .build/scene-proof/out (<fixture>-side.png / -diff.png / -scene.png).
 set -eu
 cd "$(dirname "$0")/../.."
-P=.build/scene-proof
+P=${HOUSE_PROOF_DIR:-.build/scene-proof}
 mkdir -p .build/house-atlas "$P/obj" "$P/out" "$P/ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
-FIX='[[2,12],[5,20],[5,6.5],[14,19.416666666666668],[0,12],[5,12,2],[3,18.75,3]]'
+FIX=${SCENE_FIXTURES:-'[[2,12],[5,20],[5,6.5],[14,19.416666666666668],[0,12],[5,12,2],[3,18.75,3]]'}
 { echo "window.__REF_FIXTURES = $FIX;"; cat scripts/house-atlas/harness/ref.js; } > "$P/ref-run.js"
 rm -f "$P"/ref/ref-*
 HOUSE_REF_ONLY=1 .build/house-atlas/export room/index.html "$P/ref-run.js" "$P/junk" 12 parts "$P/ref"
