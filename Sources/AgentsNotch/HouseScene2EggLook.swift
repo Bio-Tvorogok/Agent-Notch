@@ -4,16 +4,17 @@ import NotchCore
 /// The page's eggLook(): golden Clawds (and their sparkles), raised arms on a high five and the April 1 eyes on the side a walker came from.
 /// The bodies come from the atlas (gold.*, arms.*, eyep/eyen.*); the sparkles are drawn here.
 extension HouseScene2 {
-    /// The eggLook pose in place of a plain stand, walk or work pose of an agent; the plain name when none applies.
-    func eggPoseName(_ sp: HouseSprite, name: String) -> String {
-        guard sp.kind == "agent", let b = behaviour, let e = b.eggs, e.enabled, let slash = name.firstIndex(of: "/") else { return name }
-        let p = String(name[..<slash]), rest = name[name.index(after: slash)...]
-        guard let dot = rest.firstIndex(of: ".") else { return name }
-        let kind = String(rest[..<dot]), idx = String(rest[rest.index(after: dot)...])
-        if kind == "stand", e.highFives.contains(where: { ($0.a === sp || $0.b === sp) && b.time < $0.t0 + 1500 }) { return p + "/arms.stand.0" }
-        if kind == "walk", e.holidays.fools, let d = eggFoolsDir(sp) { return p + (d > 0 ? "/eyen.walk." : "/eyep.walk.") + idx }
-        if sp.eggs.golden { return p + "/gold.\(kind).\(idx)" } // poses without a gold cut fall back to the plain one
-        return name
+    /// The eggLook poses for a plain pose of an agent, best first: gold and raised arms or eyes together, gold alone, the plain one.
+    func eggPoseNames(_ sp: HouseSprite, name: String) -> [String] {
+        guard sp.kind == "agent", let b = behaviour, let e = b.eggs, e.enabled, let slash = name.firstIndex(of: "/") else { return [name] }
+        let p = String(name[..<slash]), rest = String(name[name.index(after: slash)...])
+        let gold = sp.eggs.golden, g = gold ? "g" : ""
+        var out: [String] = []
+        if e.highFives.contains(where: { ($0.a === sp || $0.b === sp) && b.time < $0.t0 + 1500 }) { out.append("\(p)/\(g)arms.\(rest)") }
+        else if e.holidays.fools, let d = eggFoolsDir(sp) { out.append("\(p)/\(g)eye\(d > 0 ? "n" : "p").\(rest)") }
+        if gold { out.append("\(p)/gold.\(rest)") }
+        out.append(name)
+        return out
     }
 
     /// The side a walker came from (the page's eggLook): the eyes sit there, as it walks backwards.
@@ -37,7 +38,7 @@ extension HouseScene2 {
         guard let g = parts.poses.looks?[lookKey(sp, lk)] else { return }
         let s = 2.0, x = Double(HouseLight.round(at.x)), y = Double(HouseLight.round(at.y))
         let hop = sp.moving ? Double(Int(floor(t / 110)) % 2) * s : 0
-        let top = Double(HouseLight.round(y - Double(g.rows + g.legH) * s - hop)), left = Double(HouseLight.round(x - Double(g.w) * s / 2)), bw = Double(g.w) * s
+        let top = Double(HouseLight.round(y - Double(g.rows + g.legH) * s - hop - eggLift(sp))), left = Double(HouseLight.round(x - Double(g.w) * s / 2)), bw = Double(g.w) * s
         let z = at.z + 0.05
         eggGlow("gold-glow-\(sp.id)", x, top + 4 * s, 12 * s, "#ffc830", 0.12 + 0.4 * light.dark, layer: root, z: z)
         for i in 0..<3 {

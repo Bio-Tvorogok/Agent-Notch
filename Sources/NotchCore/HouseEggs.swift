@@ -150,6 +150,7 @@ public final class HouseEggs {
             if h.reroute { for s in [h.a,h.b] { if let g = s.goal { b.sim.setGoal(s,g) } } }
         }
         highFives.removeAll { t >= $0.t0+1500 }
+        if hi5Next.count > b.sprites.count { let ids = Set(b.sprites.map { $0.id }); hi5Next = hi5Next.filter { ids.contains($0.key) } }
         let a = b.sprites.filter { s in
             s.kind == "agent" && s.alpha >= 0.6 && s.life.hold == nil && s.fall == nil && !s.leaving && !s.exit && t >= (s.frozenUntil ?? 0) && t >= (hi5Next[s.id] ?? 0) && s.state != "done" && s.state != "shower" && s.state != "idle-sleep" && ufo?.target !== s
         }
@@ -237,7 +238,7 @@ public final class HouseEggs {
         if !overHouse { for i in clouds.indices.reversed() { let c = clouds[i]; if x >= c[0] && x <= c[0]+c[2] && y >= c[1]-10 && y <= c[1]+10 { rain[i] = t+5000; return true } } }
         return false
     }
-    /// Static sunglasses and daylight holiday props may rest with the house.
+    /// Whether an egg animates and so keeps the house drawing: the shades, the Christmas props and the by-day rain-free sky may rest with it; Valentine's hearts, Halloween's bats (at night), the party and the rest count.
     public func isMoving(at t: Double) -> Bool {
         enabled && (!extra && (whale != nil || ghost != nil || party || holidays.valentine || (holidays.halloween && dark > 0.5)) || ufo != nil || !highFives.isEmpty || !hearts.isEmpty || letter != nil || t < purrUntil || !rain.isEmpty)
     }

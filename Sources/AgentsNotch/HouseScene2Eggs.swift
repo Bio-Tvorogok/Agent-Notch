@@ -11,7 +11,7 @@ final class HouseEggDraw {
     var cache: [String: SKTexture] = [:]
     var glows: [String: SKTexture] = [:]
     var ambKey = ""
-    var card: String?
+    var cardKey: (String, Int, Int)?
     var props: [String: HouseRects] = [:]
     var sigs: [String: String] = [:]
 }
@@ -200,10 +200,13 @@ extension HouseScene2 {
         eggUFO(e, t, add: add, z: overZ)
         eggGhost(e, t, z: overZ)
         eggLetter(e, t, z: overZ)
-        for sp in sim.sprites where sp.eggs.golden && sp.kind == "agent" && sp.alpha > 0.001 { if let at = place(sp, sim: sim) { eggGold(sp, at: at, look: look(sp), t: t) } }
+        for sp in sim.sprites where sp.eggs.golden && sp.kind == "agent" && sp.alpha > 0.001 { if let at = place(sp, sim: sim) { eggGold(sp, at: at, look: look(sp), t: (sp.context ?? 0) >= 0.9 ? t * 0.5 : t) } }
         updateEggProps(e, t)
         sky.end(); over.end(); add.end()
-        for (name, n) in eggDraw.nodes where !eggDraw.used.contains(name) && !n.isHidden { n.isHidden = true }
+        for (name, n) in eggDraw.nodes where !eggDraw.used.contains(name) {
+            if name.hasPrefix("gold-") { n.removeFromParent(); eggDraw.nodes[name] = nil } // a Clawd that left or lost its shine
+            else if !n.isHidden { n.isHidden = true }
+        }
     }
 
     func eggsHideAll() {
@@ -215,8 +218,12 @@ extension HouseScene2 {
     }
 
     private func setEggCard(_ text: String?, x: Double, y: Double) {
-        if text != eggDraw.card { eggDraw.card = text }
-        if text != nil, let c = houseCamera { let v = c.toView(x: x, y: y); onEggCard?(text, v.x, v.y) } else { onEggCard?(nil, 0, 0) }
+        // the host hears of a change only: a new text or a position that moved a whole point
+        var key = text.map { ($0, 0, 0) }
+        if text != nil, let c = houseCamera { let v = c.toView(x: x, y: y); key = (text!, Int(v.x.rounded()), Int(v.y.rounded())) }
+        if key?.0 == eggDraw.cardKey?.0 && key?.1 == eggDraw.cardKey?.1 && key?.2 == eggDraw.cardKey?.2 { return }
+        eggDraw.cardKey = key
+        if let key { onEggCard?(key.0, Double(key.1), Double(key.2)) } else { onEggCard?(nil, 0, 0) }
     }
 
     // MARK: the sky

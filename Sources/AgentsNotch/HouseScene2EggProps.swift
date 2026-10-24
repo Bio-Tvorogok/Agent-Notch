@@ -11,7 +11,7 @@ extension HouseScene2 {
     /// The z of a live item at `depth` in a room: what place() gives a sprite of that depth.
     func eggItemZ(_ room: String, _ depth: Double) -> CGFloat {
         guard let info = roomInfo[room] else { return topZ }
-        if depth >= 50 { return info.endZ - 0.2 } // after every item, before the room's lights
+        if depth >= 50 { return info.endZ + 3.5 } // above every Clawd (the deepest sits at endZ + 0.15 * depth, under 3.2), below the next layers of the room
         let slot = info.slots.first { $0.depth > depth }
         return ((slot?.z ?? info.endZ + 4) - 4) + CGFloat(depth) * 0.15
     }
@@ -83,26 +83,27 @@ extension HouseScene2 {
         let tt = roomClockOverride ?? clockMillis
         let dk = Int(light.dark * 20), xmas = e.holidays.xmas, party = e.party
         let cv: (HouseRects) -> HouseRoomCanvas = { HouseRoomCanvas(rects: $0, scene: self, ox: r0.ox, oy: r0.oy) }
-        let amb = "\(light.variant)|\(dk)"
+        let drop = sim?.room("__roof").drop ?? 0
+        let amb = "\(light.variant)|\(dk)|\(r0.ox)|\(r0.oy)|\(drop)"
         // garlands (behind, depth -0.9; in front, depth 30.1)
         for (name, depth, segs) in [("garlandBack", -0.9, [[0.0, 0, 10, 0], [0, 0, 0, 8]]), ("garlandFront", 30.1, [[0.0, 8, 10, 8], [10, 0, 10, 8]])] {
             let l = propLayer(name, depth: depth)
-            guard propChanged(name, "\(xmas)|\(amb)|\(Int(floor(tt / 650)))") else { continue }
+            guard propChanged(name, xmas ? "\(amb)|\(Int(floor(tt / 650)))" : "off") else { continue }
             l.begin(); defer { l.end() }
             if xmas { let c = cv(l); for s in segs { eggGarland(l, c, tt, s[0], s[1], s[2], s[3]) } }
         }
         do {
             let l = propLayer("tree", depth: 6.1)
-            if propChanged("tree", "\(xmas)|\(amb)|\(Int(floor(tt / 500)))") {
+            if propChanged("tree", xmas ? "\(amb)|\(Int(floor(tt / 500)))" : "off") {
                 l.begin(); defer { l.end() }
                 if xmas { eggTree(l, cv(l), tt, 1.6, 4.0) } else { eggDraw.nodes["treeGlow1"]?.isHidden = true; eggDraw.nodes["treeGlow2"]?.isHidden = true }
             }
-            if xmas { eggDraw.used.insert("treeGlow1"); eggDraw.used.insert("treeGlow2") }
+            if xmas && light.dark > 0.3 { eggDraw.used.insert("treeGlow1"); eggDraw.used.insert("treeGlow2") } else { eggDraw.nodes["treeGlow1"]?.isHidden = true; eggDraw.nodes["treeGlow2"]?.isHidden = true }
         }
         // the disco: light spots on the deck (depth -0.4), the ball over everything (99)
         do {
             let l = propLayer("discoSpots", depth: -0.4)
-            if propChanged("discoSpots", "\(party)|\(amb)|\(Int(floor(tt / 40)))") {
+            if propChanged("discoSpots", party ? "\(amb)|\(Int(floor(tt / 40)))" : "off") {
                 l.begin(); defer { l.end() }
                 if party {
                     let c = cv(l), n = Double(Self.disco.count)
@@ -113,7 +114,7 @@ extension HouseScene2 {
                 }
             }
             let b = propLayer("discoBall", depth: 99)
-            if propChanged("discoBall", "\(party)|\(amb)|\(Int(floor(tt / 160)))|\(Int(floor(tt / 40)))") {
+            if propChanged("discoBall", party ? "\(amb)|\(Int(floor(tt / 160)))|\(Int(floor(tt / 40)))" : "off") {
                 b.begin(); defer { b.end() }
                 if party { eggDiscoBall(b, cv(b), tt) } else { eggDraw.nodes["discoGlow"]?.isHidden = true }
             }
