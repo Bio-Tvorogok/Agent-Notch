@@ -2,7 +2,7 @@
 # Builds build/AgentsNotch.app with plain swiftc (no SwiftPM, no Xcode project).
 # Needs a working toolchain: Xcode selected via xcode-select (or DEVELOPER_DIR), license accepted.
 set -eu
-VERSION="${VERSION:-0.6.0}"
+VERSION="${VERSION:-0.7.0}"
 BUILD_NUMBER="$VERSION"
 cd "$(dirname "$0")/.."
 SOURCE_REVISION=$(git rev-parse HEAD 2>/dev/null || echo unversioned)
