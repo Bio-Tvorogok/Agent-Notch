@@ -92,6 +92,7 @@ public final class HouseBehaviour {
     public var stage3 = HouseLifeStage3Hooks()
     /// The page's birds, plane and balloon (HouseSkyLife.swift); runs only after enableSkyLife().
     public let skyLife = HouseSkyLife()
+    public internal(set) var eggs: HouseEggs?
     public let sim: HouseSim
     public var hooks = HouseBehaviourHooks()
     public internal(set) var projects: [String] = []
@@ -209,6 +210,7 @@ public final class HouseBehaviour {
     }
     private func beginStep(_ agents: [HouseAgentRow]?) {
         if let agents { setAgents(agents) }
+        eggs?.sky(at: time)
         if life.enabled { stage3.lightingAndWeather(time); stage3.eggSky(time) }
         _ = hooks.residents(time)
         updateErrands()
@@ -224,6 +226,7 @@ public final class HouseBehaviour {
             _ = hooks.scenes(time)
         }
         if life.enabled { stage3.eggStep(time) }
+        eggs?.step(at: time)
         sim.updateStairs()
         for (key,start) in born {
             let e = min(1,max(0,(time-start)/900))
@@ -239,6 +242,7 @@ public final class HouseBehaviour {
             life.fireworks.removeAll { time-$0.t0 > 3800 || !sim.hasRoom($0.room) }
             stage3.eggOver(time)
         }
+        eggs?.over(at: time)
     }
     static func jsNumber(_ x: Double) -> String { x.rounded() == x ? String(format: "%.0f", x) : String(x) }
 }
