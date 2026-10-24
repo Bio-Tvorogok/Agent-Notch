@@ -111,8 +111,7 @@ final class RoomWallpaper: NSObject {
                 return
             }
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
-            let target = e.windowNumber
-            MainActor.assumeIsolated { self?.mouse(type, scroll: scroll, target: target) }
+            MainActor.assumeIsolated { self?.mouse(type, scroll: scroll) }
         }
     }
 
@@ -450,9 +449,9 @@ final class RoomWallpaper: NSObject {
 
     /// The window ignores the mouse, so the cursor is read globally and passed on while nothing covers the desktop.
     /// Trackpad gestures over bare desktop drive the view: pinch zooms at the cursor, two fingers move, a double tap resets.
-    /// `target` is the window WindowServer sends the event to (the monitor's event knows it); without one, AppKit's mouse-down hit
-    /// test answers. Both skip click-through windows, which a window list scan cannot tell apart (an invisible ChatGPT sheet).
-    private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0), target: Int? = nil) {
+    /// AppKit's mouse-down hit test decides bare desktop for every event: it skips click-through windows, which a window list
+    /// scan cannot tell apart (an invisible ChatGPT sheet once blocked clicks and pinches on half the screen).
+    private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0)) {
         guard let w = window, house != nil else { return }
         let scene = house?.scene as? HouseScene2
         let now = CACurrentMediaTime()
@@ -462,7 +461,7 @@ final class RoomWallpaper: NSObject {
         }
         let p = NSEvent.mouseLocation
         let inside = w.frame.contains(p) && w.occlusionState.contains(.visible)
-        let bare = inside && desktopHitTargets.contains(target ?? NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0))
+        let bare = inside && desktopHitTargets.contains(NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0))
         let x = p.x - w.frame.minX, y = w.frame.maxY - p.y
         switch type {
         case .leftMouseDown:
