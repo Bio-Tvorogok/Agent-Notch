@@ -8,7 +8,7 @@
 # Exit status: the harness exits 3 when any sample is over a gate.
 set -eu
 cd "$(dirname "$0")/../.."
-P=.build/scene-proof
+P=${HOUSE_PROOF_DIR:-.build/scene-proof}
 mkdir -p .build/house-atlas "$P/obj" "$P/live-out" "$P/live-ref" "$P/junk"
 xcrun swiftc -O -o .build/house-atlas/export scripts/house-atlas/export.swift
 # case:hour:sample times (ms); the page and the scene both stop at every sample

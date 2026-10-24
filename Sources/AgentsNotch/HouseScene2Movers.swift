@@ -122,6 +122,10 @@ extension HouseScene2 {
         let atFoot = key == "__yard" && sp.x < 2.6
         let onStairs = layout.lift != nil ? (key == "__bath" && sp.y > r.NY - 0.05 && sp.x < 1.6) : false
         if atFoot || onStairs { return (p.0, p.1, topZ - 2 + CGFloat(sp.x + sp.y) * 0.01) }
+        // stacked styles: out front by the stairs, between the flights (the page's onStairs; drawEscapes)
+        if layout.style != .islands, sp.y > r.NY - 0.05, sp.x < 4.6, let e = escZ[key] {
+            return (p.0, p.1, (sp.y < r.NY + 0.7 ? e.back + 4 : e.front + 4) + CGFloat(sp.x + sp.y) * 0.01)
+        }
         let listKey = key == "__yard" ? "__bath" : key
         guard let info = roomInfo[listKey] else { return nil }
         let depth = sp.x + sp.y + 0.55 + (sp.z > 9 ? 0.3 : 0)

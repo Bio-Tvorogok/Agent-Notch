@@ -19,7 +19,7 @@ final class SaverSpriteHouse {
               size.width > 0, size.height > 0 else { return nil }
         let themes = (config["themes"] as? [String: String] ?? [:]).map { HouseLayout.ThemeChoice(project: $0.key, theme: $0.value) }
         let canvas = HouseLayout.Canvas(width: Double(size.width), height: Double(size.height), dpr: Double(scale))
-        behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: .islands, canvas: canvas, insets: .init(), themes: themes)
+        behaviour = HouseBehaviour(seed: UInt32.random(in: 1...UInt32.max), layout: HouseLayout.Style(rawValue: config["layout"] as? String ?? "") ?? .islands, canvas: canvas, insets: .init(), themes: themes)
         if let rows = Self.rows(snapshot.agents) { behaviour.setAgents(rows) }
         agents = snapshot.agents
         let env = HouseSkyEnv(innerHeight: Double(size.height), insetBottom: 0)

@@ -21,13 +21,16 @@ struct HouseParts: Decodable {
     }
     struct Light: Decodable { let sprite, r: Int; let x, y, a, b: Double; let blend: String? }
     struct Overlay: Decodable { let sprite: Int; let x, y: Double }
-    struct RoomVariant: Decodable { let layers: [Layer]; let lights: [Light]; let overlay: [Overlay] }
+    /// The outside stairs of a stack (steps and towers): the flights behind and in front of the Clawds that are out on them.
+    struct Stairs: Decodable { let back, front: Overlay? }
+    struct RoomVariant: Decodable { let layers: [Layer]; let lights: [Light]; let overlay: [Overlay]; let esc: Stairs? }
     struct Clock: Decodable { let wall: String; let at, z: Double; let dark: Bool? }
     struct Room: Decodable {
         let theme: String
         let NX, NY: Double
         let floor, tower: Int
         let clock: Clock?
+        let role: String?
         let variants: [RoomVariant]
     }
     struct Part: Decodable { let layers: [Layer]; let lights: [Light] }

@@ -16,7 +16,7 @@ struct HouseRouteChecks {
         let dir = URL(fileURLWithPath: "Tests/Fixtures/house-routes")
         let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
             .filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        XCTAssertEqual(files.map(\.lastPathComponent), ["02-islands.json", "05-islands-frames.json", "05-islands.json", "05-towers.json", "14-islands.json"])
+        XCTAssertEqual(files.map(\.lastPathComponent), ["02-islands.json", "05-islands-frames.json", "05-islands.json", "05-steps.json", "05-towers.json", "14-islands.json"])
         var routes = 0, samples = 0
         for file in files {
             let f = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
