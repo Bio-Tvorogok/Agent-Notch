@@ -31,6 +31,7 @@ final class NotchController {
             PanelView(store: store) { [weak self] h in self?.resizeList(h) }
                 .environmentObject(store.settings).environmentObject(store.usage)
         })
+        list.sizingOptions = [] // resizeList sizes the panel; see DesktopWidget.makePanel
         listPanel.contentView = list
         store.finisher.onNotice = { [weak self] n in self?.showToast(n) }
         store.jumpScreen = { [weak self] in
