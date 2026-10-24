@@ -196,7 +196,7 @@ extension HouseScene2 {
             if let g = extra.glow { for c in n.children where c.name == "glow" { c.alpha = CGFloat(g) } }
             n.isHidden = false
             n.alpha = CGFloat(sp.alpha)
-            n.position = CGPoint(x: Double(HouseLight.round(at.x) - ax0), y: -Double(HouseLight.round(at.y) - ay0))
+            n.position = CGPoint(x: Double(HouseLight.round(at.x) - ax0), y: -Double(HouseLight.round(at.y) - ay0) + eggLift(sp))
             n.zPosition = at.z
             let nap = (sp.kind == "cat" || sp.kind == "dog") && name.contains("/nap.")
             updateMarks(sp, node: n, ax0: ax0, ay0: ay0, look: lk, t: t, napFace: nap ? face : nil, feetX: at.x)
@@ -214,6 +214,7 @@ extension HouseScene2 {
         guard let sim else { return houseCamera?.isMoving == true }
         if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
+        if eggsMoving { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
         return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.life.hold != nil || $0.life.fire != nil || ($0.kind == "agent" && $0.state == "working") }
     }
@@ -223,7 +224,7 @@ extension HouseScene2 {
     var isBursting: Bool {
         if houseCamera?.isMoving == true { return true } // a zoom, pan or glide is direct manipulation
         guard let sim else { return false }
-        if sim.roomsSettling || pendingRows != nil || burstExtra() { return true }
+        if sim.roomsSettling || pendingRows != nil || burstExtra() || eggsMoving { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty { return true }
         return sim.sprites.contains { !$0.path.isEmpty || $0.onBridge != nil || $0.fall != nil || $0.behaviour.handover != nil || $0.alpha != $0.fade || $0.moving }

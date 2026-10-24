@@ -23,6 +23,7 @@ extension HouseScene2 {
         let fx = fxLayer()
         if let b = behaviour { updateYardDyn(b, sim: sim, simT: simT) }
         updateSeason(t: t)
+        updateEggs(sim: sim, simT: simT, t: t)
         fx.zPosition = topZ + 4
         fx.begin()
         defer { fx.end() }

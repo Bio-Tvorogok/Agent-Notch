@@ -126,7 +126,7 @@ public final class HouseEggs {
         if !open.isEmpty { a = open }
         guard !a.isEmpty else { return false }
         ufo?.target.frozen = false
-        ufo = UFO(t0: t, target: pick(a), dir: rnd() < 0.5 ? 1 : -1); return true
+        let u = UFO(t0: t, target: pick(a), dir: rnd() < 0.5 ? 1 : -1); u.target.frozen = true; ufo = u; return true
     }
     private func stepUFO(_ t: Double) {
         guard let u = ufo else { return }

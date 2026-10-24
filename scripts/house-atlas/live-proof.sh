@@ -20,7 +20,7 @@ for spec in sys.argv[1].split():
     import os
     label, name = (name.split('=') + [None])[:2] if '=' in name else (name, name)
     d = json.load(open(next(f for f in ('Tests/Fixtures/%s/%s.json' % (x, name) for x in ('house-behaviour', 'house-life', 'house-overlays', 'house-sky')) if os.path.exists(f))))['input']
-    cases.append({'name': label, 'fixture': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')], 'season': extra[0] if extra else 'autumn', 'weather': extra[1] if len(extra) > 1 else 'clear',
+    cases.append({'name': label, 'fixture': name, 'seed': d['seed'], 'hour': float(hour), 'samples': [int(x) for x in samples.split(',')], 'season': extra[0] if extra else 'autumn', 'egg': [x for x in extra[2].split('+')] if len(extra) > 2 and extra[2] else None, 'weather': extra[1] if len(extra) > 1 else 'clear',
                   'events': [{'at': e['at'], 'rows': e['rows']} for e in d['events'] if 'rows' in e]})
 print('window.__LIVE_CASES = ' + json.dumps(cases) + ';')
 open(os.path.join(os.path.dirname(sys.argv[2]) if len(sys.argv) > 2 else '.', 'live-aliases.txt'), 'w').write(''.join('%s %s\n' % (c['name'], c['fixture']) for c in cases if c['name'] != c['fixture']))

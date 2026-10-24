@@ -175,12 +175,25 @@ case "live":
                                        insets: .init(top: ins["top"]!, bottom: ins["bottom"]!, right: ins["right"]!), random: { rng.nextDouble() })
         behaviour.enableLife(hour: first["hour"] as! Double, dark: first["dark"] as! Double)
         behaviour.enableSkyLife() // the page draws its sky life in this proof (live-ref.js), with the sim's random numbers
+        // the eggs the case names (live-ref.js: trigger names and date=YYYY-MM-DD), triggered at 1000 ms like the page
+        let eggSpec = first["egg"] as? [String]
+        if let eggSpec {
+            behaviour.enableEggs()
+            behaviour.eggs?.dark = first["dark"] as! Double
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+            let ds = eggSpec.first { $0.hasPrefix("date=") }.map { String($0.dropFirst(5)) } ?? "2026-10-15"
+            let f = DateFormatter(); f.calendar = cal; f.timeZone = cal.timeZone; f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+            let hr = Int(first["hour"] as! Double)
+            let at = f.date(from: ds + String(format: "T%02d:00", hr))!
+            behaviour.eggs?.calendar = cal; behaviour.eggs?.date = { at }
+        }
         var scene: HouseScene2?, view: SKView?
         var bt = 0
         for s in samples {
             // the same timeline as the page: rows at their time, 50 ms steps in between
             while bt <= s.t {
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
+                if bt == 1000, let eggSpec { for n in eggSpec where !n.hasPrefix("date=") { _ = behaviour.eggs?.trigger(n, at: Double(bt)) } }
                 if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: ev) }
                 bt += 50
             }
@@ -188,6 +201,7 @@ case "live":
                 let k = behaviour.skyLife, ps = (s.meta["sky"] as? [String: Any])?["birds"] as? [[Double]] ?? []
                 print("  sky t=\(s.t) mine", k.birds.map { String(format: "%.1f/%.1f", $0.x, $0.y) }, "plane", k.plane.map { String(format: "%.1f", $0.x) } ?? "-", "page", ps.map { String(format: "%.1f/%.1f", $0[0], $0[1]) })
             }
+            if eggSpec != nil, ProcessInfo.processInfo.environment["EGG_DEBUG"] != nil { print("  ufoT page", s.meta["ufoT"] ?? "-"); print("  ufo page", ((s.meta["ufo"] as? [Double]) ?? []), "target", behaviour.eggs?.ufo.map { "\($0.target.id) \($0.target.x) \($0.target.y) \($0.target.z)" } ?? "-", "mine", behaviour.eggs?.ufo.map { [$0.x, $0.y, $0.lift, $0.beam] + ($0.at ?? []) } ?? []) }
             let meta = s.meta, W = meta["W"] as! Int, H = meta["H"] as! Int, hour = meta["hour"] as! Double
             let pxd = meta["PXD"] as! Double
             let lay = behaviour.layout
