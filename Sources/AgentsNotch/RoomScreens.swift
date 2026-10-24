@@ -1,6 +1,7 @@
 import AppKit
 import Combine
-import WebKit
+import NotchCore
+import SpriteKit
 
 /// The house settings reaching a running wallpaper, and the windows on the other screens.
 extension RoomWallpaper {
@@ -32,7 +33,10 @@ extension RoomWallpaper {
         for screen in others {
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
             keep.insert(id)
-            if let extra = extras[id] { extra.place(on: screen) } else { extras[id] = RoomExtraScreen(screen: screen, page: page, fps: Self.fps, awake: houseAwake) }
+            if let extra = extras[id] { extra.place(on: screen) } else if let extra = RoomExtraScreen(screen: screen, page: page, fps: Self.fps, awake: houseAwake) {
+                extra.onGiveUp = { [weak self] in self?.extras[id] = nil }
+                extras[id] = extra
+            }
         }
         for (id, extra) in extras where !keep.contains(id) { extra.close(); extras[id] = nil }
     }
@@ -44,20 +48,39 @@ extension RoomWallpaper {
     }
 }
 
-/// A screen next to the main one: the same page with `?scene=extra`, the sky, the city and a few floating islands.
-/// It stops drawing whenever its own screen is covered.
+/// A screen next to the main one: the sky, the city and a few floating islands drawn by SpriteKit (HouseScene2.extraScreen) from the atlas.
+/// It stops drawing whenever its own screen is covered. When the atlas cannot be drawn on a screen it gets no window (the desktop picture shows).
 @MainActor
-final class RoomExtraScreen: NSObject, WKNavigationDelegate {
+final class RoomExtraScreen: NSObject {
     private let window: NSWindow
-    private let web: WKWebView
+    private let view: SKView
+    private let page: URL
     private var subs: Set<AnyCancellable> = []
     private var fps: Int
     private var sentActive: Bool?
-    private var sentFps = 0
     private var awake: Bool
-    private var sentAwake: Bool?
 
-    init(screen: NSScreen, page: URL, fps: Int, awake: Bool) {
+    private static func atlasDir(_ page: URL) -> URL { page.deletingLastPathComponent().appendingPathComponent("atlas") }
+
+    /// The scene of an extra screen, nil when this atlas or screen cannot draw it.
+    private static func makeScene(for screen: NSScreen, page: URL, onGiveUp: @escaping () -> Void) -> HouseScene2? {
+        let size = screen.frame.size, dpr = Double(screen.backingScaleFactor)
+        let layout = HouseLayout.extraScreen(canvas: .init(width: Double(size.width), height: Double(size.height), dpr: dpr))
+        let env = HouseSkyEnv(innerHeight: Double(size.height), insetBottom: 0)
+        guard HousePainter.groundRaw(layout: layout, env: env) >= 0,
+              let scene = HouseScene2.load(from: atlasDir(page), layout: layout, unit: CGFloat(layout.view.PXD / layout.view.DPR), size: size),
+              scene.parts.islets?.isEmpty == false else { return nil }
+        scene.extraScreen = true
+        scene.env = env
+        scene.followClock = true
+        let giveUp: () -> Void = { DispatchQueue.main.async { MainActor.assumeIsolated { onGiveUp() } } }
+        scene.onFailure = giveUp
+        scene.onStall = giveUp
+        return scene
+    }
+
+    init?(screen: NSScreen, page: URL, fps: Int, awake: Bool) {
+        self.page = page
         self.fps = fps
         self.awake = awake
         let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false, screen: screen)
@@ -70,16 +93,16 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
         w.backgroundColor = .black
         w.hasShadow = false
         w.isReleasedWhenClosed = false
-        let web = WKWebView(frame: NSRect(origin: .zero, size: screen.frame.size), configuration: WKWebViewConfiguration())
-        web.autoresizingMask = [.width, .height]
+        let view = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        view.ignoresSiblingOrder = true
+        view.autoresizingMask = [.width, .height]
         window = w
-        self.web = web
+        self.view = view
         super.init()
-        web.navigationDelegate = self
-        var url = URLComponents(url: page, resolvingAgainstBaseURL: false)
-        url?.queryItems = [URLQueryItem(name: "nodemo", value: "1"), URLQueryItem(name: "scene", value: "extra")]
-        web.loadFileURL(url?.url ?? page, allowingReadAccessTo: page.deletingLastPathComponent())
-        w.contentView = web
+        guard let scene = Self.makeScene(for: screen, page: page, onGiveUp: { [weak self] in self?.giveUp() }) else { return nil }
+        view.preferredFramesPerSecond = fps
+        w.contentView = view
+        view.presentScene(scene)
         w.setFrame(screen.frame, display: true)
         w.orderFrontRegardless()
         NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification, object: w)
@@ -91,10 +114,26 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
                 w.orderFrontRegardless()
             }
             .store(in: &subs)
+        syncPower()
+    }
+
+    /// The atlas failed or stalled on this screen: its window goes away (the next syncScreens makes it again, from a fresh scene).
+    var onGiveUp: (() -> Void)?
+    private func giveUp() {
+        NSLog("agents-notch: an extra screen leaves the SpriteKit house")
+        close()
+        onGiveUp?()
     }
 
     func place(on screen: NSScreen) {
-        if window.frame != screen.frame { window.setFrame(screen.frame, display: true) }
+        guard window.frame != screen.frame else { return }
+        window.setFrame(screen.frame, display: true)
+        // a new canvas: the layout is made again for the new size
+        guard let scene = Self.makeScene(for: screen, page: page, onGiveUp: { [weak self] in self?.giveUp() }) else { giveUp(); return }
+        view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        view.presentScene(scene)
+        sentActive = nil
+        syncPower()
     }
 
     func sync(fps: Int, awake: Bool) {
@@ -110,26 +149,17 @@ final class RoomExtraScreen: NSObject, WKNavigationDelegate {
     }
 
     private func syncPower() {
-        let visible = window.occlusionState.contains(.visible)
-        if visible != sentActive { sentActive = visible; web.evaluateJavaScript("room.setActive(\(visible))") }
-        if fps != sentFps { sentFps = fps; web.evaluateJavaScript("room.setFps(\(fps))") }
-        let animate = RoomActivity.isActive(visible: visible, awake: awake)
-        if animate != sentAwake { sentAwake = animate; web.evaluateJavaScript("room.setHouseAwake(\(animate))") }
+        guard let scene = view.scene as? HouseScene2 else { return }
+        scene.maxFps = fps
+        let animate = RoomActivity.isActive(visible: window.occlusionState.contains(.visible), awake: awake)
+        if animate != sentActive { sentActive = animate; if animate { scene.wake() } else { scene.hide() } }
     }
 
     func close() {
         subs.removeAll()
-        web.stopLoading()
+        view.presentScene(nil)
+        view.isPaused = true
         window.orderOut(nil)
         window.contentView = nil
-    }
-
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        MainActor.assumeIsolated {
-            sentActive = nil
-            sentFps = 0
-            sentAwake = nil
-            syncPower()
-        }
     }
 }

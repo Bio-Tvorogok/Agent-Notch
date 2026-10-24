@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Proves the SpriteKit house (Sources/AgentsNotch/HouseScene2*.swift) against the page itself: records the page's own frames for
 # 5 fixtures (projects, hour), renders the same with HouseScene2 (the pinned capture of the parts pipeline: 1728x1117@2, insets 32/70/120, so the canvases are 1728x1117, 2304x1490 and 3456x2234 by project count), and prints the share of house pixels off by > 24.
 # Output: .build/scene-proof/ref (page frames), .build/scene-proof/out (<fixture>-side.png / -diff.png / -scene.png).

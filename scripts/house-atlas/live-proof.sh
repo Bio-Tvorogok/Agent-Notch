@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Proves the real agents of the SpriteKit house against the page: replays behaviour fixtures (Tests/Fixtures/house-behaviour) through
 # the page (real setAgents, the fixtures' seed and 50 ms steps) and through HouseBehaviour + HouseScene2, and compares the frames at a
 # few sample times with the same gates as scene-proof.sh plus gates on the agents' own pixels.

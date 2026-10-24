@@ -1,6 +1,8 @@
 #!/bin/sh
-# Proves the extra screen's native sky and city (HouseScene2.extraScreen) against the page's own ?scene=extra frames: the page is loaded with
-# scene=extra (export.swift, HOUSE_SCENE=extra), its islets removed (they come with the islets export), and recorded at 4 hours (harness/extra-ref.js);
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
+# Proves the extra screen's native sky and city (HouseScene2.extraScreen: sky, city, islets) against the page's own ?scene=extra frames: the page is loaded with
+# scene=extra (export.swift, HOUSE_SCENE=extra), and recorded at 4 hours (harness/extra-ref.js);
 # the scene renders the same and the whole frame is compared with the scene proof's frame gates.
 # Output: .build/extra-proof/ref (page frames), .build/extra-proof/out (<hour>-side.png: page | scene, -diff.png). Exit status: 3 over a gate.
 set -eu

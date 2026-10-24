@@ -25,6 +25,7 @@ final class HouseScene2: SKScene {
     var followsLayoutScale = true
     /// An extra screen (the page's `?scene=extra`): the sky and the city of an empty layout (`HouseLayout.extraScreen`), without the sun and the moon.
     var extraScreen = false
+    var isletNodes: [IsletNode] = []
     struct LiveItem { weak var node: SKSpriteNode?; let make: (HousePainter) -> (CGImage, CGPoint, CGSize)?; let clock: Bool }
     var canvasW: Int { Int(layout.view.width) }
     var canvasH: Int { Int(layout.view.height) }
@@ -280,6 +281,7 @@ final class HouseScene2: SKScene {
         mistGroup = SKNode(); root.addChild(mistGroup)
         for c in oldSky.children { c.removeFromParent(); skyGroup.addChild(c) } // until the new paint arrives
         buildSkyNodes()
+        buildIslets(vi: vi)
         let rooms = Dictionary(layout.rooms.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         let links = Dictionary(layout.links.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for item in layout.drawOrder {

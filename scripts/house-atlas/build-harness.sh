@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Builds the SpriteKit house harness (proof / snapdemo / idle / demo) into .build/scene-proof/harness.
 set -eu
 cd "$(dirname "$0")/../.."

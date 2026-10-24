@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # The real per-frame cost of drawing the SpriteKit house, without a window: the harness renders the app's screen-sized scene
 # (1728x1117 points at 2x) with SKRenderer and Metal into an offscreen texture, in real time at the rate the scene asks for (and
 # napping when it would), and prints the process CPU, the frames drawn per second, the main-thread ms per frame and the process's

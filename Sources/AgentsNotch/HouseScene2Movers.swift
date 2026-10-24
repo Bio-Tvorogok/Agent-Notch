@@ -211,7 +211,7 @@ extension HouseScene2 {
     /// The page's houseAwake: the house draws while an agent works or anything moves, and may rest until the next minute otherwise.
     /// Marks, idle residents and a still camera do not keep it awake (the page does not animate them on their own either).
     var isMoving: Bool {
-        guard let sim else { return houseCamera?.isMoving == true }
+        guard let sim else { return !isletNodes.isEmpty || houseCamera?.isMoving == true } // the islets of an extra screen bob all the time
         if houseCamera?.isMoving == true { return true }
         if sim.cabins.contains(where: { $0.state != "idle" }) || sim.links.contains(where: { $0.turn != nil }) { return true }
         if let b = behaviour, !b.puffs.isEmpty || !b.papers.isEmpty || !b.life.fireworks.isEmpty || pendingRows != nil || sim.roomsSettling { return true }
@@ -263,6 +263,7 @@ extension HouseScene2 {
         }
         if let sim { sync(sim: sim) }
         updateClouds()
+        if !isletNodes.isEmpty { updateIslets() }
         if mistAmount > 0.02 { refreshMist() }
         onFrame?(clockMillis)
         pace(currentTime)

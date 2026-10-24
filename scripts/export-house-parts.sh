@@ -1,4 +1,6 @@
 #!/bin/sh
+# One heavy GPU job (WebKit export, SpriteKit harness) at a time on this Mac, across sessions: several at once crashed WindowServer (2026-10-24).
+[ -n "${HOUSE_GPU_LOCKED:-}" ] || HOUSE_GPU_LOCKED=1 exec lockf -k /tmp/agents-notch-house-gpu.lock sh "$0" "$@"
 # Cuts room/index.html into REUSABLE PARTS for the SpriteKit house (positioned against their own origin, not the
 # screen): room/atlas/parts.json (manifest) and parts-N.png. Same page, same WKWebView as export-house-atlas.sh.
 # It also re-composes frames from the parts and compares them with the page's own: .build/parts-check/*.png.
