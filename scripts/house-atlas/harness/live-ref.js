@@ -56,7 +56,7 @@
     const end = Math.max(...c.samples);
     for (bt = 0; bt <= end; bt += 50) {
       for (const e of c.events.filter(e => e.at === bt)) if (e.rows) room.setAgents(e.rows);
-      if (c.egg && bt === 1000) for (const n of c.__eggNames) eggTrigger(n);
+      if (c.egg) for (const nm of c.__eggNames) { const [n, at = '1000'] = nm.split('@'); if (bt !== +at) continue; if (n === 'purr') { EGG.purr = bt + 4500; EGG.purrNext = bt; } else eggTrigger(n); }
       if (c.egg && bt) EGGFN.eggSky(bt, now());
       if (bt) {
         updateResidents(bt); updateErrands(bt); stepSprites(50); updateLifts(bt, 50);
@@ -90,7 +90,7 @@
       const d = now(), tag = `${c.name}-t${bt}`;
       const day = Math.floor((d - new Date(d.getFullYear(), 0, 1)) / 864e5);
       const sky = { birds: SKYLIFE.birds.map(f => [f.x, f.y, f.dir, f.v, f.n, f.seed]), plane: SKYLIFE.plane && [SKYLIFE.plane.x, SKYLIFE.plane.y], balloon: SKYLIFE.balloon && [SKYLIFE.balloon.x, SKYLIFE.balloon.y, SKYLIFE.balloon.seed] };
-      const meta = { case: c.name, egg: c.egg || null, ufoT: EGG.ufo && [EGG.ufo.target.id, EGG.ufo.target.x, EGG.ufo.target.y, EGG.ufo.target.z], ufo: EGG.ufo && [EGG.ufo.x, EGG.ufo.y, EGG.ufo.lift, EGG.ufo.beam, ...(EGG.ufo.at || [])], sky, t: bt, hour: c.hour, season: c.season || 'autumn', weather: c.weather || 'clear', W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
+      const meta = { case: c.name, egg: c.egg || null, eggs: c.egg ? { party: !!EGG.party, gold: [...sprites.values()].filter(sp => sp.golden).length, hi5: [...sprites.values()].filter(sp => sp.hi5).length, fw: SC.fireworks.length, purr: EGG.purr > 0 } : null, ufoT: EGG.ufo && [EGG.ufo.target.id, EGG.ufo.target.x, EGG.ufo.target.y, EGG.ufo.target.z], ufo: EGG.ufo && [EGG.ufo.x, EGG.ufo.y, EGG.ufo.lift, EGG.ufo.beam, ...(EGG.ufo.at || [])], sky, t: bt, hour: c.hour, season: c.season || 'autumn', weather: c.weather || 'clear', W: cv.width, H: cv.height, PXD, DPR, insets: INSETS, day, mist: mistAmount(d), T: bt, dark: DARK,
         rooms: rooms.map(r => ({ key: r.key, ox: r.ox, oy: r.oy, theme: Object.keys(THEMES).find(k => THEMES[k] === r.theme), NX: r.NX, NY: r.NY, floor: r.floor, tower: r.tower, growth: r.theme.shared ? 0 : growthLevel(r) })),
         agents: [...sprites.values()].filter(sp => sp.kind === 'agent').length, falling: [...sprites.values()].filter(sp => sp.fall).length, links: links.map(L => L.id + ':' + L.kind + ':' + (L.lift ?? '') + ':' + (L.aim ?? '')), sprites: [...sprites.values()].map(sp => [sp.id, sp.kind, sp.state || '', (sp.room && sp.room.key) || sp.room || '-', Math.round(sp.x), Math.round(sp.y), Math.round(sp.alpha * 100), sp.moving ? 'mv' : 'st', sp.seated ? 'seat' : '-', sp.waving ? 'wave' : '-'].join('|')), cabins: LIFT ? LIFT.cabins.map(c => [Math.round(c.z * 10) / 10, c.state]) : [] };
       for (const [f, data] of [['.png', full], ['-bare.png', bare], ['-sky.png', bgc.toDataURL('image/png')], ['.json', JSON.stringify(meta)]]) {

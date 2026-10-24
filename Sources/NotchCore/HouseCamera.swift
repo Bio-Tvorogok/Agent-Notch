@@ -75,6 +75,12 @@ public struct HouseCamera: Sendable {
         return (x * dpr / pxd - s.x, y * dpr / pxd - s.y)
     }
 
+    /// The inverse of toLayout: where a layout point is in the window (points).
+    public func toView(x: Double, y: Double) -> (x: Double, y: Double) {
+        let pxd = base * pose.zoom, s = shiftFromHome(pose)
+        return ((x + s.x) * pxd / dpr, (y + s.y) * pxd / dpr)
+    }
+
     // MARK: gestures
 
     /// zoomAt(factor, x, y): x, y in CSS pixels of the window.

@@ -194,6 +194,7 @@ public final class HouseEggs {
         case "whale": newWhale(t)
         case "ghost": ghost = Ghost(t0:t,dir:rnd() < 0.5 ? 1 : -1)
         case "party": partyUntil = t+60000
+        case "purr": purrUntil = t+4500; purrNext = t // the cat clicked three times (the proof triggers it directly)
         case "golden":
             let a = b.sprites.filter { $0.kind == "agent" && !$0.leaving && !$0.eggs.golden && $0.alpha > 0.5 }
             guard !a.isEmpty else { return false }; pick(a).eggs.golden = true

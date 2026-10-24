@@ -200,6 +200,7 @@ extension HouseScene2 {
         eggUFO(e, t, add: add, z: overZ)
         eggGhost(e, t, z: overZ)
         eggLetter(e, t, z: overZ)
+        for sp in sim.sprites where sp.eggs.golden && sp.kind == "agent" && sp.alpha > 0.001 { if let at = place(sp, sim: sim) { eggGold(sp, at: at, look: look(sp), t: t) } }
         updateEggProps(e, t)
         sky.end(); over.end(); add.end()
         for (name, n) in eggDraw.nodes where !eggDraw.used.contains(name) && !n.isHidden { n.isHidden = true }
@@ -215,7 +216,7 @@ extension HouseScene2 {
 
     private func setEggCard(_ text: String?, x: Double, y: Double) {
         if text != eggDraw.card { eggDraw.card = text }
-        onEggCard?(text, x, y)
+        if text != nil, let c = houseCamera { let v = c.toView(x: x, y: y); onEggCard?(text, v.x, v.y) } else { onEggCard?(nil, 0, 0) }
     }
 
     // MARK: the sky

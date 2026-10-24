@@ -397,9 +397,8 @@
     for (const [v, small] of looks) {
       const L = `${v}${small ? '-mini' : ''}`, eg = e => o => ({ ...o, __egg: { dy: 0, ...e } });
       const gold = eg({ gold: GOLD }), arms = eg({ arms: 0 });
-      jobs.push([`${L}/gold.stand.0`, () => base(v, small, gold({})), 0], [`${L}/gold.walk.0`, () => base(v, small, gold({ moving: true })), 0], [`${L}/gold.walk.1`, () => base(v, small, gold({ moving: true })), 110],
-        [`${L}/gold.work.0`, () => base(v, small, gold({ seated: true })), 0], [`${L}/gold.work.1`, () => base(v, small, gold({ seated: true })), 160],
-        [`${L}/arms.stand.0`, () => base(v, small, arms({})), 0]);
+      for (const k of ['stand', 'walk', 'work', 'laptop', 'waiting', 'waitwalk', 'error', 'sleep']) { const [o, ts] = catalog[k]; ts.forEach((t, n) => jobs.push([`${L}/gold.${k}.${n}`, () => base(v, small, gold(o)), t])); }
+      jobs.push([`${L}/arms.stand.0`, () => base(v, small, arms({})), 0]);
       for (const [tag, k] of [['p', 1], ['n', -1]]) for (const t of [0, 110]) jobs.push([`${L}/eye${tag}.walk.${t ? 1 : 0}`, () => base(v, small, eg({ eye: k })({ moving: true })), t]);
     }
     // the cat and the dog, both ways
