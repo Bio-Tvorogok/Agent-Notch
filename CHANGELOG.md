@@ -4,11 +4,21 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-24
+
 ### Added
 
+- Desktop widget: an optional panel on the desktop, under every window and on all Spaces, that lists agents the way the notch list does. Sizes S/M/L, any of the 13 theme styles, drag it anywhere; requests are answered inline and a click opens the agent card. Off by default; turn it on in Appearance → Desktop widget or from the notch menu (#44).
 - Agents' house on the desktop: an optional animated pixel wallpaper where every project is a room and every agent walks around in it. Click or pinch to fly to a room, Esc goes back to the overview. Off by default; turn it on in Settings → Desktop house. Nothing is drawn while the desktop is covered, and fewer frames are drawn on battery and in Low Power Mode.
 - Agents' house as a screen saver, Agent Notch House: the same live house while the Mac is idle, and on the lock screen with "Require password immediately". Install it from Settings → Desktop house or by double-clicking the `.saver`; releases ship it as `AgentNotchHouse-<version>.saver.zip` and inside the DMG.
 - In the agents' house a finished agent takes a real shower (about 20 seconds behind fogged glass, then a towel) instead of turning around at the door. Codex agents are a blue cloud-headed robot, or your own Codex pet when `~/.codex/pets` has one. A dog lives in a kennel in the wider yard: it sleeps there at night, walks a finished agent to the shower, fetches a ball and barks at fires; the cat's house is now on the roof. Project rooms get beanbags, armchairs, a sofa and floor cushions where agents work on a laptop when the desks are taken. The roof tanks say which limit window they show (5 hours or a week), Codex's is named CODEX, and hovering a tank lists every window with its reset time.
+- The agents' house has seasons (winter, spring, summer and autumn art), three layouts (islands, steps, towers) and small surprises on holidays and special days. Two fingers pan the house and a double tap goes back to the overview. Pinch zoom needs Input Monitoring, which Settings → Desktop house asks for (#45).
+
+### Changed
+
+- The agents' house, its screen saver and the houses on other screens are drawn with SpriteKit instead of a web page; the app no longer uses WebKit. It runs at 60 fps while anything moves, 30 fps while agents only type, and stops drawing when nothing changes (#45).
+- The notch list and the desktop widget no longer recompute their window size on every redraw, which halved the app's CPU under the same load (about 24% → 12% of one core in our measurement) (#45).
+- Settings → Claude and Codex icons: one pictured menu per vendor with Auto, every theme's mark, the four styles and "More symbols…" for the SF Symbols search (#35).
 
 ## [0.6.0] - 2026-10-16
 
@@ -109,6 +119,9 @@ First public release.
 - Finish toast, settings with presets, launch at login.
 - Homebrew cask, DMG and zip downloads.
 
+[0.7.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.7.0
+[0.6.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.6.0
+[0.5.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Forichok/Agent-Notch/releases/tag/v0.3.0
