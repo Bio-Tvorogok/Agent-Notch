@@ -15,6 +15,8 @@ final class HouseSaverView: ScreenSaverView {
     /// The SpriteKit house; nil with `spriteFailed` set shows the plain dark frame.
     private var sprite: SaverSpriteHouse?
     private var spriteFailed = false
+    /// The layout, themes and season the sprite was built with: they are fixed in a HouseBehaviour, so a change rebuilds it.
+    private var spriteKey = ""
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private let file = HouseSnapshot.url(home: HouseSnapshot.realHome)
@@ -119,10 +121,11 @@ final class HouseSaverView: ScreenSaverView {
     private func startSprite() -> Bool {
         guard !spriteFailed, sprite == nil else { return sprite != nil }
         let snap = snapshotNow()
+        let season = Self.season()
         guard !isPreview || bounds.width > 0,
               let atlas = Bundle(for: HouseSaverView.self).resourceURL?.appendingPathComponent("room/atlas", isDirectory: true),
               let house = SaverSpriteHouse(size: bounds.size, scale: window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2,
-                                           atlas: HouseScene2.atlasDir(atlas, season: HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1)), snapshot: snap, onFailure: { [weak self] in MainActor.assumeIsolated { self?.spriteGaveUp() } })
+                                           atlas: HouseScene2.atlasDir(atlas, season: season), snapshot: snap, onFailure: { [weak self] in MainActor.assumeIsolated { self?.spriteGaveUp() } })
         else {
             if !isPreview || bounds.width > 0 { spriteFailed = true; log("the SpriteKit house cannot draw, dark frame") }
             return false
@@ -130,6 +133,7 @@ final class HouseSaverView: ScreenSaverView {
         house.view.autoresizingMask = [.width, .height]
         addSubview(house.view)
         sprite = house
+        spriteKey = snap.config + "|" + season
         log("SpriteKit house")
         return true
     }
@@ -138,8 +142,20 @@ final class HouseSaverView: ScreenSaverView {
         guard let sprite else { return }
         sprite.setActive(visible)
         guard visible else { return }
-        sprite.apply(snapshotNow())
+        let snap = snapshotNow()
+        // A stale or missing snapshot reads as "{}": keep the house the app last described rather than fall back to the default layout.
+        let config = snap.config == HouseSnapshot.empty(at: snap.written).config ? String(spriteKey.prefix { $0 != "|" }) : snap.config
+        if config + "|" + Self.season() != spriteKey {
+            sprite.setActive(false)
+            sprite.view.removeFromSuperview()
+            self.sprite = nil
+            if startSprite() { self.sprite?.setActive(true) }
+            return
+        }
+        sprite.apply(snap)
     }
+
+    private static func season() -> String { HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1) }
 
     /// The atlas failed: the saver stays dark for the rest of this run.
     private func spriteGaveUp() {

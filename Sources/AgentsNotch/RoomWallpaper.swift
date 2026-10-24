@@ -571,20 +571,6 @@ final class RoomWallpaper: NSObject {
         }
         return nil
     }
-
-    /// room/index.html, for the extra-screen windows only (RoomScreens.swift, until they are SpriteKit): the app bundle no longer
-    /// carries it, so they are only made when running from the repo.
-    static var page: URL? {
-        if let p = ProcessInfo.processInfo.environment["AGENT_NOTCH_ROOM"] { return URL(fileURLWithPath: p) }
-        if let u = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "room") { return u }
-        var dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
-        for _ in 0..<6 {
-            let c = dir.appendingPathComponent("room/index.html")
-            if FileManager.default.fileExists(atPath: c.path) { return c }
-            dir.deleteLastPathComponent()
-        }
-        return nil
-    }
 }
 
 /// The hover card for a Clawd. It is its own window just above the desktop icons, so folders never cover it,
