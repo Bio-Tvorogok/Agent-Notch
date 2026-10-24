@@ -48,7 +48,7 @@
       Object.assign(EGG, { shades: 0, rain: new Map(), purr: 0, purrNext: 0, catClicks: [], letter: null, tipN: 0, hearts: [], heartNext: 0, stars: [], ufo: null, ufoTry: 0, whale: null, ghost: null, party: false, partyUntil: 0, fwNext: 0, seen: null, want: null });
       for (const k of Object.keys(eggMem)) delete eggMem[k];
       Q.set('date', dq ? dq.slice(5) : '');
-      if (c.egg) { EGG.on = true; eggStep = () => {}; eggItems = () => {}; eggSky = (t, d) => EGGFN.eggSky(bt, d); eggOver = () => EGGFN.eggOver(bt); } else eggOff();
+      if (c.egg) { EGG.on = true; eggStep = () => {}; eggItems = EGGFN.eggItems; eggSky = (t, d) => EGGFN.eggSky(bt, d); eggOver = () => EGGFN.eggOver(bt); } else eggOff();
       c.__eggNames = names;
     }
     Q.set('season', c.season || 'autumn'); weather = c.weather || 'clear';

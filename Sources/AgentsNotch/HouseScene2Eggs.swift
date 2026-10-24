@@ -12,6 +12,8 @@ final class HouseEggDraw {
     var glows: [String: SKTexture] = [:]
     var ambKey = ""
     var card: String?
+    var props: [String: HouseRects] = [:]
+    var sigs: [String: String] = [:]
 }
 
 /// The page's easter eggs that are drawn in the sky and over the house: the constellation, the whale, the sunglasses on the sun, the rain
@@ -81,7 +83,7 @@ extension HouseScene2 {
     /// A pooled textured node by name, shown at the canvas pixel (x, y) (its top left); the ones not shown in a frame are hidden after it.
     func eggShow(_ name: String, _ tex: SKTexture, _ size: CGSize, x: Int, y: Int, alpha: Double = 1, layer: SKNode, z: CGFloat, blend: SKBlendMode = .alpha) {
         let n = eggDraw.nodes[name] ?? {
-            let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); HouseRects.created += 1; eggDraw.nodes[name] = m; return m
+            let m = SKSpriteNode(); m.anchorPoint = CGPoint(x: 0, y: 1); eggDraw.nodes[name] = m; return m
         }()
         if n.parent !== layer { n.removeFromParent(); layer.addChild(n) }
         if n.texture !== tex { n.texture = tex }
@@ -198,11 +200,13 @@ extension HouseScene2 {
         eggUFO(e, t, add: add, z: overZ)
         eggGhost(e, t, z: overZ)
         eggLetter(e, t, z: overZ)
+        updateEggProps(e, t)
         sky.end(); over.end(); add.end()
         for (name, n) in eggDraw.nodes where !eggDraw.used.contains(name) && !n.isHidden { n.isHidden = true }
     }
 
     func eggsHideAll() {
+        hideEggProps()
         eggDraw.sky?.begin(); eggDraw.sky?.end(); eggDraw.over?.begin(); eggDraw.over?.end(); eggDraw.add?.begin(); eggDraw.add?.end()
         for n in eggDraw.nodes.values { n.isHidden = true }
         eggDraw.used.removeAll()
