@@ -16,7 +16,8 @@ final class HouseSaverView: ScreenSaverView {
     private var sprite: SaverSpriteHouse?
     private var spriteFailed = false
     /// The layout, themes and season the sprite was built with: they are fixed in a HouseBehaviour, so a change rebuilds it.
-    private var spriteKey = ""
+    private var spriteConfig = ""
+    private var spriteSeason = ""
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
     private let file = HouseSnapshot.url(home: HouseSnapshot.realHome)
@@ -120,7 +121,8 @@ final class HouseSaverView: ScreenSaverView {
     /// Builds the SpriteKit house; false leaves the dark frame.
     private func startSprite() -> Bool {
         guard !spriteFailed, sprite == nil else { return sprite != nil }
-        let snap = snapshotNow()
+        var snap = snapshotNow()
+        if snap.config == Self.noConfig, !spriteConfig.isEmpty { snap.config = spriteConfig } // stale: rebuild the house the app last described
         let season = Self.season()
         guard !isPreview || bounds.width > 0,
               let atlas = Bundle(for: HouseSaverView.self).resourceURL?.appendingPathComponent("room/atlas", isDirectory: true),
@@ -133,7 +135,7 @@ final class HouseSaverView: ScreenSaverView {
         house.view.autoresizingMask = [.width, .height]
         addSubview(house.view)
         sprite = house
-        spriteKey = snap.config + "|" + season
+        spriteConfig = snap.config; spriteSeason = season
         log("SpriteKit house")
         return true
     }
@@ -144,8 +146,8 @@ final class HouseSaverView: ScreenSaverView {
         guard visible else { return }
         let snap = snapshotNow()
         // A stale or missing snapshot reads as "{}": keep the house the app last described rather than fall back to the default layout.
-        let config = snap.config == HouseSnapshot.empty(at: snap.written).config ? String(spriteKey.prefix { $0 != "|" }) : snap.config
-        if config + "|" + Self.season() != spriteKey {
+        let config = snap.config == Self.noConfig ? spriteConfig : snap.config
+        if config != spriteConfig || Self.season() != spriteSeason {
             sprite.setActive(false)
             sprite.view.removeFromSuperview()
             self.sprite = nil
@@ -155,6 +157,7 @@ final class HouseSaverView: ScreenSaverView {
         sprite.apply(snap)
     }
 
+    private static let noConfig = HouseSnapshot.empty(at: Date()).config
     private static func season() -> String { HouseScene2.seasonOf(month0: Calendar.current.component(.month, from: Date()) - 1) }
 
     /// The atlas failed: the saver stays dark for the rest of this run.
