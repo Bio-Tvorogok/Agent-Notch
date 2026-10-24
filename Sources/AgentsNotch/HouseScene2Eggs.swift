@@ -220,6 +220,7 @@ extension HouseScene2 {
     private func setEggCard(_ text: String?, x: Double, y: Double) {
         // the host hears of a change only: a new text or a position that moved a whole point
         var key = text.map { ($0, 0, 0) }
+        if text != nil, houseCamera == nil { return }
         if text != nil, let c = houseCamera { let v = c.toView(x: x, y: y); key = (text!, Int(v.x.rounded()), Int(v.y.rounded())) }
         if key?.0 == eggDraw.cardKey?.0 && key?.1 == eggDraw.cardKey?.1 && key?.2 == eggDraw.cardKey?.2 { return }
         eggDraw.cardKey = key

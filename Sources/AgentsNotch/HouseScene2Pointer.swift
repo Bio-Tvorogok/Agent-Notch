@@ -26,8 +26,8 @@ extension HouseScene2 {
         updateHover()
         let c = houseCamera!, q = c.toLayout(x: x, y: y)
         if let id = hoveredId { onOpen?(id); return }
-        // a resting house has not advanced its clock: stamp the click with the time of the frame that wakes it (the clock moves at most 1.5 s a frame)
-        if let b = behaviour, let e = b.eggs, e.click(x: q.x, y: q.y, at: b.time + min(1500, max(0, nowMs() - lastUpdateMs)), overHouse: HouseHit.roomUnder(layout, q.x, q.y) != nil) { stir(); return }
+        // a resting house has not advanced its clock: stamp the click with the time of the frame that wakes it (the waking frame adds the whole rest, as the page's clock does)
+        if let b = behaviour, let e = b.eggs, e.click(x: q.x, y: q.y, at: b.time + max(0, nowMs() - lastUpdateMs), overHouse: HouseHit.roomUnder(layout, q.x, q.y) != nil) { stir(); return }
         let zoomed = c.target.zoom > 1.01
         let room = zoomed ? HouseHit.roomUnder(layout, q.x, q.y) : HouseHit.roomNear(layout, q.x, q.y, signs: allSignHits())
         if let room { houseCamera!.glideTo(HouseHit.focusPose(room, in: layout, camera: c), now: nowMs()); moved() }

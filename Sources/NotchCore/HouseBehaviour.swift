@@ -208,8 +208,12 @@ public final class HouseBehaviour {
         }
         finishStep()
     }
+    /// Called with the step's ending clock right after its rows arrive and before the eggs, errands and motion run: the place where the page
+    /// handles an input of that tick (a proof replays a trigger here). Nothing in the app sets it.
+    public var afterRows: ((Double) -> Void)?
     private func beginStep(_ agents: [HouseAgentRow]?) {
         if let agents { setAgents(agents) }
+        afterRows?(time)
         eggs?.sky(at: time)
         if life.enabled { stage3.lightingAndWeather(time); stage3.eggSky(time) }
         _ = hooks.residents(time)

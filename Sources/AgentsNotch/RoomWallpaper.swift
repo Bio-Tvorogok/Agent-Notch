@@ -789,7 +789,6 @@ private struct RoomNoteView: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Color(hex: "#fffaf0")))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: "#2a1f2e"), lineWidth: 2))
         .fixedSize()
-        .padding(.trailing, 3).padding(.bottom, 3)
     }
 }
 

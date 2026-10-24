@@ -193,9 +193,9 @@ case "live":
             // the same timeline as the page: rows at their time, 50 ms steps in between
             while bt <= s.t {
                 let ev = events.filter { ($0["at"] as! Int) == bt }.last.map(rows)
-                if bt > 0, let ev { behaviour.setAgents(ev) } // the page sets the rows before it triggers an egg
-                if let eggSpec { for nm in eggSpec where !nm.hasPrefix("date=") { let parts = nm.split(separator: "@"); if bt == (parts.count > 1 ? Int(parts[1]) ?? 1000 : 1000) { _ = behaviour.eggs?.trigger(String(parts[0]), at: Double(bt)) } } }
-                if bt == 0 { if let ev { behaviour.setAgents(ev) } } else { behaviour.advance(frame: 50, agents: nil) }
+                // the page's tick: rows, then the egg triggers, then the step (HouseBehaviour.afterRows is that place)
+                let fire = { (at: Double) in if let eggSpec { for nm in eggSpec where !nm.hasPrefix("date=") { let parts = nm.split(separator: "@"); if Int(at) == (parts.count > 1 ? Int(parts[1]) ?? 1000 : 1000) { _ = behaviour.eggs?.trigger(String(parts[0]), at: at) } } } }
+                if bt == 0 { if let ev { behaviour.setAgents(ev) }; fire(0) } else { behaviour.afterRows = { _ in fire(Double(bt)) }; behaviour.advance(frame: 50, agents: ev); behaviour.afterRows = nil }
                 bt += 50
             }
             if ProcessInfo.processInfo.environment["SKY_DEBUG"] != nil {
@@ -312,7 +312,7 @@ case "bench":
     sc.attach(behaviour)
     // a bench measures the same house every day: no holiday, no stored egg state, and no wall clock for the eggs
     var benchCal = Calendar(identifier: .gregorian); benchCal.timeZone = TimeZone(identifier: "UTC")!
-    behaviour.eggs?.calendar = benchCal; behaviour.eggs?.date = { Date(timeIntervalSince1970: 1_792_065_600) }; behaviour.eggs?.save = { _ in }
+    behaviour.eggs?.calendar = benchCal; behaviour.eggs?.date = { Date(timeIntervalSince1970: 1_792_065_600) }; behaviour.eggs?.save = { _ in }; behaviour.eggs?.saved = .init()
     let v = SKView(frame: NSRect(origin: .zero, size: size)); v.ignoresSiblingOrder = true
     sc.setTime(hour: 12, day: 100)
     v.presentScene(sc)

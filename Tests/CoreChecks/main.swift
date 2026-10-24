@@ -48,6 +48,7 @@ run("eggCalendar") { HouseEggChecks().calendar() }
 run("eggReplacementAndCounting") { HouseEggChecks().replacementAndCounting() }
 run("eggPhases") { HouseEggChecks().phases() }
 run("eggClicksAndIdle") { HouseEggChecks().clicksAndIdle() }
+run("eggClickAfterLongNap") { HouseEggChecks().clickAfterLongNap() }
 
 // AN-0.5-T1: synthetic on-disk formats, exercised through the production readers.
 let sessionFixtures = SessionLogFixtureChecks()

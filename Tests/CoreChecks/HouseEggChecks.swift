@@ -68,4 +68,21 @@ struct HouseEggChecks {
         e.sky(at: 5001)
         XCTAssertFalse(e.isMoving(at: 5001))
     }
+    /// A nap does not cap the clock: the waking frame adds the whole rest, and a click stamped with that time keeps its full length.
+    func clickAfterLongNap() {
+        let b = HouseBehaviour(random: { 0.4 }), eDate = Date(timeIntervalSince1970: 1_792_080_000)
+        b.enableEggs()
+        guard let e = b.eggs else { return XCTAssertTrue(false, "no eggs") }
+        e.date = { eDate }
+        b.advance(frame: 20000)
+        XCTAssertTrue(b.time >= 20000, "the clock took the whole nap")
+        e.sky(at: b.time)
+        e.sun = [10, 10]
+        XCTAssertTrue(e.click(x: 10, y: 10, at: b.time, overHouse: false))
+        XCTAssertEqual(e.shadesUntil, b.time + 60000)
+        if let m = e.mailbox() {
+            XCTAssertTrue(e.click(x: (m.rect[0] + m.rect[2]) / 2, y: (m.rect[1] + m.rect[3]) / 2, at: b.time, overHouse: false))
+            XCTAssertTrue(e.letter != nil, "the letter is drawn")
+        }
+    }
 }
