@@ -5,24 +5,17 @@ import SpriteKit
 
 /// The house settings reaching a running wallpaper, and the windows on the other screens.
 extension RoomWallpaper {
-    /// Called from start(): layout and rooms go to the page, the frame rate to every window, the screens get their windows.
+    /// Called from start(): the frame rate goes to every window, the screens get their windows.
     func observeRoomSettings() {
         settingsSubs.removeAll()
         AppSettings.shared.$room
             .removeDuplicates()
             .receive(on: RunLoop.main) // after the change is stored, so syncPower reads the new frame rate
-            .sink { [weak self] prefs in
-                self?.pushRoomConfig(prefs)
+            .sink { [weak self] _ in
                 self?.syncPower()
                 self?.syncScreens()
             }
             .store(in: &settingsSubs)
-    }
-
-    /// `room.configure({layout, themes})`: the page re-lays out and rebuilds only the rooms whose theme changed.
-    func pushRoomConfig(_ prefs: RoomPrefs? = nil) {
-        let prefs = prefs ?? AppSettings.shared.room
-        web?.evaluateJavaScript("window.room && room.configure && room.configure(\(prefs.pageConfig)); true")
     }
 
     /// One window on every screen but the main one when «Все экраны» is on; follows screens coming, going and moving.
