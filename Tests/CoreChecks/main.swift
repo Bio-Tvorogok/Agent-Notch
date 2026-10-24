@@ -403,5 +403,13 @@ run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
 run("houseSnapshotRenderer") { try HouseSnapshotChecks().renderer() }
 run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
+let widget = WidgetPlanChecks()
+run("widgetAlphabetical") { widget.projectsAreAlphabetical() }
+run("widgetFits") { widget.everythingFitsUntouched() }
+run("widgetOverflowSteps") { widget.overflowSteps() }
+run("widgetUrgentSubagent") { widget.urgentSubagentStaysWhenFolded() }
+run("widgetPendingPins") { widget.pendingRequestPins() }
+run("widgetPlurals") { widget.russianPlurals() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
