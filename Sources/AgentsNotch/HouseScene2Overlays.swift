@@ -18,18 +18,23 @@ final class HouseRects: SKNode {
         guard w > 0, h > 0, alpha > 0 else { return }
         pending.append(Rect(c: c, x: x, y: y, w: w, h: h, alpha: min(1, alpha), add: blend == .add))
     }
+    /// Makes the nodes of a layer whose rect count wobbles (fading leaves) on its first frame, so a steady scene never makes one later.
+    func reserve(_ count: Int) {
+        while pool.count < count {
+            let i = pool.count
+            let n = SKSpriteNode(color: .white, size: .zero)
+            n.anchorPoint = CGPoint(x: 0, y: 1)
+            ink?(n)
+            n.zPosition = CGFloat(i + 1) * 0.0001
+            addChild(n); pool.append(n); shown.append(Rect(c: [], x: 0, y: 0, w: 0, h: 0, alpha: 0, add: false)); Self.created += 1
+            n.isHidden = true
+        }
+    }
     /// Only the rects that changed since the last frame touch their node.
     func end() {
         for (i, r) in pending.enumerated() {
-            let n: SKSpriteNode
-            if i < pool.count { n = pool[i] } else {
-                n = SKSpriteNode(color: .white, size: .zero)
-                n.anchorPoint = CGPoint(x: 0, y: 1)
-                ink?(n)
-                n.zPosition = CGFloat(i + 1) * 0.0001
-                addChild(n); pool.append(n); shown.append(Rect(c: [], x: 0, y: 0, w: 0, h: 0, alpha: 0, add: false)); Self.created += 1
-                n.isHidden = true
-            }
+            reserve(i + 1)
+            let n = pool[i]
             if i < shown.count, shown[i] == r, !n.isHidden { continue }
             let old = shown[i]
             n.isHidden = false

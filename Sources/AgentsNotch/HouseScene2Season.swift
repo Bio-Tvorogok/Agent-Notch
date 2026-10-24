@@ -74,6 +74,7 @@ extension HouseScene2 {
         if se == "autumn" || se == "spring" {
             let cols = se == "autumn" ? ["#e8803a", "#d0502a", "#f0b040", "#b86a30"] : ["#f8b0c8", "#fff0f4", "#f490b0"]
             let n = se == "autumn" ? 9 : 6
+            drift.reserve(2 * n * layout.rooms.filter { $0.floor == 0 }.count)
             for r in layout.rooms where r.floor == 0 {
                 let cv = canvas(r, drift), seed = Double(r.seed)
                 let top = cv.iso(r.NX / 2, r.NY / 2, WH)[1] - 30 * S, bot = cv.iso(r.NX + 1.2, r.NY + 1.2, -slab)[1] + 50 * S
