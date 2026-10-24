@@ -393,6 +393,15 @@
     const jobs = []; // [name, () => sprite, t]
     for (const [v, small] of looks) for (const [k, [o, ts]] of Object.entries(catalog)) ts.forEach((t, i) => jobs.push([`${v}${small ? '-mini' : ''}/${k}.${i}`, () => base(v, small, o), t]));
     for (const [k, [o, ts]] of Object.entries(homeCatalog)) ts.forEach((t, i) => jobs.push([`home/${k}.${i}`, () => base('home', true, { kind: 'home', ...o }), t]));
+    // ---- eggs: the page's eggLook() decides gold, raised arms and the April 1 eyes; cut through a stand-in that returns what the sprite carries ----
+    for (const [v, small] of looks) {
+      const L = `${v}${small ? '-mini' : ''}`, eg = e => o => ({ ...o, __egg: { dy: 0, ...e } });
+      const gold = eg({ gold: GOLD }), arms = eg({ arms: 0 });
+      jobs.push([`${L}/gold.stand.0`, () => base(v, small, gold({})), 0], [`${L}/gold.walk.0`, () => base(v, small, gold({ moving: true })), 0], [`${L}/gold.walk.1`, () => base(v, small, gold({ moving: true })), 110],
+        [`${L}/gold.work.0`, () => base(v, small, gold({ seated: true })), 0], [`${L}/gold.work.1`, () => base(v, small, gold({ seated: true })), 160],
+        [`${L}/arms.stand.0`, () => base(v, small, arms({})), 0]);
+      for (const [tag, k] of [['p', 1], ['n', -1]]) for (const t of [0, 110]) jobs.push([`${L}/eye${tag}.walk.${t ? 1 : 0}`, () => base(v, small, eg({ eye: k })({ moving: true })), t]);
+    }
     // the cat and the dog, both ways
     const pet = (kind, face, o) => ({ kind, alpha: 1, path: [], onBridge: null, moving: false, seed: 0, face, ...o });
     for (const face of [1, -1]) {
@@ -431,9 +440,11 @@
     for (const name of ['claude/stand.0', 'claude/walk.1', 'claude/work.1', 'claude/fire.1']) poseProofJobs.push(jobs.find(j => j[0] === name));
     poses.names = jobs.map(j => j[0]);
     poses.composition = 'Draw layers in order at (X-ax,Y-ay); blend normal = source-over, add = additive (SpriteKit .add). Fire glow is a separate add layer between the body and flames.';
+    const realEggLook = eggLook; eggLook = sp => sp.__egg || null;
     poses.variants = VARS.map(v => dual(v.d, () => { const out = {};
       for (const [name, mk, t, mode] of jobs) { const sp = mk(); const c = cut(() => drawClawd(300, 400, sp, t), mode); if (c) out[name] = c; }
       return out; }));
+    eggLook = realEggLook;
     poses.timing = { walk: 'frame = floor(t/110) % 2 (legs and hop)', work: 'frame = floor(t/160) % 2', waiting: 'sample i of 6 over 1634 ms: sin(t/260)', error: '4 over 1885 ms', sleep: '4 over 1400 ms (the Zs rise k=(t/1400+seed)%1)',
       shower: '6 over 9000 ms (k=(t/9000+seed)%1)', dry: '6 over 1382 ms', hammer: 'down = floor(t/190 + seed*3) % 2', cat: 'walk floor(t/120)%2; sit2 when floor(t/700+seed*7)%6==0; nap Zs (t/1800+seed)%1', dog: 'walk floor(t/120)%2 (90 when fast); sit2 when floor(t/900+seed*7)%6==0 (wag: floor(t/140)%2==0); bark: sit1/bark floor(t/260)%2 and the text on when floor(t/520)%2==0' };
     // the geometry the renderer needs to put marks over a Clawd (drawClawd: left = round(X - w*S/2), top = round(Y - (rows + legH)*S - hop), arm rows)
