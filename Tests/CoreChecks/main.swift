@@ -44,6 +44,12 @@ func run(_ name: String, _ body: () throws -> Void) {
     do { try body() } catch { report("threw \(error)", #fileID, #line) }
 }
 
+run("eggCalendar") { HouseEggChecks().calendar() }
+run("eggReplacementAndCounting") { HouseEggChecks().replacementAndCounting() }
+run("eggPhases") { HouseEggChecks().phases() }
+run("eggClicksAndIdle") { HouseEggChecks().clicksAndIdle() }
+run("eggClickAfterLongNap") { HouseEggChecks().clickAfterLongNap() }
+
 // AN-0.5-T1: synthetic on-disk formats, exercised through the production readers.
 let sessionFixtures = SessionLogFixtureChecks()
 run("fixtureClaudeSubagents") { try sessionFixtures.claudeSubagents() }
@@ -276,6 +282,7 @@ run("settingsVisibilityAndPass") { settings.visibilityAndPass() }
 // NOTCH-fix-usage
 let usageFix = UsageFixChecks()
 run("usageExpiredLimits") { try usageFix.expiredLimits() }
+run("claudeWeeklyReset") { try usageFix.claudeWeeklyReset() }
 run("usageOutputDoesNotExpandWindow") { try usageFix.outputDoesNotExpandWindow() }
 
 run("usageConfiguredThresholds") { usageFix.configuredThresholds() }
@@ -348,6 +355,9 @@ run("auditDeliveryResult") { try safeUninstall.auditDelivery() }
 if case let .success((dir, _, _)) = SafeUninstallChecks.tools { try? FileManager.default.removeItem(at: dir) }
 
 let configRoots = ConfigRootChecks()
+let codexPets = CodexPetChecks()
+run("codexPetNewestWins") { try codexPets.newestWins() }
+run("codexPetCodexHome") { try codexPets.codexHome() }
 run("configClaudeHooks") { try configRoots.hooks(.claude) }
 run("configCodexHooks") { try configRoots.hooks(.codex) }
 run("configClaudeDiscovery") { try configRoots.discovery(.claude) }
@@ -386,6 +396,20 @@ run("uncorrelatedStopUsesReceiptTime") { doneReview.uncorrelatedStopUsesReceiptT
 run("vendorIconPreferences") { try VendorIconChecks().preferences() }
 run("vendorIconResolution") { VendorIconChecks().resolution() }
 run("vendorIconThemeChoice") { try VendorIconChecks().themeChoice() }
+run("houseLayoutProjectIdentity") { HouseLayoutChecks().projectIdentity() }
+run("houseLayoutGoldenFixtures") { try HouseLayoutChecks().goldenFixtures() }
+run("houseLayoutRoomSeeds") { try HouseLayoutChecks().roomSeeds() }
+run("houseRouteGoldenFixtures") { try HouseRouteChecks().goldenFixtures() }
+run("houseBehaviourGoldenFixtures") { try HouseBehaviourChecks().goldenFixtures() }
+run("houseLifeGoldenFixtures") { try HouseLifeChecks().goldenFixtures() }
+run("houseCamera") { try HouseCameraChecks().all() }
+run("houseHit") { try HouseHitChecks().all() }
+run("housePinch") { try HousePinchChecks().all() }
+run("houseSnapshotRoundTrip") { try HouseSnapshotChecks().roundTrip() }
+run("houseSnapshotRenderer") { try HouseSnapshotChecks().renderer() }
+run("houseGrowthLegacyImport") { try HouseGrowthLegacyChecks().importsWhatThePageSaved() }
+run("houseGrowthLegacyMissing") { try HouseGrowthLegacyChecks().missingOrEmpty() }
+run("houseSnapshotBadInput") { try HouseSnapshotChecks().badInput() }
 
 let widget = WidgetPlanChecks()
 run("widgetAlphabetical") { widget.projectsAreAlphabetical() }

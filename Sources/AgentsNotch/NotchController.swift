@@ -31,6 +31,7 @@ final class NotchController {
             PanelView(store: store) { [weak self] h in self?.resizeList(h) }
                 .environmentObject(store.settings).environmentObject(store.usage)
         })
+        list.sizingOptions = [] // resizeList sizes the panel; see DesktopWidget.makePanel
         listPanel.contentView = list
         store.finisher.onNotice = { [weak self] n in self?.showToast(n) }
         store.jumpScreen = { [weak self] in
@@ -186,6 +187,7 @@ final class NotchController {
         item(Loc.t("Answer requests from the notch", "Решать запросы из чёлки"), #selector(AppActions.toggleAnswer), on: AppSettings.shared.answerFromNotch)
         item(Loc.t("Event sounds", "Звуки событий"), #selector(AppActions.toggleSounds), on: AppSettings.shared.sounds)
         item(ToastText.menu, #selector(AppActions.toggleFinishToast), on: AppSettings.shared.finishToast)
+        item(Loc.t("Agents' house on the desktop", "Дом агентов на рабочем столе"), #selector(AppActions.toggleRoom), on: AppSettings.shared.roomWallpaper)
         let widgetItem = NSMenuItem(title: WidgetMenuText.title, action: #selector(MenuAction.run), keyEquivalent: "")
         let toggleWidget = MenuAction { AppSettings.shared.widget.enabled.toggle() }
         widgetItem.target = toggleWidget
@@ -267,6 +269,8 @@ final class AppActions: NSObject {
 
     @objc func toggleAnswer() { AppSettings.shared.answerFromNotch.toggle() }
     @objc func toggleSounds() { AppSettings.shared.sounds.toggle() }
+
+    @objc func toggleRoom() { AppSettings.shared.roomWallpaper.toggle() }
 
     @objc func toggleLogin() {
         let s = SMAppService.mainApp

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import NotchCore
 
 /// Live agents read straight from the Claude Code and Codex session logs on this Mac, plus what the hooks report.
@@ -10,14 +11,19 @@ final class Store: ObservableObject {
         usage.readsCost = { [weak self] in self?.settings.rowPartShown(.cost) ?? false }
         usage.limitThreshold = { [weak self] in self?.settings.limits.warningPercent ?? 80 }
         usage.onSound = { [weak self] event in self?.play(event) }
+        retentionChanges = self.settings.$appearance.map(\.finishedMinutes).removeDuplicates().dropFirst()
+            .receive(on: RunLoop.main).sink { [weak self] _ in self?.publishHookExpiry() }
     }
 
-    @Published private(set) var agents: [Agent] = []
+    @Published private(set) var agents: [Agent] = [] {
+        didSet { rememberHookOutput() }
+    }
     @Published var selected: Agent.ID?
     @Published private(set) var hooks = HookState() {
         didSet {
             let first = hooks.pending.first(where: { $0.delivery == .waiting })?.ticket
             if first != hinted?.ticket { hinted = first.map { ($0, Date().timeIntervalSince1970) } }
+            rememberHookOutput()
         }
     }
     /// The request the hotkeys answer and since when it has been the one shown with them.
@@ -43,6 +49,9 @@ final class Store: ObservableObject {
     private var livenessTimer: Timer?
     private var retentionTimer: Timer?
     private var retentionExpiry: Date?
+    private var hookPublication = HookOutputPublication()
+    private var hookExpiryTimer: Timer?
+    private var retentionChanges: AnyCancellable?
     private var watcher: FileWatcher?
     private var processWatcher: ProcessWatcher?
     private var watchedPaths: [String] = []
@@ -73,7 +82,11 @@ final class Store: ObservableObject {
         var tickets: [Int] = []
         for e in asks {
             fakeTicket += 1
-            _ = hooks.receive(e, ticket: fakeTicket, now: Date().timeIntervalSince1970 - askAge)
+            let now = Date().timeIntervalSince1970 - askAge
+            var next = hooks
+            _ = next.receive(e, ticket: fakeTicket, now: now)
+            if next != hooks { hookPublication.record(e, ticket: fakeTicket, now: now) }
+            hooks = next
             tickets.append(fakeTicket)
         }
         for (index, ticket) in tickets.enumerated() {
@@ -111,6 +124,35 @@ final class Store: ObservableObject {
         watcher = FileWatcher(paths: paths, shallowPaths: scanner.watchRootPaths) { [weak self] changes in
             Task { @MainActor in self?.poll(changes: changes) }
         }
+    }
+
+    private func hookOutput(now: Double) -> [Agent] {
+        hooks.apply(to: agents, now: now, finishedRetention: Double(settings.appearance.finishedMinutes) * 60,
+                    project: names.name(for:))
+    }
+
+    private func rememberHookOutput() {
+        _ = hookPublication.update(hookOutput(now: Date().timeIntervalSince1970))
+        scheduleHookExpiry()
+    }
+
+    /// A scan can leave both stored properties unchanged while a hook-ended turn or shown prompt expires.
+    private func publishHookExpiry() {
+        if hookPublication.update(hookOutput(now: Date().timeIntervalSince1970)) { objectWillChange.send() }
+        scheduleHookExpiry()
+    }
+
+    private func scheduleHookExpiry() {
+        hookExpiryTimer?.invalidate()
+        hookExpiryTimer = nil
+        let now = Date().timeIntervalSince1970
+        guard let expiry = hookPublication.nextExpiry(agents: agents, hooks: hooks, now: now,
+                                                      retention: Double(settings.appearance.finishedMinutes) * 60) else { return }
+        let timer = Timer(fire: Date(timeIntervalSince1970: expiry), interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.publishHookExpiry() }
+        }
+        hookExpiryTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func updateLivenessTimer() {
@@ -157,9 +199,12 @@ final class Store: ObservableObject {
                     if next.sorted(by: { $0.id < $1.id }) != self.agents.sorted(by: { $0.id < $1.id }) { self.agents = next }
                 }
                 // Age failed requests even when the scanner has no changed snapshot.
-                for ticket in self.hooks.expire(agents: self.agents, now: Date().timeIntervalSince1970) {
-                    self.deliverySounds[ticket] = nil
-                }
+                // Expire on a copy: writing `hooks` back unchanged would redraw every surface on each scan.
+                var hooks = self.hooks
+                let stale = hooks.expire(agents: self.agents, now: Date().timeIntervalSince1970)
+                if !stale.isEmpty { self.hooks = hooks }
+                for ticket in stale { self.deliverySounds[ticket] = nil }
+                self.publishHookExpiry()
                 if let next {
                     self.finisher.check(self.settings.listFilter.apply(self.hooks.apply(to: next, now: Date().timeIntervalSince1970, finishedRetention: retention, project: self.names.name(for:))))
                     for event in Set(self.soundWatcher.update(self.shown)) { self.play(event) }
@@ -237,7 +282,10 @@ final class Store: ObservableObject {
         }
         if e.name == "SubagentStop", e.agentId == nil { return }
         let wasWaiting = hooks.pending.count
-        let stale = hooks.receive(e, ticket: ticket, now: Date().timeIntervalSince1970)
+        var next = hooks
+        let stale = next.receive(e, ticket: ticket, now: now)
+        if next != hooks { hookPublication.record(e, ticket: ticket, now: now) }
+        hooks = next
         for ticket in stale { server?.handBack(ticket) }
         if e.name == "UserPromptSubmit" {
             soundWatcher.resume(e.agentKey)
@@ -394,5 +442,45 @@ enum Audit {
         } catch {
             // Logging must not prevent the decision from reaching the agent.
         }
+    }
+}
+
+/// Only effective row changes publish. Ordering from a scanner is not a visible hook change.
+struct HookOutputPublication {
+    private var rows: [Agent] = []
+    private var turnTimes: [String: Double] = [:]
+    private var promptExpiries: [String: Double] = [:]
+
+    /// Record only events accepted by HookState, using the same receipt instant.
+    mutating func record(_ event: HookEvent, ticket: Int?, now: Double) {
+        if ["Stop", "SessionEnd", "SubagentStop"].contains(event.name) {
+            turnTimes[event.agentKey] = event.occurredAt ?? now
+        } else if ["UserPromptSubmit", "PreToolUse", "PostToolUse"].contains(event.name) {
+            turnTimes[event.agentKey] = nil
+        }
+        if ticket == nil {
+            promptExpiries[event.agentKey] = event.isPromptShown ? now + 3600 : nil
+            if event.name == "SessionEnd" { promptExpiries = promptExpiries.filter { !$0.key.hasPrefix(event.sessionId) } }
+        }
+    }
+
+    func nextExpiry(agents: [Agent], hooks: HookState, now: Double, retention: Double) -> Double? {
+        func output(_ time: Double) -> [Agent] {
+            hooks.apply(to: agents, now: time, finishedRetention: retention, project: { _ in "" }).sorted { $0.id < $1.id }
+        }
+        // HookState owns precedence and parent retention. Candidate times alone must never publish stale hooks.
+        let candidates = Set(promptExpiries.values)
+            .union(turnTimes.values.map { $0 + retention })
+            .union(agents.map { $0.lastAt + retention })
+            .union(hooks.pending.filter { $0.delivery == .notDelivered }.map { $0.at + 600 })
+        let current = output(now)
+        return candidates.filter { $0 > now }.sorted().first { output($0) != current }
+    }
+
+    mutating func update(_ next: [Agent]) -> Bool {
+        let next = next.sorted { $0.id < $1.id }
+        guard next != rows else { return false }
+        rows = next
+        return true
     }
 }

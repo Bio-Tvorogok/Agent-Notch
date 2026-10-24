@@ -89,7 +89,10 @@ final class DesktopWidget: NSObject {
                                      openSettings: { SettingsWindow.shared.open(.appearance) }) }
             .environmentObject(settings)
             .environmentObject(store.usage)
-        panel.contentView = NSHostingView(rootView: view)
+        let host = NSHostingView(rootView: view)
+        // resize(_:) sizes the window from onSize; without this every animated mark relays out the window to recompute its min and max size.
+        host.sizingOptions = []
+        panel.contentView = host
         card = CardPanel(store: store, list: panel, settings: settings,
                          selection: model.$selected.eraseToAnyPublisher(),
                          current: { [weak model] in model?.selected },

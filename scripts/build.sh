@@ -28,6 +28,36 @@ xcrun swiftc -O -target "$TARGET" -F "$SPARKLE" -framework Sparkle -Xlinker -rpa
 xcrun swiftc -O -target "$TARGET" -module-name NotchHook -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
   -o "$APP/Contents/Helpers/notch-hook" Sources/NotchHook/main.swift
 
+# The agents' house screen saver: a loadable bundle with its own copy of the atlas, fed by the app (HouseSnapshot).
+SAVER="$OUT/Agent Notch House.saver"
+rm -rf "$SAVER"
+mkdir -p "$SAVER/Contents/MacOS" "$SAVER/Contents/Resources/room"
+xcrun swiftc -O -target "$TARGET" -parse-as-library -module-name AgentNotchHouse -I "$OUT/obj" -L "$OUT/obj" -lNotchCore \
+  -framework ScreenSaver -framework SpriteKit -Xlinker -bundle \
+  -o "$SAVER/Contents/MacOS/Agent Notch House" Sources/AgentNotchSaver/*.swift Sources/AgentsNotch/HouseParts.swift Sources/AgentsNotch/HouseLight.swift Sources/AgentsNotch/HouseScene2*.swift
+# the SpriteKit house's atlas (what HouseScene2.load reads: parts.json and its pages). room/index.html is the art source and never ships.
+mkdir -p "$SAVER/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$SAVER/Contents/Resources/room/atlas/"
+for d in room/atlas-*/; do n=$(basename "$d"); mkdir -p "$SAVER/Contents/Resources/room/$n" && cp "$d"parts.json "$d"parts-*.png "$SAVER/Contents/Resources/room/$n/"; done
+for t in thumbnail.png thumbnail@2x.png; do [ -f "assets/saver/$t" ] && cp "assets/saver/$t" "$SAVER/Contents/Resources/$t"; done
+cat > "$SAVER/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.forichok.agents-notch.house-saver</string>
+  <key>CFBundleName</key><string>Agent Notch House</string>
+  <key>CFBundleDisplayName</key><string>Agent Notch House</string>
+  <key>CFBundleExecutable</key><string>Agent Notch House</string>
+  <key>CFBundlePackageType</key><string>BNDL</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>AgentNotchSourceRevision</key><string>$SOURCE_REVISION</string>
+  <key>NSPrincipalClass</key><string>AgentNotchHouseView</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 Nikita Udalov. MIT License.</string>
+</dict></plist>
+PLIST
+codesign --force --sign - "$SAVER"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,6 +85,12 @@ PLIST
 python3 scripts/update-config.py "$APP/Contents/Info.plist"
 
 [ -f assets/AppIcon.icns ] && cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# the SpriteKit house's atlas (scripts/export-house-parts.sh): the only renderer, so the build fails without it. room/index.html never ships.
+[ -f room/atlas/parts.json ] && [ -f room/atlas/parts-0.png ] || { echo "room/atlas is missing: run scripts/export-house-parts.sh" >&2; exit 1; }
+mkdir -p "$APP/Contents/Resources/room/atlas" && cp room/atlas/parts.json room/atlas/parts-*.png "$APP/Contents/Resources/room/atlas/"
+for d in room/atlas-*/; do n=$(basename "$d"); [ -f "$d"parts.json ] && mkdir -p "$APP/Contents/Resources/room/$n" && cp "$d"parts.json "$d"parts-*.png "$APP/Contents/Resources/room/$n/"; done
+# The app installs the saver from its own bundle (Settings → Desktop house).
+ditto "$SAVER" "$APP/Contents/Resources/Agent Notch House.saver"
 
 codesign --force --sign - "$APP/Contents/Helpers/notch-hook"
 # An ad-hoc signature is pinned by its hash, and macOS ties Accessibility to that hash: every new build would
@@ -62,4 +98,6 @@ codesign --force --sign - "$APP/Contents/Helpers/notch-hook"
 BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
 codesign --force --sign - -r="designated => identifier \"$BUNDLE_ID\"" "$APP"
 sh scripts/test-app-features.sh
-echo "built $APP"
+# the page is the art source and test oracle, not part of the product
+if find "$APP" "$SAVER" -name index.html | grep -q .; then echo "index.html must not ship in a bundle" >&2; exit 1; fi
+echo "built $APP and $SAVER"
