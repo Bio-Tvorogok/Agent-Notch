@@ -14,5 +14,10 @@ p=$(body startPointer)
 for need in refreshDesktopHitTargets addGlobalMonitorForEvents startPinchTap; do
   echo "$p" | grep -q "$need" || { echo "FAIL: startPointer() lacks $need"; fail=1; }
 done
+# Clicks and gestures go to the window the event targets. A window list scan counts invisible click-through overlays
+# (ChatGPT's layer 3 sheet once blocked every click and pinch on half the screen), so it only names the cover in the log.
+m=$(body mouse)
+echo "$m" | grep -q 'let bare = .*desktopIsBare\|desktopIsBare(at' && { echo "FAIL: mouse() decides bare desktop from the window list"; fail=1; }
+echo "$m" | grep -q 'target' || { echo "FAIL: mouse() ignores the event's target window"; fail=1; }
 [ $fail = 0 ] && echo "pointer wiring: the start path installs the pointer"
 exit $fail

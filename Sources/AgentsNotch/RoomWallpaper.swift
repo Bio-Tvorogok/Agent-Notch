@@ -111,7 +111,8 @@ final class RoomWallpaper: NSObject {
                 return
             }
             let scroll = type == .scrollWheel && e.hasPreciseScrollingDeltas ? (e.scrollingDeltaX, e.scrollingDeltaY) : (0, 0)
-            MainActor.assumeIsolated { self?.mouse(type, scroll: scroll) }
+            let target = e.windowNumber
+            MainActor.assumeIsolated { self?.mouse(type, scroll: scroll, target: target) }
         }
     }
 
@@ -449,7 +450,9 @@ final class RoomWallpaper: NSObject {
 
     /// The window ignores the mouse, so the cursor is read globally and passed on while nothing covers the desktop.
     /// Trackpad gestures over bare desktop drive the view: pinch zooms at the cursor, two fingers move, a double tap resets.
-    private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0)) {
+    /// `target` is the window WindowServer sends the event to (the monitor's event knows it); without one, AppKit's mouse-down hit
+    /// test answers. Both skip click-through windows, which a window list scan cannot tell apart (an invisible ChatGPT sheet).
+    private func mouse(_ type: NSEvent.EventType, magnify: CGFloat = 0, scroll: (CGFloat, CGFloat) = (0, 0), target: Int? = nil) {
         guard let w = window, house != nil else { return }
         let scene = house?.scene as? HouseScene2
         let now = CACurrentMediaTime()
@@ -458,11 +461,8 @@ final class RoomWallpaper: NSObject {
             lastMove = now
         }
         let p = NSEvent.mouseLocation
-        // WindowServer queries belong to clicks and gestures, never the high-rate pointer stream.
         let inside = w.frame.contains(p) && w.occlusionState.contains(.visible)
-        let bare = inside && (type == .mouseMoved
-            ? desktopHitTargets.contains(NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0))
-            : desktopIsBare(at: p))
+        let bare = inside && desktopHitTargets.contains(target ?? NSWindow.windowNumber(at: p, belowWindowWithWindowNumber: 0))
         let x = p.x - w.frame.minX, y = w.frame.maxY - p.y
         switch type {
         case .leftMouseDown:
@@ -530,9 +530,6 @@ final class RoomWallpaper: NSObject {
             self.tip.hide()
         }
     }
-    /// True when no app window is over this point, so the cursor is over the wallpaper itself.
-    private func desktopIsBare(at p: NSPoint) -> Bool { coveringWindow(at: p) == nil }
-
     /// The app and title of the window over this point, if any (for the log when a gesture is not passed on).
     private func coveringWindow(at p: NSPoint) -> String? {
         guard let primary = NSScreen.screens.first else { return "no screen" }
