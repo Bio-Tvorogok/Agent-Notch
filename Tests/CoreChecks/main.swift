@@ -427,6 +427,10 @@ run("serviceProviderOptions") { try services.providerOptions() }
 run("serviceSettingsDescriptor") { try services.settingsDescriptor() }
 run("serviceApproval") { try services.approval() }
 run("serviceLoginPath") { try services.loginPath() }
+run("serviceStatusFile") { try services.statusFile() }
+run("serviceCheckResult") { try services.checkResult() }
+run("serviceLogs") { try services.logs() }
+run("serviceSecrets") { try services.secrets() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
