@@ -70,9 +70,11 @@ public final class KeychainSecretStore: ServiceSecretStore {
         return list.compactMap { $0[kSecAttrAccount as String] as? String }.sorted()
     }
 
+    /// One account at a time: on the file-based login keychain SecItemDelete removes only the first item a query matches,
+    /// so deleting by service alone left every secret but one behind. Fails if anything is still there.
     public func removeAll(_ scope: String) throws {
-        let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service(scope)] as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw Failure(status: status) }
+        for key in keys(scope) { try write(nil, scope, key) }
+        guard keys(scope).isEmpty else { throw Failure(status: errSecDuplicateItem) }
     }
 
     public func read(_ service: String, _ key: String) -> String? {
