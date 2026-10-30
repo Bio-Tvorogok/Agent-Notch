@@ -4,6 +4,7 @@ import NotchCore
 
 /// Flags: `--fixture <scene>` shows a made-up scene instead of the real logs, `--cramped` forces the one-summary wing,
 /// `--snapshot-card <png> [--card-tab prompts] [--card-log <jsonl>]` draws the agent card on one tab, from a real log if given, `--open-list` opens the list on start, `--open-prompts` the prompt picker, `--snapshot <dir>` writes PNGs of every scene and quits,
+/// `--snapshot-services <dir>` draws Settings → Services around a made-up service,
 /// `--install-hooks` / `--uninstall-hooks` edit the Claude Code and Codex hook files and quit.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -45,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let i = args.firstIndex(of: "--snapshot-settings"), i + 1 < args.count {
             exit(Snapshot.runSettings(to: args[i + 1]) ? 0 : 1)
         }
+        if let i = args.firstIndex(of: "--snapshot-services"), i + 1 < args.count {
+            exit(Snapshot.runServices(into: args[i + 1]) ? 0 : 1)
+        }
         if let i = args.firstIndex(of: "--snapshot-prompts"), i + 1 < args.count {
             exit(Snapshot.runPrompts(to: args[i + 1]) ? 0 : 1)
         }
@@ -69,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store.useFixture(scene, asks: Fixtures.asks(args[i + 1]))
         } else {
             store.start()
+            ServicesModel.shared.startOnLaunch()
         }
         store.forceCramped = args.contains("--cramped")
         if UpdateLaunchPolicy.shouldStart(arguments: args) {

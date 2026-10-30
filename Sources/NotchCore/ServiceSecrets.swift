@@ -4,6 +4,8 @@ import Security
 /// Where a service's `secret` fields live. The app uses the Keychain; checks and snapshots use memory.
 public protocol ServiceSecretStore: AnyObject {
     func read(_ service: String, _ key: String) -> String?
+    /// Whether a value is stored, without reading it.
+    func contains(_ service: String, _ key: String) -> Bool
     /// nil or empty deletes.
     func write(_ value: String?, _ service: String, _ key: String) throws
 }
@@ -25,6 +27,7 @@ public final class MemorySecretStore: ServiceSecretStore {
     private var values: [String: String] = [:]
     public init() {}
     public func read(_ service: String, _ key: String) -> String? { values[service + "\n" + key] }
+    public func contains(_ service: String, _ key: String) -> Bool { read(service, key) != nil }
     public func write(_ value: String?, _ service: String, _ key: String) throws {
         values[service + "\n" + key] = value?.isEmpty == false ? value : nil
     }
@@ -57,6 +60,13 @@ public final class KeychainSecretStore: ServiceSecretStore {
         var item: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
+    }
+
+    public func contains(_ service: String, _ key: String) -> Bool {
+        var q = query(service, key)
+        q[kSecReturnAttributes as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        return SecItemCopyMatching(q as CFDictionary, nil) == errSecSuccess
     }
 
     public func write(_ value: String?, _ service: String, _ key: String) throws {

@@ -85,6 +85,7 @@ extension ServiceChecks {
             ("key sk-ant-api03-AbC_dEf-123 used", "key sk-ant-*** used"),
             ("openai sk-proj-abcdefghijklmnopqrstuv", "openai sk-***"),
             (#"VOICESTUDIO_API_KEY=abc123 next"#, "VOICESTUDIO_API_KEY=*** next"),
+            ("refused (api_key=vs-live-123456)", "refused (api_key=***)"),
             (#"{"token": "abc.def", "ok": true}"#, #"{"token": "***", "ok": true}"#),
             ("Authorization: Bearer abcdefgh12345", "Authorization: Bearer ***"),
             ("GET https://bot:hunter2@example.com/x", "GET https://bot:***@example.com/x"),
@@ -103,6 +104,7 @@ extension ServiceChecks {
         try store.write("t0ken", m.id, "TOKEN")
         try store.write("ignored", "other", "TOKEN")
         XCTAssertEqual(store.all(m), ["TOKEN": "t0ken"])
+        XCTAssertTrue(store.contains(m.id, "TOKEN") && !store.contains(m.id, "OWNER"))
         try store.write("", m.id, "TOKEN")
         XCTAssertEqual(store.all(m), [:], "an empty value deletes")
         XCTAssertEqual(KeychainSecretStore.service("chedrik"), "com.forichok.agents-notch.service.chedrik")

@@ -203,8 +203,12 @@ enum Snapshot {
         }
         let prompts = promptFixture()
         let skills = skillFixture()
+        // Never the real list: that one reads the user's preferences and Keychain.
+        let service = ServiceFixture(defaults: defaults)
+        defer { service?.remove() }
+        let services = service?.model ?? ServicesModel(defaults: defaults, secrets: MemorySecretStore())
         func shot(_ section: SettingsSection, _ url: URL, height: CGFloat = SettingsView.size.height) -> Bool {
-            host(SettingsView(selection: section, prompts: prompts, skills: skills).environmentObject(settings).environment(\.colorScheme, .light),
+            host(SettingsView(selection: section, prompts: prompts, skills: skills, services: services).environmentObject(settings).environment(\.colorScheme, .light),
                  size: NSSize(width: SettingsView.size.width, height: height), to: url)
         }
         guard !path.hasSuffix(".png") else { return shot(.appearance, URL(fileURLWithPath: path), height: ProcessInfo.processInfo.environment["AN_VENDOR_ICON_SHOT"] == nil ? SettingsView.size.height : 1800) }
@@ -213,7 +217,7 @@ enum Snapshot {
         var ok = true
         for section in SettingsSection.allCases {
             ok = shot(section, dir.appendingPathComponent("section-\(section.rawValue).png")) && ok
-            ok = shot(section, dir.appendingPathComponent("full-\(section.rawValue).png"), height: section == .sounds ? 2200 : 1500) && ok
+            ok = shot(section, dir.appendingPathComponent("full-\(section.rawValue).png"), height: section == .sounds || section == .services ? 2200 : 1500) && ok
         }
         ok = host(SettingsSounds(settings: settings, customizing: true)
             .formStyle(.grouped).environment(\.colorScheme, .light),
@@ -249,6 +253,39 @@ enum Snapshot {
         ok = shot(.appearance, dir.appendingPathComponent("preset-own.png")) && ok
         settings.theme = .pixel
         ok = shot(.appearance, dir.appendingPathComponent("theme-pixel-marks.png"), height: 1500) && ok
+        return ok
+    }
+
+    /// `--snapshot-services <dir>`: Settings → Services in both languages: empty, the approval sheet, a running service
+    /// and a stopped one whose check failed and whose brain has no signed-in CLI. Run from the repository root.
+    static func runServices(into dir: String) -> Bool {
+        guard let scratch = ScratchDefaults("snapshot") else { return false }
+        let forced = Loc.forced
+        defer { scratch.remove(); Loc.forced = forced }
+        let settings = AppSettings(defaults: scratch.defaults)
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        do { try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true) }
+        catch { return false }
+        func shot(_ model: ServicesModel, _ name: String, height: CGFloat) -> Bool {
+            host(SettingsView(selection: .services, prompts: promptFixture(), skills: skillFixture(), services: model)
+                .environmentObject(settings).environment(\.colorScheme, .light),
+                 size: NSSize(width: SettingsView.size.width, height: height), to: url.appendingPathComponent(name))
+        }
+        var ok = true
+        for language in [Loc.Language.en, .ru] {
+            Loc.forced = language
+            let lang = language.rawValue
+            guard let runningDefaults = ScratchDefaults("snapshot-services"), let running = ServiceFixture(defaults: runningDefaults.defaults),
+                  let stoppedDefaults = ScratchDefaults("snapshot-services"),
+                  let stopped = ServiceFixture(defaults: stoppedDefaults.defaults, running: false) else { return false }
+            defer { runningDefaults.remove(); stoppedDefaults.remove(); running.remove(); stopped.remove() }
+            ok = shot(ServicesModel(defaults: scratch.defaults, secrets: MemorySecretStore()), "empty-\(lang).png", height: 360) && ok
+            ok = host(ServiceApprovalSheet(pending: .init(manifest: running.manifest, changed: false), onApprove: {}, onCancel: {})
+                .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light),
+                to: url.appendingPathComponent("approve-\(lang).png")) && ok
+            ok = shot(running.model, "running-\(lang).png", height: 2000) && ok
+            ok = shot(stopped.model, "stopped-\(lang).png", height: 1500) && ok
+        }
         return ok
     }
 

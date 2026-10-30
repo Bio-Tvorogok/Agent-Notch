@@ -177,7 +177,7 @@ public enum ServiceLogs {
         (#"\bsk-[A-Za-z0-9_-]{20,}"#, "sk-***"),
         (#"\b(gh[pousr]_)[A-Za-z0-9]{20,}"#, "$1***"),
         (#"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"#, "$1 ***"),
-        (#"(?i)((?:token|secret|password|passwd|api[_-]?key)[A-Za-z_]*["']?\s*[=:]\s*["']?)[^\s"',}]+"#, "$1***"),
+        (#"(?i)((?:token|secret|password|passwd|api[_-]?key)[A-Za-z_]*["']?\s*[=:]\s*["']?)[^\s"',;)}\]]+"#, "$1***"),
         // Credentials in a URL: scheme://user:password@host
         (#"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]+:)[^/\s@]+@"#, "$1***@"),
     ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }

@@ -47,6 +47,7 @@ struct SettingsView: View {
     /// Snapshots pass an isolated vault; the app shows the real one.
     var prompts: PromptStore = .shared
     var skills: SkillStore = .shared
+    var services: ServicesModel = .shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -84,6 +85,7 @@ struct SettingsView: View {
                     case .limits: SettingsLimits(settings: settings)
                     case .house: SettingsHouse(settings: settings)
                     case .connection: SettingsConnection(settings: settings)
+                    case .services: SettingsServices(model: services)
                     case .general: SettingsGeneral(settings: settings)
                     }
                 }
