@@ -460,8 +460,15 @@ struct ServiceApprovalSheet: View {
                             Text("→ " + command.executable.dropFirst(manifest.root.count + 1))
                                 .font(.caption2.monospaced()).foregroundStyle(.secondary).padding(.leading, 82)
                         }
+                        if let label = command.label {
+                            Text(ServiceText.buttonLabel(label)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 82)
+                        }
                         if command.config, let fd = manifest.configFD {
-                            Text(ServiceText.getsSettings(fd)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 82)
+                            Text(ServiceText.getsSettings(fd, needs: command.needs)).font(.caption2).foregroundStyle(.secondary)
+                                .padding(.leading, 82).fixedSize(horizontal: false, vertical: true)
+                        }
+                        ForEach(Self.signIns(manifest, command.name), id: \.self) { line in
+                            Text(line).font(.caption2).foregroundStyle(.secondary).padding(.leading, 82)
                         }
                     }
                 }
@@ -492,4 +499,11 @@ struct ServiceApprovalSheet: View {
     }
 
     static func short(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
+
+    /// Which choices a command signs in to, so the «Sign in» buttons it will stand behind are on the sheet too.
+    static func signIns(_ manifest: ServiceManifest, _ name: String) -> [String] {
+        manifest.fields.flatMap { field in
+            (field.options?.loginCommand ?? [:]).filter { $0.value == name }.keys.sorted().map { ServiceText.signsIn($0, field.label) }
+        }
+    }
 }

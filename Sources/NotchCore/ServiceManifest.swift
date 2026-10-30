@@ -98,7 +98,8 @@ public struct ServiceManifest: Equatable, Sendable {
     public var commandSummary: [String: String] {
         Dictionary(uniqueKeysWithValues: commands.map { command in
             let resolved = String(command.executable.dropFirst(root.count + 1))
-            return (command.name, command.run.joined(separator: " ") + " → " + resolved + (command.config ? " [settings]" : ""))
+            let given = command.config ? " [settings: " + (command.needs.map { $0.isEmpty ? "none" : $0.joined(separator: ",") } ?? "all") + "]" : ""
+            return (command.name, command.run.joined(separator: " ") + " → " + resolved + given)
         })
     }
     public func field(_ key: String) -> Field? { fields.first { $0.key == key } }
@@ -168,10 +169,15 @@ public struct ServiceManifest: Equatable, Sendable {
             guard !fields.contains(where: { $0.key == field.key }) else { throw ServiceManifestError(.duplicate, path + ".key") }
             fields.append(field)
         }
-        // A choice may fill extra settings, never one the form asks for: the user's own value would be overwritten.
+        // A choice may fill extra settings, never one the form asks for (the user's own value would be overwritten), and each
+        // only from one field: a hidden field's fill-in would otherwise go out under another field's name.
+        var claimed: [String: String] = [:]
         for (i, field) in fields.enumerated() {
-            for target in field.options?.sets.values.flatMap(\.keys) ?? [] where fields.contains(where: { $0.key == target }) {
-                throw ServiceManifestError(.duplicate, "fields[\(i)].options.sets.\(target)")
+            for target in Set(field.options?.sets.values.flatMap(\.keys) ?? []).sorted() {
+                guard !fields.contains(where: { $0.key == target }), claimed[target].map({ $0 == field.key }) != false else {
+                    throw ServiceManifestError(.duplicate, "fields[\(i)].options.sets.\(target)")
+                }
+                claimed[target] = field.key
             }
         }
 
@@ -230,6 +236,12 @@ public struct ServiceManifest: Equatable, Sendable {
         guard safe(executable), safe((executable as NSString).deletingLastPathComponent) else {
             throw ServiceManifestError(.unsafePermissions, path + ".run[0]")
         }
+        // A label may not be the app's word for another command: a button saying «Stop» must stop.
+        for variant in Self.variants(object["label"]) {
+            if let owner = Self.reservedLabels[variant.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")], owner != name {
+                throw ServiceManifestError(.invalid, path + ".label")
+            }
+        }
         var needs: [String]?
         if let raw = try r.array("needs") {
             guard config else { throw ServiceManifestError(.invalid, path + ".needs") }
@@ -244,6 +256,22 @@ public struct ServiceManifest: Equatable, Sendable {
         }
         return Command(name: name, run: args, label: try r.text("label", max: 60), config: config, json: try r.bool("json") ?? false,
                        timeout: timeout, executable: executable, needs: needs)
+    }
+
+    /// The app's own words for its commands, in both languages, and the command names themselves → the command they mean.
+    static let reservedLabels: [String: String] = {
+        var words = Dictionary(uniqueKeysWithValues: knownCommands.map { ($0, $0) })
+        for (command, labels) in ["start": ["start", "запустить"], "stop": ["stop", "остановить"], "restart": ["restart", "перезапустить"],
+                                  "status": ["status", "состояние"], "check-pc": ["check pc", "проверить пк"]] {
+            for label in labels { words[label] = command }
+        }
+        return words
+    }()
+
+    /// Every language variant of a text, or the text itself.
+    static func variants(_ value: Any?) -> [String] {
+        if let text = value as? String { return [text] }
+        return (value as? [String: Any])?.values.compactMap { $0 as? String } ?? []
     }
 
     /// `when`: every field it names exists, is not secret (its value is not in the form) and is not the field itself,
@@ -349,6 +377,8 @@ public struct ServiceManifest: Equatable, Sendable {
                 // Signing in is a command of its own: not one of the commands whose meaning the app knows.
                 guard let login = commands.first(where: { $0.name == name }) else { throw ServiceManifestError(.unknownCommand, at) }
                 guard !knownCommands.contains(login.name) else { throw ServiceManifestError(.invalid, at) }
+                // «Sign in» must not hand over every setting: a sign-in that takes settings says which.
+                guard !login.config || login.needs != nil else { throw ServiceManifestError(.invalid, at) }
                 loginCommand[choice] = name
             }
         }

@@ -259,10 +259,8 @@ final class ServicesModel: ObservableObject {
                         throw ServiceText.Incomplete()
                     }
                     let path = Self.path(home: home, cached: cached)
-                    // Only the secrets the command may get go into building its payload; all of them still mask its output.
-                    let given = ServiceValues.secretKeys(manifest, for: command)
-                    let payload = command.config
-                        ? ServiceValues.payload(manifest, entry: entry, secrets: values.filter { given.contains($0.key) }, for: command) : nil
+                    // All stored secrets are read: they mask the output. Only the ones the command may get build its payload.
+                    let payload = ServiceValues.settings(for: command, of: manifest, entry: entry, secrets: values)
                     let result = try ServiceRunner.run(command, of: manifest, settings: payload, environment: ServiceEnvironment.make(path: path.path))
                     let known = Array(values.values)
                     return (Self.output(name, result, secrets: known), name == "check-pc" ? ServiceCheck.parse(result, secrets: known) : nil, path.login)
@@ -407,7 +405,7 @@ final class ServicesModel: ObservableObject {
     /// Services with «Start with Agent Notch» on, if their manifest is still the approved one and their settings are complete.
     func startOnLaunch() {
         for entry in entries where entry.launchWithApp {
-            guard let manifest = approved(entry.id), manifest.command("start") != nil, problems(entry.id).isEmpty else { continue }
+            guard let manifest = approved(entry.id), let start = manifest.command("start"), problems(entry.id, for: start).isEmpty else { continue }
             if let state = manifest.status.flatMap(ServiceStatus.read), state.isRunning() { continue }
             run(entry.id, "start")
         }

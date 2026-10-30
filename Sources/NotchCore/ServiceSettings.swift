@@ -75,10 +75,24 @@ public enum ServiceValues {
 
     /// Whether the form shows a field: every field its `when` names is shown and has one of the listed values.
     public static func visible(_ field: ServiceManifest.Field, in manifest: ServiceManifest, entry: ServiceEntry) -> Bool {
-        field.when.allSatisfy { key, allowed in
-            guard let other = manifest.field(key) else { return false }
-            return visible(other, in: manifest, entry: entry) && value(other, entry: entry, secrets: [:]).map(allowed.contains) == true
+        visibleKeys(manifest, entry: entry).contains(field.key)
+    }
+
+    /// Every shown field at once, each worked out once: conditions can share fields, and walking every path through them
+    /// on each redraw would grow exponentially with a manifest built that way.
+    public static func visibleKeys(_ manifest: ServiceManifest, entry: ServiceEntry) -> Set<String> {
+        var known: [String: Bool] = [:]
+        func shown(_ field: ServiceManifest.Field) -> Bool {
+            if let answer = known[field.key] { return answer }
+            known[field.key] = false
+            let answer = field.when.allSatisfy { key, allowed in
+                guard let other = manifest.field(key) else { return false }
+                return shown(other) && value(other, entry: entry, secrets: [:]).map(allowed.contains) == true
+            }
+            known[field.key] = answer
+            return answer
         }
+        return Set(manifest.fields.filter(shown).map(\.key))
     }
 
     /// What stops the settings from being sent, by field key: only shown fields, and with a command's `needs` only those.
@@ -86,7 +100,8 @@ public enum ServiceValues {
     public static func problems(_ manifest: ServiceManifest, entry: ServiceEntry, secrets: [String: String],
                                 choices: [String: [ServiceOption]] = [:], for command: ServiceManifest.Command? = nil) -> [String: Problem] {
         var problems: [String: Problem] = [:]
-        for field in manifest.fields where visible(field, in: manifest, entry: entry) && command?.needs?.contains(field.key) != false {
+        let shown = visibleKeys(manifest, entry: entry)
+        for field in manifest.fields where shown.contains(field.key) && command?.needs?.contains(field.key) != false {
             guard let value = value(field, entry: entry, secrets: secrets) else {
                 if field.required { problems[field.key] = .required }
                 continue
@@ -105,7 +120,8 @@ public enum ServiceValues {
     public static func payload(_ manifest: ServiceManifest, entry: ServiceEntry, secrets: [String: String],
                                for command: ServiceManifest.Command? = nil) -> Data {
         var object: [String: String] = [:]
-        for field in manifest.fields where visible(field, in: manifest, entry: entry) {
+        let shown = visibleKeys(manifest, entry: entry)
+        for field in manifest.fields where shown.contains(field.key) {
             guard let value = value(field, entry: entry, secrets: secrets) else { continue }
             object[field.key] = value
             for target in (field.options?.sets[value] ?? [:]).keys {
@@ -116,10 +132,19 @@ public enum ServiceValues {
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
     }
 
-    /// The secret fields a command's payload can hold: read only these from the Keychain for it.
+    /// The secret fields a command's payload can hold.
     public static func secretKeys(_ manifest: ServiceManifest, for command: ServiceManifest.Command) -> Set<String> {
         guard command.config else { return [] }
         return Set(manifest.fields.filter { $0.kind == .secret && command.needs?.contains($0.key) != false }.map(\.key))
+    }
+
+    /// What a command is given on its descriptor, from every stored secret: only the secrets it may get go into building it,
+    /// and `payload` cuts the rest to its `needs`. nil for a command without `config`.
+    public static func settings(for command: ServiceManifest.Command, of manifest: ServiceManifest, entry: ServiceEntry,
+                                secrets: [String: String]) -> Data? {
+        guard command.config else { return nil }
+        let given = secretKeys(manifest, for: command)
+        return payload(manifest, entry: entry, secrets: secrets.filter { given.contains($0.key) }, for: command)
     }
 }
 

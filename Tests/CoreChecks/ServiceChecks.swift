@@ -279,7 +279,7 @@ struct ServiceChecks {
             var f = o["fields"] as! [[String: Any]]; f[1]["default"] = "12"; o["fields"] = f
         }))
         XCTAssertEqual(ServiceValues.problems(unfit, entry: ServiceEntry(manifest: unfit), secrets: ["TOKEN": "x"]), ["OWNER": .pattern])
-        XCTAssertEqual(entry.approvedCommands?["start"], "ops/svc read → ops/svc [settings]")
+        XCTAssertEqual(entry.approvedCommands?["start"], "ops/svc read → ops/svc [settings: all]")
     }
 
     static let providers = #"""
