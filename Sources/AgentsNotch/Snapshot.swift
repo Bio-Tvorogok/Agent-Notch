@@ -291,6 +291,9 @@ enum Snapshot {
                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light),
                 to: url.appendingPathComponent("approve-changed-\(lang).png")) && ok
             ok = shot(running.model, "running-\(lang).png", height: 2000) && ok
+            // Voice off: the VoiceStudio fields hide (`when`).
+            if let tts = running.manifest.field("VOICE_TTS") { running.model.setValue(running.manifest.id, tts, "off") }
+            ok = shot(running.model, "voice-off-\(lang).png", height: 2000) && ok
             ok = shot(stopped.model, "stopped-\(lang).png", height: 1500) && ok
         }
         return ok

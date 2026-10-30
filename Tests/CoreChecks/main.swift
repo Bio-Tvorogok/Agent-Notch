@@ -431,6 +431,11 @@ run("serviceStatusFile") { try services.statusFile() }
 run("serviceCheckResult") { try services.checkResult() }
 run("serviceLogs") { try services.logs() }
 run("serviceSecrets") { try services.secrets() }
+run("serviceLocalizedText") { try services.localizedText() }
+run("serviceConditions") { try services.conditions() }
+run("serviceNeeds") { try services.needs() }
+run("serviceOwnCommands") { try services.ownCommands() }
+run("serviceGoshaNeeds") { try services.goshaNeeds() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

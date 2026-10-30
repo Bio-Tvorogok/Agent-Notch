@@ -8,7 +8,7 @@ extension ServiceChecks {
     func run(_ m: ServiceManifest, _ args: [String], config: Bool = false, settings: Data? = nil, timeout: Int? = nil,
              environment: [String: String]? = nil) throws -> ServiceRunner.Result {
         let command = ServiceManifest.Command(name: "x", run: ["ops/svc"] + args, label: nil, config: config, json: false,
-                                              timeout: TimeInterval(timeout ?? 20), executable: m.root + "/ops/svc")
+                                              timeout: TimeInterval(timeout ?? 20), executable: m.root + "/ops/svc", needs: nil)
         return try ServiceRunner.run(command, of: m, settings: settings,
                                      environment: environment ?? ServiceEnvironment.make(path: "/usr/bin:/bin"))
     }

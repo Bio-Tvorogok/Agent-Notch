@@ -59,9 +59,12 @@ private struct ServiceSections: View {
         case let .ok(manifest):
             ServiceStatusSection(model: model, manifest: manifest)
             if manifest.command("check-pc") != nil { ServiceCheckSection(model: model, manifest: manifest) }
+            if !manifest.customCommands.isEmpty { ServiceCommandsSection(model: model, manifest: manifest) }
             if !manifest.fields.isEmpty {
                 Section {
-                    ForEach(manifest.fields, id: \.key) { field in ServiceFieldRow(model: model, manifest: manifest, field: field) }
+                    ForEach(manifest.fields, id: \.key) { field in
+                        if model.visible(manifest.id, field) { ServiceFieldRow(model: model, manifest: manifest, field: field) }
+                    }
                 } header: { Text(ServiceText.settings) } footer: {
                     Text(ServiceText.formHelp).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
@@ -103,17 +106,19 @@ private struct ServiceStatusSection: View {
                     Text("\(ServiceText.since) \(started.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary)
                 }
                 Spacer()
-                if let busy = model.busy[id] {
+                if let busy = model.busy[id], !busy.isEmpty {
                     ProgressView().controlSize(.small)
-                    Text(manifest.command(busy).map(ServiceText.command) ?? busy).foregroundStyle(.secondary).font(.caption)
+                    Text(busy.sorted().map { manifest.command($0).map(ServiceText.command) ?? $0 }.joined(separator: ", "))
+                        .foregroundStyle(.secondary).font(.caption)
                 }
             }
             HStack(spacing: 8) {
                 ForEach(["start", "stop", "restart", "status"], id: \.self) { name in
                     if let command = manifest.command(name) {
                         Button(ServiceText.command(command)) { model.run(id, name) }
-                            .disabled(model.busy[id] != nil || name == "start" && running || name == "stop" && !running
-                                      || ServicesModel.needsComplete(command) && !model.problems(id).isEmpty)
+                            .disabled(model.inFlight(id, name) || ServicesModel.lifecycle.contains(name) && model.lifecycleBusy(id)
+                                      || name == "start" && running || name == "stop" && !running
+                                      || ServicesModel.needsComplete(command) && !model.problems(id, for: command).isEmpty)
                     }
                 }
                 Spacer()
@@ -192,8 +197,8 @@ private struct ServiceCheckSection: View {
         let command = manifest.command("check-pc")!
         Section(ServiceText.check) {
             HStack {
-                Button(ServiceText.command(command)) { model.run(id, "check-pc") }.disabled(model.busy[id] != nil)
-                if model.busy[id] == "check-pc" { ProgressView().controlSize(.small) }
+                Button(ServiceText.command(command)) { model.run(id, "check-pc") }.disabled(model.inFlight(id, "check-pc"))
+                if model.inFlight(id, "check-pc") { ProgressView().controlSize(.small) }
                 Spacer()
             }
             if let check = model.checks[id] {
@@ -207,6 +212,29 @@ private struct ServiceCheckSection: View {
                     if let error = check.error {
                         Text(error).font(.caption.monospaced()).foregroundStyle(.red).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                     }
+                }
+            }
+        }
+    }
+}
+
+/// The service's own commands, such as signing in: one button each, with its timeout, exit code and masked output.
+private struct ServiceCommandsSection: View {
+    @ObservedObject var model: ServicesModel
+    let manifest: ServiceManifest
+
+    var body: some View {
+        let id = manifest.id
+        Section(ServiceText.otherCommands) {
+            ForEach(manifest.customCommands, id: \.name) { command in
+                HStack(spacing: 8) {
+                    Button(ServiceText.command(command)) { model.run(id, command.name) }
+                        .disabled(model.inFlight(id, command.name)
+                                  || ServicesModel.needsComplete(command) && !model.problems(id, for: command).isEmpty)
+                        .help(ServiceText.commandLine(command.run))
+                    if model.inFlight(id, command.name) { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Text(command.name).font(.caption.monospaced()).foregroundStyle(.secondary)
                 }
             }
         }
@@ -304,9 +332,19 @@ private struct ServiceChoicePicker: View {
             }
             if case .loaded = state {
                 ForEach(options.filter { !$0.enabled }) { option in
-                    Text(option.login.map { ServiceText.login(option.label, $0, (manifest.root as NSString).abbreviatingWithTildeInPath) }
-                         ?? ServiceText.signIn(option.label))
-                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    if let name = field.options?.loginCommand[option.value], let command = manifest.command(name) {
+                        // A manifest command signs in: a button instead of instructions.
+                        HStack(spacing: 8) {
+                            Text("\(option.label) — \(ServiceText.notSignedIn)").font(.caption).foregroundStyle(.secondary)
+                            Button(ServiceText.signInButton) { model.run(id, name) }.controlSize(.small)
+                                .disabled(model.inFlight(id, name)).help(ServiceText.commandLine(command.run))
+                            if model.inFlight(id, name) { ProgressView().controlSize(.small) }
+                        }
+                    } else {
+                        Text(option.login.map { ServiceText.login(option.label, $0, (manifest.root as NSString).abbreviatingWithTildeInPath) }
+                             ?? ServiceText.signIn(option.label))
+                            .font(.caption).foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }

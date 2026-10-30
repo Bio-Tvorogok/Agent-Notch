@@ -127,6 +127,8 @@ enum ServiceText {
         case .choice: Loc.t("Choose an available option", "Выберите доступный вариант")
         }
     }
+    static var signInButton: String { Loc.t("Sign in", "Войти") }
+    static var otherCommands: String { Loc.t("Commands", "Команды") }
     static var looking: String { Loc.t("Looking…", "Ищем…") }
     static var refresh: String { Loc.t("Refresh", "Обновить") }
     static var notSignedIn: String { Loc.t("not signed in", "вход не выполнен") }

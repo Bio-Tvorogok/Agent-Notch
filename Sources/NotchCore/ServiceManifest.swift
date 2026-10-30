@@ -24,6 +24,8 @@ public struct ServiceManifest: Equatable, Sendable {
         public let pattern: String?
         public let defaultValue: String?
         public let options: Options?
+        /// Shown only while each named field has one of the listed values; hidden, it is neither required nor sent.
+        public let when: [String: [String]]
     }
 
     /// A select's choices: listed in the manifest, or the JSON array a command prints.
@@ -36,6 +38,8 @@ public struct ServiceManifest: Equatable, Sendable {
         public let enabledWhen: String?
         /// Choice value → setting key → the choice's property copied into that setting when the choice is picked.
         public let sets: [String: [String: String]]
+        /// Choice value → the manifest command that signs in to it, offered next to a choice that is not enabled.
+        public let loginCommand: [String: String]
     }
 
     public struct Choice: Equatable, Sendable {
@@ -54,6 +58,8 @@ public struct ServiceManifest: Equatable, Sendable {
         public let timeout: TimeInterval
         /// `run[0]` resolved inside the service folder.
         public let executable: String
+        /// With `config`: the only setting keys written to its descriptor. nil sends every setting.
+        public let needs: [String]?
     }
 
     public struct Log: Equatable, Sendable {
@@ -79,6 +85,8 @@ public struct ServiceManifest: Equatable, Sendable {
     public let fingerprint: String
 
     public func command(_ name: String) -> Command? { commands.first { $0.name == name } }
+    /// Commands without a meaning of their own, such as `codex-login`: each gets a button.
+    public var customCommands: [Command] { commands.filter { !Self.knownCommands.contains($0.name) } }
 
     /// Where its secrets live: the id and a hash of the folder, so another folder that claims the same id gets none of them.
     public var secretScope: String { Self.secretScope(id: id, folder: root) }
@@ -167,6 +175,13 @@ public struct ServiceManifest: Equatable, Sendable {
             }
         }
 
+        try checkConditions(fields)
+        // `needs` names what goes to the descriptor: fields and what choices fill in, nothing the form does not know.
+        let known = Set(fields.map(\.key)).union(fields.flatMap { ($0.options?.sets.values).map { $0.flatMap(\.keys) } ?? [] })
+        for command in commands {
+            for key in command.needs ?? [] where !known.contains(key) { throw ServiceManifestError(.invalid, "commands.\(command.name).needs.\(key)") }
+        }
+
         let status = try r.string("status").map { try location($0, root: root, home: home, path: "status") }
         var logs: [Log] = []
         if let rawLogs = try r.object("logs") {
@@ -215,8 +230,39 @@ public struct ServiceManifest: Equatable, Sendable {
         guard safe(executable), safe((executable as NSString).deletingLastPathComponent) else {
             throw ServiceManifestError(.unsafePermissions, path + ".run[0]")
         }
+        var needs: [String]?
+        if let raw = try r.array("needs") {
+            guard config else { throw ServiceManifestError(.invalid, path + ".needs") }
+            guard raw.count <= 64 else { throw ServiceManifestError(.tooMany, path + ".needs") }
+            needs = try raw.enumerated().map { i, value in
+                guard let key = value as? String, matches(key, #"^[A-Za-z_][A-Za-z0-9_]{0,63}$"#) else {
+                    throw ServiceManifestError(.invalid, "\(path).needs[\(i)]")
+                }
+                return key
+            }
+            guard Set(needs!).count == needs!.count else { throw ServiceManifestError(.duplicate, path + ".needs") }
+        }
         return Command(name: name, run: args, label: try r.text("label", max: 60), config: config, json: try r.bool("json") ?? false,
-                       timeout: timeout, executable: executable)
+                       timeout: timeout, executable: executable, needs: needs)
+    }
+
+    /// `when`: every field it names exists, is not secret (its value is not in the form) and is not the field itself,
+    /// and no chain of conditions comes back to where it started.
+    private static func checkConditions(_ fields: [Field]) throws {
+        for (i, field) in fields.enumerated() {
+            for target in field.when.keys {
+                guard let other = fields.first(where: { $0.key == target }), other.key != field.key, other.kind != .secret else {
+                    throw ServiceManifestError(.invalid, "fields[\(i)].when.\(target)")
+                }
+            }
+            var seen = Set<String>()
+            var next = Array(field.when.keys)
+            while let key = next.popLast() {
+                if key == field.key { throw ServiceManifestError(.invalid, "fields[\(i)].when") }
+                guard seen.insert(key).inserted else { continue }
+                next += fields.first { $0.key == key }?.when.keys.map { $0 } ?? []
+            }
+        }
     }
 
     private static func field(_ object: [String: Any], path: String, commands: [Command]) throws -> Field {
@@ -241,9 +287,23 @@ public struct ServiceManifest: Equatable, Sendable {
                 throw ServiceManifestError(.badDefault, path + ".default")
             }
         }
+        var when: [String: [String]] = [:]
+        if let raw = try r.object("when") {
+            guard !raw.isEmpty, raw.count <= 8 else { throw ServiceManifestError(.invalid, path + ".when") }
+            for (target, value) in raw {
+                let at = "\(path).when.\(target)"
+                guard matches(target, #"^[A-Za-z_][A-Za-z0-9_]{0,63}$"#) else { throw ServiceManifestError(.invalid, at) }
+                let values: [Any] = value as? [Any] ?? [value]
+                guard (1...32).contains(values.count) else { throw ServiceManifestError(.invalid, at) }
+                when[target] = try values.map { item in
+                    guard let text = item as? String, text.utf8.count <= 4096 else { throw ServiceManifestError(.wrongType, at) }
+                    return text
+                }
+            }
+        }
         return Field(key: key, label: try r.text("label", required: true, max: 200)!, help: try r.text("help", max: 1000),
                      placeholder: try r.text("placeholder", max: 200), kind: kind, required: try r.bool("required") ?? false,
-                     pattern: pattern, defaultValue: defaultValue, options: options)
+                     pattern: pattern, defaultValue: defaultValue, options: options, when: when)
     }
 
     private static func options(_ object: [String: Any], path: String, commands: [Command]) throws -> Options {
@@ -280,8 +340,21 @@ public struct ServiceManifest: Equatable, Sendable {
             }
             sets[choice] = copied
         }
+        var loginCommand: [String: String] = [:]
+        if let raw = try r.object("loginCommand") {
+            guard command != nil else { throw ServiceManifestError(.invalid, path + ".loginCommand") }
+            for (choice, value) in raw {
+                let at = "\(path).loginCommand.\(choice)"
+                guard let name = value as? String else { throw ServiceManifestError(.wrongType, at) }
+                // Signing in is a command of its own: not one of the commands whose meaning the app knows.
+                guard let login = commands.first(where: { $0.name == name }) else { throw ServiceManifestError(.unknownCommand, at) }
+                guard !knownCommands.contains(login.name) else { throw ServiceManifestError(.invalid, at) }
+                loginCommand[choice] = name
+            }
+        }
         return Options(values: values, command: command, valueKey: try r.string("value") ?? "value",
-                       labelKey: try r.string("label") ?? "label", enabledWhen: try r.string("enabledWhen"), sets: sets)
+                       labelKey: try r.string("label") ?? "label", enabledWhen: try r.string("enabledWhen"), sets: sets,
+                       loginCommand: loginCommand)
     }
 
     /// `cwd`: a folder inside the service folder.
@@ -405,12 +478,32 @@ private struct Reader {
         return text
     }
 
-    /// Shown to the user: not empty, one line of plain text.
+    /// Shown to the user: not empty, one line of plain text. Either a string or `{ "ru": …, "en": … }`, read in the
+    /// app's language, else English, else the first language by name. Every variant is checked, not only the one shown.
     func text(_ key: String, required: Bool = false, max: Int) throws -> String? {
-        guard let text = try string(key, required: required) else { return nil }
+        guard let value = try value(key, required: required) else { return nil }
+        guard let variants = value as? [String: Any] else {
+            return try Self.line(try string(key, required: required) ?? "", max: max, path: at(key))
+        }
+        guard !variants.isEmpty, variants.count <= 16 else { throw ServiceManifestError(.invalid, at(key)) }
+        var texts: [String: String] = [:]
+        for (language, variant) in variants {
+            let path = "\(at(key)).\(language)"
+            guard ServiceManifest.matches(language, #"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$"#) else { throw ServiceManifestError(.invalid, path) }
+            guard let text = variant as? String else { throw ServiceManifestError(.wrongType, path) }
+            texts[language] = try Self.line(text, max: max, path: path)
+        }
+        let wanted = Loc.language.rawValue
+        let base = { (language: String) in String(language.prefix { $0 != "-" }) }
+        return texts[wanted] ?? texts.keys.sorted().first { base($0) == wanted }.flatMap { texts[$0] }
+            ?? texts["en"] ?? texts.keys.sorted().first { base($0) == "en" }.flatMap { texts[$0] }
+            ?? texts[texts.keys.sorted()[0]]
+    }
+
+    private static func line(_ text: String, max: Int, path: String) throws -> String {
         guard !text.trimmingCharacters(in: .whitespaces).isEmpty, text.count <= max, text.utf8.count <= max * 4,
-              ServiceManifest.plain(text) else {
-            throw ServiceManifestError(.invalid, at(key))
+              !text.contains("\0"), ServiceManifest.plain(text) else {
+            throw ServiceManifestError(.invalid, path)
         }
         return text
     }

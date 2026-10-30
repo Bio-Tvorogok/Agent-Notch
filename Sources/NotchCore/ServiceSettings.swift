@@ -73,11 +73,20 @@ public enum ServiceValues {
         return field.kind == .secret ? nil : field.defaultValue
     }
 
-    /// What stops the settings from being sent, by field key. `choices` are the loaded options of command-backed selects.
+    /// Whether the form shows a field: every field its `when` names is shown and has one of the listed values.
+    public static func visible(_ field: ServiceManifest.Field, in manifest: ServiceManifest, entry: ServiceEntry) -> Bool {
+        field.when.allSatisfy { key, allowed in
+            guard let other = manifest.field(key) else { return false }
+            return visible(other, in: manifest, entry: entry) && value(other, entry: entry, secrets: [:]).map(allowed.contains) == true
+        }
+    }
+
+    /// What stops the settings from being sent, by field key: only shown fields, and with a command's `needs` only those.
+    /// `choices` are the loaded options of command-backed selects.
     public static func problems(_ manifest: ServiceManifest, entry: ServiceEntry, secrets: [String: String],
-                                choices: [String: [ServiceOption]] = [:]) -> [String: Problem] {
+                                choices: [String: [ServiceOption]] = [:], for command: ServiceManifest.Command? = nil) -> [String: Problem] {
         var problems: [String: Problem] = [:]
-        for field in manifest.fields {
+        for field in manifest.fields where visible(field, in: manifest, entry: entry) && command?.needs?.contains(field.key) != false {
             guard let value = value(field, entry: entry, secrets: secrets) else {
                 if field.required { problems[field.key] = .required }
                 continue
@@ -91,17 +100,26 @@ public enum ServiceValues {
         return problems
     }
 
-    /// One JSON object of strings, keys sorted. Holds secrets: only ever written to the command's settings descriptor.
-    public static func payload(_ manifest: ServiceManifest, entry: ServiceEntry, secrets: [String: String]) -> Data {
+    /// One JSON object of strings, keys sorted: the shown fields and what their choices fill in, cut down to the command's
+    /// `needs` when it has them. Holds secrets: only ever written to the command's settings descriptor.
+    public static func payload(_ manifest: ServiceManifest, entry: ServiceEntry, secrets: [String: String],
+                               for command: ServiceManifest.Command? = nil) -> Data {
         var object: [String: String] = [:]
-        for field in manifest.fields {
+        for field in manifest.fields where visible(field, in: manifest, entry: entry) {
             guard let value = value(field, entry: entry, secrets: secrets) else { continue }
             object[field.key] = value
             for target in (field.options?.sets[value] ?? [:]).keys {
                 if let filled = entry.values[target], !filled.isEmpty { object[target] = filled }
             }
         }
+        if let needs = command?.needs { object = object.filter { needs.contains($0.key) } }
         return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
+    }
+
+    /// The secret fields a command's payload can hold: read only these from the Keychain for it.
+    public static func secretKeys(_ manifest: ServiceManifest, for command: ServiceManifest.Command) -> Set<String> {
+        guard command.config else { return [] }
+        return Set(manifest.fields.filter { $0.kind == .secret && command.needs?.contains($0.key) != false }.map(\.key))
     }
 }
 

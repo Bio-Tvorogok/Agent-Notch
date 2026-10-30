@@ -46,7 +46,8 @@ final class ServicesModel: ObservableObject {
     /// The status file's `lastError`, masked.
     @Published private(set) var lastError: [String: String] = [:]
     @Published private(set) var running: [String: Bool] = [:]
-    @Published private(set) var busy: [String: String] = [:]
+    /// Commands in flight, by service. Start, Stop and Restart wait for each other; a long sign-in blocks none of them.
+    @Published private(set) var busy: [String: Set<String>] = [:]
     @Published private(set) var outputs: [String: Output] = [:]
     @Published private(set) var checks: [String: ServiceCheck] = [:]
     @Published private(set) var choices: [String: [String: Choices]] = [:]
@@ -213,28 +214,39 @@ final class ServicesModel: ObservableObject {
         return values
     }
 
-    func problems(_ id: String) -> [String: ServiceValues.Problem] {
+    /// Whether the form shows a field now (its `when`).
+    func visible(_ id: String, _ field: ServiceManifest.Field) -> Bool {
+        guard let manifest = shown(id), let entry = entry(id) else { return true }
+        return ServiceValues.visible(field, in: manifest, entry: entry)
+    }
+
+    func problems(_ id: String, for command: ServiceManifest.Command? = nil) -> [String: ServiceValues.Problem] {
         guard let manifest = shown(id), let entry = entry(id) else { return [:] }
         var loaded: [String: [ServiceOption]] = [:]
         for (key, state) in choices[id] ?? [:] { if case let .loaded(options) = state { loaded[key] = options } }
         // Filled-in secrets only matter for presence here; their values are checked when the command runs.
         let present = Dictionary(uniqueKeysWithValues: (filledSecrets[id] ?? []).map { ($0, "•") })
-        return ServiceValues.problems(manifest, entry: entry, secrets: present, choices: loaded).filter { key, problem in
+        return ServiceValues.problems(manifest, entry: entry, secrets: present, choices: loaded, for: command).filter { key, problem in
             !(manifest.field(key)?.kind == .secret && problem == .pattern)
         }
     }
 
     // MARK: - Commands
 
-    /// Starting needs every required setting; a check gets whatever is filled in, so it works before the rest of the form.
+    /// Starting needs every required setting it is given; a check gets whatever is filled in, so it works before the rest of the form.
     nonisolated static func needsComplete(_ command: ServiceManifest.Command) -> Bool {
         command.config && ["start", "restart"].contains(command.name)
     }
 
-    /// Runs a manifest command off the main thread. Settings-taking commands get them on the manifest's descriptor.
+    static let lifecycle: Set<String> = ["start", "stop", "restart"]
+    func inFlight(_ id: String, _ name: String) -> Bool { busy[id]?.contains(name) == true }
+    func lifecycleBusy(_ id: String) -> Bool { !(busy[id] ?? []).isDisjoint(with: Self.lifecycle) }
+
+    /// Runs a manifest command off the main thread. Settings-taking commands get them on the manifest's descriptor,
+    /// cut down to the command's `needs`.
     func run(_ id: String, _ name: String) {
-        guard busy[id] == nil, let entry = entry(id) else { return }
-        busy[id] = name
+        guard let entry = entry(id), !inFlight(id, name), !(Self.lifecycle.contains(name) && lifecycleBusy(id)) else { return }
+        busy[id, default: []].insert(name)
         if name == "check-pc" { checks[id] = nil }
         let secrets = self.secrets, home = self.home, cached = loginPath
         Task {
@@ -243,17 +255,20 @@ final class ServicesModel: ObservableObject {
                     let manifest = try ServiceRunner.approved(entry, home: home)
                     guard let command = manifest.command(name) else { throw ServiceRunner.Failure.notApproved }
                     let values = secrets.all(manifest)
-                    if Self.needsComplete(command), !ServiceValues.problems(manifest, entry: entry, secrets: values).isEmpty {
+                    if Self.needsComplete(command), !ServiceValues.problems(manifest, entry: entry, secrets: values, for: command).isEmpty {
                         throw ServiceText.Incomplete()
                     }
                     let path = Self.path(home: home, cached: cached)
-                    let payload = command.config ? ServiceValues.payload(manifest, entry: entry, secrets: values) : nil
+                    // Only the secrets the command may get go into building its payload; all of them still mask its output.
+                    let given = ServiceValues.secretKeys(manifest, for: command)
+                    let payload = command.config
+                        ? ServiceValues.payload(manifest, entry: entry, secrets: values.filter { given.contains($0.key) }, for: command) : nil
                     let result = try ServiceRunner.run(command, of: manifest, settings: payload, environment: ServiceEnvironment.make(path: path.path))
                     let known = Array(values.values)
                     return (Self.output(name, result, secrets: known), name == "check-pc" ? ServiceCheck.parse(result, secrets: known) : nil, path.login)
                 }
             }.value
-            busy[id] = nil
+            busy[id]?.remove(name)
             switch outcome {
             case let .success(done):
                 loginPath = loginPath ?? done.path
@@ -262,6 +277,10 @@ final class ServicesModel: ObservableObject {
                 if name == "check-pc" { checks[id] = ServiceCheck(ok: false, error: error.localizedDescription) }
                 outputs[id] = Output(command: name, ok: false, text: error.localizedDescription)
                 if case ServiceRunner.Failure.notApproved = error { reloadManifests() }
+            }
+            // A command of the service's own, such as a sign-in, can change what the choices command reports.
+            if !ServiceManifest.knownCommands.contains(name), let manifest = approved(id) {
+                for field in manifest.fields where field.options?.command != nil { loadChoices(id, field) }
             }
             refresh()
         }
