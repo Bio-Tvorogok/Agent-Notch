@@ -63,7 +63,7 @@ struct HouseCameraChecks {
         XCTAssertTrue(near(c.pose.zoom, 2), "half way in time is half way in log zoom (ease in/out is 0.5 at 0.5)")
         XCTAssertTrue(near(c.pose.at[0], l.view.home[0] + 50) && near(c.pose.at[1], l.view.home[1] - 30), "and half way in distance")
         c.step(now: 1100, dt: 16)
-        let e = 4 * pow(100.0 / 420, 3)
+        let e = 4 * pow(Double(100) / 420, 3)
         XCTAssertTrue(near(c.pose.at[0], l.view.home[0] + 100 * e), "cubic ease in")
         c.step(now: 1420, dt: 16)
         XCTAssertTrue(c.pose == to && !c.isMoving, "a glide ends exactly on its target after 420 ms")
