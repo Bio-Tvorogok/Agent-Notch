@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Services: start and set up local programs that ship an Agent Notch manifest (`ops/agent-notch.json`). Adding one shows every command it can run and asks for approval; a changed manifest runs nothing until approved again. The settings form follows the manifest, secrets live in the Keychain, and commands get their settings as JSON on descriptor 3 through a pipe. The section shows the service's status file, a check button, masked log tails and an opt-in «Start with Agent Notch». Format: docs/services.md.
+
 ## [0.7.0] - 2026-10-24
 
 ### Added

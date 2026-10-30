@@ -119,6 +119,10 @@ sudo rm "/private/etc/sudoers.d/agent-notch-keep-awake-$(id -u)"
 
 Without this permission, the panel switch still works through the usual macOS administrator dialog. An external `caffeinate` process is not needed.
 
+## Local services
+
+**Settings → Services** starts and sets up local programs that come with an Agent Notch manifest (`ops/agent-notch.json`), such as a Discord bot that should run without a terminal. Add the program's folder: you see every command it can run before anything starts. The form comes from the manifest; secrets go to the macOS Keychain, and commands get their settings through a private pipe on descriptor 3, not files or environment variables. The section shows whether the service runs, its status, a check button and masked logs. The manifest format is in [docs/services.md](docs/services.md).
+
 ## Install
 
 ```bash
