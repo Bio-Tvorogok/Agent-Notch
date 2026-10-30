@@ -219,7 +219,7 @@ final class ServicesModel: ObservableObject {
         if name == "check-pc" { checks[id] = nil }
         let secrets = self.secrets, home = self.home, cached = loginPath
         Task {
-            let outcome = await Task.detached { () -> Result<(ServiceManifest, ServiceRunner.Result, [String]), Error> in
+            let outcome = await Task.detached { () -> Result<(output: Output, check: ServiceCheck?, path: String), Error> in
                 Result {
                     let manifest = try ServiceRunner.approved(entry, home: home)
                     guard let command = manifest.command(name) else { throw ServiceRunner.Failure.notApproved }
@@ -227,17 +227,18 @@ final class ServicesModel: ObservableObject {
                     if Self.needsComplete(command), !ServiceValues.problems(manifest, entry: entry, secrets: values).isEmpty {
                         throw ServiceText.Incomplete()
                     }
-                    let path = cached ?? ServiceEnvironment.loginPath(home: home) ?? ServiceEnvironment.fallbackPath(home: home)
+                    let path = Self.path(home: home, cached: cached)
                     let payload = command.config ? ServiceValues.payload(manifest, entry: entry, secrets: values) : nil
                     let result = try ServiceRunner.run(command, of: manifest, settings: payload, environment: ServiceEnvironment.make(path: path))
-                    return (manifest, result, Array(values.values) + [path])
+                    let known = Array(values.values)
+                    return (Self.output(name, result, secrets: known), name == "check-pc" ? ServiceCheck.parse(result, secrets: known) : nil, path)
                 }
             }.value
             busy[id] = nil
             switch outcome {
-            case let .success((manifest, result, known)):
-                loginPath = known.last
-                finish(id, name, manifest: manifest, result: result, secrets: Array(known.dropLast()))
+            case let .success(done):
+                loginPath = done.path
+                if name == "check-pc" { checks[id] = done.check } else { outputs[id] = done.output }
             case let .failure(error):
                 if name == "check-pc" { checks[id] = ServiceCheck(ok: false, error: error.localizedDescription) }
                 outputs[id] = Output(command: name, ok: false, text: error.localizedDescription)
@@ -247,17 +248,20 @@ final class ServicesModel: ObservableObject {
         }
     }
 
-    private func finish(_ id: String, _ name: String, manifest: ServiceManifest, result: ServiceRunner.Result, secrets: [String]) {
-        if name == "check-pc" {
-            checks[id] = ServiceCheck.parse(result, secrets: secrets)
-            return
-        }
-        let text = String(decoding: result.stdout + result.stderr, as: UTF8.self)
-            .split(separator: "\n", omittingEmptySubsequences: false).suffix(60).joined(separator: "\n")
-        var shown = ServiceLogs.mask(text, secrets: secrets).trimmingCharacters(in: .whitespacesAndNewlines)
+    /// The login shell's PATH, looked up once per app run.
+    nonisolated private static func path(home: String, cached: String?) -> String {
+        cached ?? ServiceEnvironment.loginPath(home: home) ?? ServiceEnvironment.fallbackPath(home: home)
+    }
+
+    /// The last lines of what a command printed, masked, each cut to a readable length after masking.
+    nonisolated private static func output(_ name: String, _ result: ServiceRunner.Result, secrets: [String]) -> Output {
+        let lines = String(decoding: result.stdout + result.stderr, as: UTF8.self)
+            .split(separator: "\n", omittingEmptySubsequences: false).suffix(60)
+            .map { String(ServiceLogs.mask(String($0), secrets: secrets).prefix(2000)) }
+        var shown = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         if result.timedOut { shown += (shown.isEmpty ? "" : "\n") + ServiceText.timedOut }
         // `status` exits 3 when the service is down; that is an answer, not a failure.
-        outputs[id] = Output(command: name, ok: result.ok || name == "status", text: shown.isEmpty ? ServiceText.exitCode(result.status) : shown)
+        return Output(command: name, ok: result.ok || name == "status", text: shown.isEmpty ? ServiceText.exitCode(result.status) : shown)
     }
 
     func loadChoices(_ id: String, _ field: ServiceManifest.Field) {
@@ -266,20 +270,21 @@ final class ServicesModel: ObservableObject {
         choices[id, default: [:]][field.key] = .loading
         let home = self.home, cached = loginPath
         Task {
-            let outcome = await Task.detached { () -> Result<[ServiceOption], Error> in
+            let outcome = await Task.detached { () -> Result<(options: [ServiceOption], path: String), Error> in
                 Result {
                     let manifest = try ServiceRunner.approved(entry, home: home)
                     guard let command = manifest.command(source) else { throw ServiceRunner.Failure.notApproved }
-                    let path = cached ?? ServiceEnvironment.loginPath(home: home) ?? ServiceEnvironment.fallbackPath(home: home)
+                    let path = Self.path(home: home, cached: cached)
                     let result = try ServiceRunner.run(command, of: manifest, settings: nil, environment: ServiceEnvironment.make(path: path))
                     guard let parsed = ServiceOption.parse(result.stdout, options: options) else {
                         throw ServiceText.Unreadable(status: result.status)
                     }
-                    return parsed
+                    return (parsed, path)
                 }
             }.value
             switch outcome {
-            case let .success(options):
+            case let .success((options, path)):
+                loginPath = path
                 choices[id, default: [:]][field.key] = .loaded(options)
                 // A CLI that moved since it was picked: keep what the choice fills in current.
                 if let current = options.first(where: { $0.value == self.value(id, field) && $0.enabled }) { choose(id, field, current) }
@@ -321,12 +326,22 @@ final class ServicesModel: ObservableObject {
 
     @Published var logName: [String: String] = [:]
 
+    private var readingLogs = false
+
+    /// Reads and masks off the main thread: a log line can be long.
     func refreshLogs() {
-        guard let id = selected, let manifest = shown(id) else { return }
+        guard !readingLogs, let id = selected, let manifest = shown(id) else { return }
         let name = logName[id] ?? manifest.logs.first?.name
         guard let log = manifest.logs.first(where: { $0.name == name }) else { logs[id] = []; return }
         let known = Array(secretValues(manifest).values)
-        logs[id] = ServiceLogs.tail(log.path, lines: 80).map { ServiceLogs.mask($0, secrets: known) }
+        readingLogs = true
+        Task {
+            let lines = await Task.detached {
+                ServiceLogs.tail(log.path, lines: 80).map { String(ServiceLogs.mask($0, secrets: known).prefix(2000)) }
+            }.value
+            readingLogs = false
+            logs[id] = lines
+        }
     }
 
     func revealLog(_ id: String) {

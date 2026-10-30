@@ -170,15 +170,17 @@ public enum ServiceLogs {
         return masked
     }
 
+    /// Every repetition before the masked value is bounded: a log line is not trusted to be small or friendly,
+    /// and an unbounded `[A-Za-z_]*` after «token» goes quadratic on a long «tokentoken…».
     private static let patterns: [(NSRegularExpression, String)] = [
         // Discord bot token: three dot-separated base64url parts.
         (#"[A-Za-z0-9_-]{23,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}"#, "***"),
         (#"sk-ant-[A-Za-z0-9_-]+"#, "sk-ant-***"),
         (#"\bsk-[A-Za-z0-9_-]{20,}"#, "sk-***"),
         (#"\b(gh[pousr]_)[A-Za-z0-9]{20,}"#, "$1***"),
-        (#"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"#, "$1 ***"),
-        (#"(?i)((?:token|secret|password|passwd|api[_-]?key)[A-Za-z_]*["']?\s*[=:]\s*["']?)[^\s"',;)}\]]+"#, "$1***"),
+        (#"(?i)\b(bearer|basic)\s{1,8}[A-Za-z0-9._~+/=-]{8,}"#, "$1 ***"),
+        (#"(?i)((?:token|secret|password|passwd|api[_-]?key)[A-Za-z_]{0,32}["']?\s{0,8}[=:]\s{0,8}["']?)[^\s"',;)}\]]+"#, "$1***"),
         // Credentials in a URL: scheme://user:password@host
-        (#"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]+:)[^/\s@]+@"#, "$1***@"),
+        (#"(?i)\b([a-z][a-z0-9+.-]{0,31}://[^/\s:@]{1,256}:)[^/\s@]{1,256}@"#, "$1***@"),
     ].map { (try! NSRegularExpression(pattern: $0.0), $0.1) }
 }

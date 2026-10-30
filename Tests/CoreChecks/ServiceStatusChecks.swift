@@ -93,6 +93,13 @@ extension ServiceChecks {
             ("the stored s3cr3t-value leaked", "the stored *** leaked"),
             ("connected to AqulaSoft in 64 ms", "connected to AqulaSoft in 64 ms"),
         ]
+        // Hostile lines stay linear: «tokentoken…» once took 11 s.
+        for hostile in [String(repeating: "token", count: 13_000), String(repeating: "api_key_", count: 8_000),
+                        "http://" + String(repeating: "a:", count: 32_000), String(repeating: "a", count: 65_000)] {
+            let began = Date()
+            _ = ServiceLogs.mask(hostile, secrets: ["s3cr3t-value"])
+            XCTAssertTrue(Date().timeIntervalSince(began) < 1, "masking \(hostile.prefix(12))… took too long")
+        }
         for (raw, masked) in cases {
             XCTAssertEqual(ServiceLogs.mask(raw, secrets: ["s3cr3t-value", "abc"]), masked, raw)
         }
