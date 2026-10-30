@@ -424,6 +424,9 @@ run("serviceGoshaManifest") { try services.goshaManifest() }
 run("serviceManifestRejects") { try services.manifestRejects() }
 run("serviceValues") { try services.values() }
 run("serviceProviderOptions") { try services.providerOptions() }
+run("serviceSettingsDescriptor") { try services.settingsDescriptor() }
+run("serviceApproval") { try services.approval() }
+run("serviceLoginPath") { try services.loginPath() }
 
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
