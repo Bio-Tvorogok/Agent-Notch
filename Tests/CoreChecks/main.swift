@@ -419,5 +419,11 @@ run("widgetUrgentSubagent") { widget.urgentSubagentStaysWhenFolded() }
 run("widgetPendingPins") { widget.pendingRequestPins() }
 run("widgetPlurals") { widget.russianPlurals() }
 
+let services = ServiceChecks()
+run("serviceGoshaManifest") { try services.goshaManifest() }
+run("serviceManifestRejects") { try services.manifestRejects() }
+run("serviceValues") { try services.values() }
+run("serviceProviderOptions") { try services.providerOptions() }
+
 print(failures == 0 ? "OK \(ran) checks" : "\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

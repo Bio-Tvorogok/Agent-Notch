@@ -1,0 +1,40 @@
+{
+  "manifest": 1,
+  "id": "chedrik",
+  "name": "Гоша",
+  "description": "Менеджер сессий Claude Code в Discord: текст и голос, озвучка на ПК через VoiceStudio.",
+  "cwd": ".",
+  "settings": { "via": "fd", "fd": 3 },
+  "fields": [
+    { "key": "DISCORD_BOT_TOKEN", "label": "Токен Discord-бота", "type": "secret", "required": true },
+    { "key": "OWNER_DISCORD_ID", "label": "Твой Discord ID", "type": "string", "required": true, "pattern": "^\\d{17,20}$" },
+    { "key": "VOICE_CHANNEL_ID", "label": "Голосовой канал для первого запуска", "type": "string", "pattern": "^\\d{17,20}$", "help": "Потом Гоша ходит туда, куда скажешь: «Гоша, иди в <канал>»." },
+    { "key": "VOICE_TTS", "label": "Озвучка", "type": "select", "default": "voicestudio", "options": { "values": [ { "value": "voicestudio", "label": "VoiceStudio на ПК" }, { "value": "off", "label": "Без голоса, только текст" } ] } },
+    { "key": "VOICESTUDIO_URL", "label": "Адрес VoiceStudio на ПК", "type": "string", "placeholder": "http://192.168.1.130:3900" },
+    { "key": "VOICESTUDIO_API_KEY", "label": "Ключ VoiceStudio", "type": "secret" },
+    { "key": "CHEDRIK_PERSONA", "label": "Характер", "type": "select", "default": "podyobshik", "options": { "values": [ { "value": "podyobshik", "label": "подъёбщик" }, { "value": "calm", "label": "спокойный" } ] } },
+    {
+      "key": "BRAIN_PROVIDER",
+      "label": "Мозг",
+      "type": "select",
+      "default": "claude",
+      "options": {
+        "command": "providers",
+        "value": "id",
+        "label": "name",
+        "enabledWhen": "loggedIn",
+        "sets": { "claude": { "CLAUDE_BIN": "path" }, "codex": { "CODEX_BIN": "path" } }
+      }
+    }
+  ],
+  "commands": {
+    "start": { "run": ["ops/gosha", "start", "--config-fd", "3"], "config": true },
+    "stop": { "run": ["ops/gosha", "stop"] },
+    "restart": { "run": ["ops/gosha", "restart", "--config-fd", "3"], "config": true },
+    "status": { "run": ["ops/gosha", "status"] },
+    "providers": { "run": ["ops/gosha", "providers", "--json"], "json": true },
+    "check-pc": { "run": ["ops/gosha", "check-pc", "--json", "--config-fd", "3"], "config": true, "json": true }
+  },
+  "status": "~/.chedrik/run/status.json",
+  "logs": { "bot": "~/.chedrik/logs/chedrik.log", "whisper": "~/.chedrik/logs/whisper.log" }
+}
