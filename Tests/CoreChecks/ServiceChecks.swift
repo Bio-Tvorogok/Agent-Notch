@@ -25,6 +25,7 @@ struct ServiceChecks {
       daemon) (sleep 30 &); echo hi ;;
       flood) head -c 1048576 /dev/zero | tr '\\0' 'x' ;;
       json) printf '%s' "$2"; exit "${3:-0}" ;;
+      stubborn) (trap '' TERM; exec sleep 30) & echo $! > "$2"; trap 'exit 0' TERM; sleep 30 & wait ;;
     esac
     """
 
@@ -74,6 +75,15 @@ struct ServiceChecks {
     }
 
     func load(_ root: String) throws -> ServiceManifest { try ServiceManifest.load(folder: root, home: home) }
+
+    static func shell(_ tool: String, _ args: [String]) throws -> Int32 {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: tool)
+        p.arguments = args
+        try p.run()
+        p.waitUntilExit()
+        return p.terminationStatus
+    }
 
     // MARK: - Manifest
 
@@ -129,6 +139,9 @@ struct ServiceChecks {
         try expect(.missing, "name", "no name") { $0["name"] = nil }
         try expect(.invalid, "name", "blank name") { $0["name"] = "  " }
         try expect(.invalid, "name", "right-to-left override") { $0["name"] = "Safe\u{202E}hs.lave" }
+        try expect(.invalid, "name", "line separator") { $0["name"] = "Safe\u{2028}rm -rf" }
+        try expect(.invalid, "commands.start.run[1]", "paragraph separator", command("start", ["run": ["ops/svc", "a\u{2029}b"]]))
+        try expect(.invalid, "commands.a\u{1B}[2Jb", "escape in a command name reaches the alert stripped", command("a\u{1B}[2Jb", ["run": ["ops/svc"]]))
         try expect(.outsideFolder, "cwd", "cwd up") { $0["cwd"] = "../" }
         try expect(.outsideFolder, "cwd", "cwd absolute") { $0["cwd"] = "/tmp" }
         try expect(.outsideFolder, "commands.start.run[0]", "absolute program", command("start", ["run": ["/bin/sh", "-c", "id"]]))
@@ -140,6 +153,8 @@ struct ServiceChecks {
         try expect(.wrongType, "commands.start.config", "config as text", command("start", ["run": ["ops/svc"], "config": "yes"]))
         try expect(.invalid, "commands.start.timeout", "zero timeout", command("start", ["run": ["ops/svc"], "timeout": 0]))
         try expect(.invalid, "commands.Start", "command name", command("Start", ["run": ["ops/svc"]]))
+        try expect(.invalid, "fields[0].label", "a label of a thousand combining marks",
+                   field(0) { $0["label"] = "a" + String(repeating: "\u{301}", count: 1000) })
         try expect(.missing, "commands", "no commands") { $0["commands"] = nil }
         try expect(.missing, "settings", "config without a channel") { $0["settings"] = nil }
         try expect(.invalid, "settings.via", "settings in the environment") { $0["settings"] = ["via": "env", "fd": 3] }
@@ -148,7 +163,6 @@ struct ServiceChecks {
         try expect(.invalid, "fields[1].key", "key with a dash", field(1) { $0["key"] = "OWNER-ID" })
         try expect(.unknownType, "fields[1].type", "number type", field(1) { $0["type"] = "number" })
         try expect(.badPattern, "fields[1].pattern", "broken pattern", field(1) { $0["pattern"] = "(" })
-        try expect(.badDefault, "fields[1].default", "default off pattern", field(1) { $0["default"] = "12" })
         try expect(.badDefault, "fields[0].default", "secret with a default", field(0) { $0["default"] = "x" })
         try expect(.missing, "fields[0].label", "no label", field(0) { $0["label"] = nil })
         try expect(.missing, "fields[2].options", "select without options", field(2) { $0["options"] = nil })
@@ -189,6 +203,22 @@ struct ServiceChecks {
         do { _ = try load(open); XCTFail("world-writable manifest") }
         catch let error as ServiceManifestError { XCTAssertEqual(error.problem, .unsafePermissions) }
 
+        // An ACL can grant what the mode does not; a deny entry, as on home folders, is fine.
+        let acl = try folder(try manifest())
+        XCTAssertEqual(try Self.shell("/bin/chmod", ["+a", "everyone deny delete", acl + "/ops"]), 0)
+        XCTAssertEqual(try load(acl).id, "svc")
+        XCTAssertEqual(try Self.shell("/bin/chmod", ["+a", "everyone allow write,append", acl + "/ops/svc"]), 0)
+        do { _ = try load(acl); XCTFail("program writable through an ACL") }
+        catch let error as ServiceManifestError { XCTAssertEqual(error, ServiceManifestError(.unsafePermissions, "commands.start.run[0]")) }
+
+        // The manifest itself replaced by a FIFO: refused at once instead of blocking on open.
+        let fifo = try folder(try manifest())
+        try FileManager.default.removeItem(atPath: fifo + "/ops/agent-notch.json")
+        XCTAssertEqual(mkfifo(fifo + "/ops/agent-notch.json", 0o644), 0)
+        defer { unlink(fifo + "/ops/agent-notch.json") }
+        do { _ = try load(fifo); XCTFail("read a FIFO as the manifest") }
+        catch let error as ServiceManifestError { XCTAssertEqual(error.problem, .notFound) }
+
         for (text, problem) in [("[1, 2]", ServiceManifestError.Problem.notJSON), ("{oops", .notJSON),
                                 (String(repeating: " ", count: 300_000) + "{}", .tooLarge)] {
             do { _ = try load(try folder(text)); XCTFail("accepted \(problem)") }
@@ -213,7 +243,7 @@ struct ServiceChecks {
 
         entry.set("12", for: "OWNER", in: m)
         XCTAssertEqual(ServiceValues.problems(m, entry: entry, secrets: ["TOKEN": "t0ken-value"]), ["OWNER": .pattern])
-        entry.set("1234", for: "OWNER", in: m)
+        entry.set(" 1234\n", for: "OWNER", in: m)
         entry.set("sideways", for: "MODE", in: m)
         XCTAssertEqual(ServiceValues.problems(m, entry: entry, secrets: ["TOKEN": "t0ken-value"]), ["MODE": .choice])
         entry.set(nil, for: "MODE", in: m)
@@ -235,6 +265,13 @@ struct ServiceChecks {
                        "defaults filled, only the chosen provider's path")
         let stored = String(decoding: try JSONEncoder().encode(entry), as: UTF8.self)
         XCTAssertFalse(stored.contains("t0ken-value"))
+
+        // Parsing runs no manifest regex; a default that does not fit shows up in the form.
+        let unfit = try load(try folder(try manifest { o in
+            var f = o["fields"] as! [[String: Any]]; f[1]["default"] = "12"; o["fields"] = f
+        }))
+        XCTAssertEqual(ServiceValues.problems(unfit, entry: ServiceEntry(manifest: unfit), secrets: ["TOKEN": "x"]), ["OWNER": .pattern])
+        XCTAssertEqual(entry.approvedCommands?["start"], "ops/svc read → ops/svc [settings]")
     }
 
     static let providers = #"""

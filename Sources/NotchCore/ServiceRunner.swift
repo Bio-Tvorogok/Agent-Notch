@@ -127,6 +127,7 @@ public enum ServiceRunner {
         var status: Int32 = 0
         var timedOut = false
         var termSent: Date?
+        var killSent = false
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
         while true {
             var polled = fds.enumerated().filter { open[$0.offset] }.map { pollfd(fd: $0.element, events: Int16(POLLIN), revents: 0) }
@@ -142,16 +143,24 @@ public enum ServiceRunner {
             }
             if exitedAt == nil {
                 var raw: Int32 = 0
-                if waitpid(pid, &raw, WNOHANG) == pid {
+                let reaped = waitpid(pid, &raw, WNOHANG)
+                if reaped == pid {
                     exitedAt = Date()
                     status = raw & 0x7f == 0 ? (raw >> 8) & 0xff : 128 + (raw & 0x7f)
-                } else if Date().timeIntervalSince(start) > timeout {
-                    if termSent == nil { termSent = Date(); timedOut = true; kill(-pid, SIGTERM) }
-                    else if Date().timeIntervalSince(termSent!) > 3 { kill(-pid, SIGKILL) }
+                } else if reaped < 0 && errno != EINTR {
+                    // Someone else reaped it: the exit code is lost.
+                    exitedAt = Date()
+                    status = 127
                 }
+            }
+            // The whole group: a member that ignores SIGTERM is killed even after the command itself has gone.
+            if Date().timeIntervalSince(start) > timeout {
+                if termSent == nil { termSent = Date(); timedOut = true; kill(-pid, SIGTERM) }
+                else if !killSent, Date().timeIntervalSince(termSent!) > 3 { killSent = true; kill(-pid, SIGKILL) }
             }
             if let exitedAt, !open.contains(true) || Date().timeIntervalSince(exitedAt) > 1 { break }
         }
+        if timedOut && !killSent { kill(-pid, SIGKILL) }
         return Result(status: status, stdout: buffers[0], stderr: buffers[1], timedOut: timedOut)
     }
 }

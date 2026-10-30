@@ -10,6 +10,8 @@ public struct ServiceEntry: Codable, Equatable, Sendable {
     /// Field values and what a choice fills in (`sets`).
     public private(set) var values: [String: String]
     public var launchWithApp: Bool
+    /// What the approved manifest runs, by command: a later approval shows what changed.
+    public var approvedCommands: [String: String]?
 
     public init(manifest: ServiceManifest) {
         id = manifest.id
@@ -17,7 +19,11 @@ public struct ServiceEntry: Codable, Equatable, Sendable {
         approved = manifest.fingerprint
         values = [:]
         launchWithApp = false
+        approvedCommands = manifest.commandSummary
     }
+
+    /// The Keychain scope of its secrets.
+    public var secretScope: String { ServiceManifest.secretScope(id: id, folder: folder) }
 
     /// Stores a plain value; nil or empty clears it. Secret fields are refused, so a slip cannot write a token to preferences.
     @discardableResult
@@ -40,9 +46,18 @@ public enum ServiceValues {
 
     /// Search semantics, like JavaScript's `RegExp.test`: patterns anchor themselves with ^ and $.
     public static func matches(_ value: String, _ pattern: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let regex: NSRegularExpression
+        if let cached = compiled.object(forKey: pattern as NSString) { regex = cached }
+        else {
+            guard let fresh = try? NSRegularExpression(pattern: pattern) else { return false }
+            compiled.setObject(fresh, forKey: pattern as NSString)
+            regex = fresh
+        }
         return regex.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)) != nil
     }
+
+    /// The form checks on every redraw; compile each pattern once.
+    private static let compiled = NSCache<NSString, NSRegularExpression>()
 
     /// Keys a `ServiceEntry` may hold: every non-secret field and every setting a choice fills in.
     public static func plainKeys(_ manifest: ServiceManifest) -> Set<String> {
@@ -51,9 +66,9 @@ public enum ServiceValues {
         return keys
     }
 
-    /// The stored value or, failing that, the default.
+    /// The stored value without surrounding whitespace or, failing that, the default.
     public static func value(_ field: ServiceManifest.Field, entry: ServiceEntry, secrets: [String: String]) -> String? {
-        let value = field.kind == .secret ? secrets[field.key] : entry.values[field.key]
+        let value = (field.kind == .secret ? secrets[field.key] : entry.values[field.key])?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let value, !value.isEmpty { return value }
         return field.kind == .secret ? nil : field.defaultValue
     }

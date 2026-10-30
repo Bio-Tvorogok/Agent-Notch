@@ -79,6 +79,20 @@ public struct ServiceManifest: Equatable, Sendable {
     public let fingerprint: String
 
     public func command(_ name: String) -> Command? { commands.first { $0.name == name } }
+
+    /// Where its secrets live: the id and a hash of the folder, so another folder that claims the same id gets none of them.
+    public var secretScope: String { Self.secretScope(id: id, folder: root) }
+    static func secretScope(id: String, folder: String) -> String {
+        id + "." + SHA256.hash(data: Data(folder.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Each command as the approval sheet shows it, for comparing with what was approved before.
+    public var commandSummary: [String: String] {
+        Dictionary(uniqueKeysWithValues: commands.map { command in
+            let resolved = String(command.executable.dropFirst(root.count + 1))
+            return (command.name, command.run.joined(separator: " ") + " → " + resolved + (command.config ? " [settings]" : ""))
+        })
+    }
     public func field(_ key: String) -> Field? { fields.first { $0.key == key } }
 
     /// Reads the manifest from a service folder.
@@ -89,11 +103,11 @@ public struct ServiceManifest: Equatable, Sendable {
             throw ServiceManifestError(.notFound, root)
         }
         guard let path = canonical(root + "/" + relative), inside(path, root) else { throw ServiceManifestError(.outsideFolder, relative) }
-        var info = stat()
-        guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { throw ServiceManifestError(.notFound, relative) }
-        guard info.st_size <= maxBytes else { throw ServiceManifestError(.tooLarge, relative) }
         guard safe(path), safe((path as NSString).deletingLastPathComponent) else { throw ServiceManifestError(.unsafePermissions, relative) }
-        guard let data = FileManager.default.contents(atPath: path) else { throw ServiceManifestError(.notFound, relative) }
+        let data: Data
+        do { data = try ServiceFiles.contents(path, max: maxBytes) }
+        catch ServiceFiles.Failure.tooLarge { throw ServiceManifestError(.tooLarge, relative) }
+        catch { throw ServiceManifestError(.notFound, relative) }
         return try parse(data, root: root, manifestPath: path, home: home)
     }
 
@@ -216,7 +230,8 @@ public struct ServiceManifest: Equatable, Sendable {
         if pattern != nil && kind == .select { throw ServiceManifestError(.invalid, path + ".pattern") }
         let defaultValue = try r.string("default")
         if defaultValue != nil && kind == .secret { throw ServiceManifestError(.badDefault, path + ".default") }
-        if let defaultValue, let pattern, !ServiceValues.matches(defaultValue, pattern) { throw ServiceManifestError(.badDefault, path + ".default") }
+        // The default is not matched against the pattern here: parsing runs no manifest regex, which could be built to
+        // backtrack for minutes. The form reports a default that does not fit.
 
         var options: Options?
         if kind == .select {
@@ -307,20 +322,25 @@ public struct ServiceManifest: Equatable, Sendable {
         return stat(path, &info) == 0 && info.st_mode & S_IFMT == S_IFDIR
     }
 
-    /// Owned by this user (or root) and writable by no one else: another account on the Mac cannot change what runs.
+    /// Owned by this user (or root) and writable by no one else, by mode or ACL: another account cannot change it.
     static func safe(_ path: String) -> Bool {
         var info = stat()
-        guard stat(path, &info) == 0 else { return false }
-        return (info.st_uid == getuid() || info.st_uid == 0) && info.st_mode & 0o022 == 0
+        guard stat(path, &info) == 0, info.st_uid == getuid() || info.st_uid == 0, info.st_mode & 0o022 == 0 else { return false }
+        return !ServiceFiles.aclGrantsWrite(path)
     }
 
     // MARK: - Text
 
     static func matches(_ text: String, _ pattern: String) -> Bool { text.range(of: pattern, options: .regularExpression) != nil }
 
-    /// No control or invisible formatting characters: a right-to-left override could make an approved command read differently.
+    /// No control, invisible formatting or line-breaking characters: a right-to-left override or a line separator could make
+    /// an approved command read differently.
     static func plain(_ text: String) -> Bool {
-        !text.unicodeScalars.contains { $0.properties.generalCategory == .control || $0.properties.generalCategory == .format }
+        !text.unicodeScalars.contains(where: hidden)
+    }
+
+    static func hidden(_ scalar: Unicode.Scalar) -> Bool {
+        [.control, .format, .lineSeparator, .paragraphSeparator].contains(scalar.properties.generalCategory)
     }
 }
 
@@ -335,7 +355,8 @@ public struct ServiceManifestError: LocalizedError, Equatable, Sendable {
 
     public init(_ problem: Problem, _ path: String) {
         self.problem = problem
-        self.path = path
+        // Paths can carry the manifest's own key names; they reach an alert, so only plain text and not too much of it.
+        self.path = String(String(path.unicodeScalars.filter { !ServiceManifest.hidden($0) }).prefix(160))
     }
 
     public var errorDescription: String? {
@@ -387,7 +408,8 @@ private struct Reader {
     /// Shown to the user: not empty, one line of plain text.
     func text(_ key: String, required: Bool = false, max: Int) throws -> String? {
         guard let text = try string(key, required: required) else { return nil }
-        guard !text.trimmingCharacters(in: .whitespaces).isEmpty, text.count <= max, ServiceManifest.plain(text) else {
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty, text.count <= max, text.utf8.count <= max * 4,
+              ServiceManifest.plain(text) else {
             throw ServiceManifestError(.invalid, at(key))
         }
         return text

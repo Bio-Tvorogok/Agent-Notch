@@ -51,6 +51,16 @@ extension ServiceChecks {
         XCTAssertTrue(slow.timedOut && !slow.ok)
         XCTAssertTrue(Date().timeIntervalSince(began) < 8, "a stuck command is stopped")
 
+        // A member of the command's group that ignores SIGTERM dies with the group after the command itself has gone.
+        let pidFile = home + "/stubborn.pid"
+        let stubborn = try run(m, ["stubborn", pidFile], timeout: 1)
+        XCTAssertTrue(stubborn.timedOut)
+        let child = Int32((try String(contentsOfFile: pidFile, encoding: .utf8)).trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        XCTAssertTrue(child > 0)
+        let gone = Date().addingTimeInterval(3)
+        while kill(child, 0) == 0 && Date() < gone { usleep(50_000) }
+        XCTAssertTrue(child > 0 && kill(child, 0) != 0, "the TERM-ignoring child is killed")
+
         let daemonStart = Date()
         let daemon = try run(m, ["daemon"])
         XCTAssertEqual(out(daemon), "hi")

@@ -283,6 +283,13 @@ enum Snapshot {
             ok = host(ServiceApprovalSheet(pending: .init(manifest: running.manifest, changed: false), onApprove: {}, onCancel: {})
                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light),
                 to: url.appendingPathComponent("approve-\(lang).png")) && ok
+            // A re-approval: «start» changed, «codex-login» gone since the last approval.
+            var previous = running.manifest.commandSummary
+            previous["start"] = "ops/gosha start → ops/gosha"
+            previous["codex-login"] = "ops/gosha codex-login → ops/gosha"
+            ok = host(ServiceApprovalSheet(pending: .init(manifest: running.manifest, changed: true, previous: previous), onApprove: {}, onCancel: {})
+                .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light),
+                to: url.appendingPathComponent("approve-changed-\(lang).png")) && ok
             ok = shot(running.model, "running-\(lang).png", height: 2000) && ok
             ok = shot(stopped.model, "stopped-\(lang).png", height: 1500) && ok
         }

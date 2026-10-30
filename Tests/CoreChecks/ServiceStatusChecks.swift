@@ -35,6 +35,26 @@ extension ServiceChecks {
         XCTAssertEqual(out.rows.map(\.value), [.place(enabled: true, at: nil), .place(enabled: false, at: nil)])
         XCTAssertNil(ServiceStatus.parse(Data("[]".utf8)))
         XCTAssertNil(ServiceStatus.read(home + "/missing.json"))
+        let odd = try XCTUnwrap(ServiceStatus.parse(Data(#"{"pid":true,"bad key":{"ok":true},"tts":{"ok":true,"url":"http://u:pw-secret@pc:1"}}"#.utf8)))
+        XCTAssertNil(odd.pid, "true is not pid 1")
+        XCTAssertEqual(odd.rows.map(\.key), ["tts"])
+        XCTAssertEqual(odd.masked(secrets: []).rows.first?.value, .check(ok: true, url: "http://u:***@pc:1"))
+
+        // Not regular files: a FIFO would block, /dev/zero never ends, a final link is not followed.
+        let fifo = home + "/status.fifo"
+        XCTAssertEqual(mkfifo(fifo, 0o600), 0)
+        // Not left behind: a recursive read of the temporary folder would block on it.
+        defer { unlink(fifo) }
+        let began = Date()
+        XCTAssertNil(ServiceStatus.read(fifo))
+        XCTAssertEqual(ServiceLogs.tail(fifo), [])
+        XCTAssertEqual(ServiceLogs.tail("/dev/zero"), [])
+        XCTAssertTrue(Date().timeIntervalSince(began) < 1, "special files are refused at once")
+        let real = home + "/real-status.json"
+        try Self.status.write(toFile: real, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(atPath: home + "/link-status.json", withDestinationPath: real)
+        XCTAssertTrue(ServiceStatus.read(real) != nil)
+        XCTAssertNil(ServiceStatus.read(home + "/link-status.json"))
 
         func running(_ pid: Int32, _ startedAt: Date) -> Bool {
             ServiceStatus(pid: pid, startedAt: startedAt, updatedAt: nil, lastError: nil, rows: []).isRunning()
@@ -108,12 +128,27 @@ extension ServiceChecks {
     func secrets() throws {
         let m = try load(try folder(try manifest()))
         let store = MemorySecretStore()
-        try store.write("t0ken", m.id, "TOKEN")
+        try store.write("t0ken", m.secretScope, "TOKEN")
         try store.write("ignored", "other", "TOKEN")
         XCTAssertEqual(store.all(m), ["TOKEN": "t0ken"])
-        XCTAssertTrue(store.contains(m.id, "TOKEN") && !store.contains(m.id, "OWNER"))
-        try store.write("", m.id, "TOKEN")
+        XCTAssertTrue(store.contains(m.secretScope, "TOKEN") && !store.contains(m.secretScope, "OWNER"))
+        try store.write("", m.secretScope, "TOKEN")
         XCTAssertEqual(store.all(m), [:], "an empty value deletes")
-        XCTAssertEqual(KeychainSecretStore.service("chedrik"), "com.forichok.agents-notch.service.chedrik")
+
+        // Secrets belong to the id and the folder: another folder claiming the same id sees none.
+        let twin = try load(try folder(try manifest()))
+        XCTAssertEqual(twin.id, m.id)
+        XCTAssertTrue(twin.secretScope != m.secretScope && twin.secretScope.hasPrefix("svc."))
+        XCTAssertEqual(ServiceEntry(manifest: m).secretScope, m.secretScope)
+        try store.write("t0ken", m.secretScope, "TOKEN")
+        XCTAssertEqual(store.all(twin), [:])
+
+        // Removing takes every key of the scope, also ones the manifest no longer lists.
+        try store.write("old", m.secretScope, "RENAMED_KEY")
+        XCTAssertEqual(store.keys(m.secretScope), ["RENAMED_KEY", "TOKEN"])
+        try store.removeAll(m.secretScope)
+        XCTAssertEqual(store.keys(m.secretScope), [])
+        XCTAssertEqual(store.read("other", "TOKEN"), "ignored")
+        XCTAssertEqual(KeychainSecretStore.service("chedrik.0a1b2c3d4e5f"), "com.forichok.agents-notch.service.chedrik.0a1b2c3d4e5f")
     }
 }

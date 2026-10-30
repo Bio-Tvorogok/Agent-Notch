@@ -37,22 +37,20 @@ public struct ServiceStatus: Equatable, Sendable {
     static let maxBytes = 256 * 1024
 
     public static func read(_ path: String) -> ServiceStatus? {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: maxBytes + 1), data.count <= maxBytes else { return nil }
-        return parse(data)
+        (try? ServiceFiles.contents(path, max: maxBytes)).flatMap(parse)
     }
 
     public static func parse(_ data: Data) -> ServiceStatus? {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         var rows: [Row] = []
-        for (key, value) in object {
+        for (key, value) in object where ServiceManifest.matches(key, #"^[A-Za-z0-9_-]{1,32}$"#) {
             guard let block = value as? [String: Any], let parsed = row(block) else { continue }
             rows.append(Row(key: key, value: parsed))
         }
         func rank(_ key: String) -> Int { order.firstIndex(of: key) ?? order.count }
         rows.sort { rank($0.key) < rank($1.key) || rank($0.key) == rank($1.key) && $0.key < $1.key }
-        let pid = (object["pid"] as? NSNumber).flatMap { Int32(exactly: $0.doubleValue) }.flatMap { $0 > 0 ? $0 : nil }
+        let pid = (object["pid"] as? NSNumber).flatMap { CFGetTypeID($0) == CFBooleanGetTypeID() ? nil : Int32(exactly: $0.doubleValue) }
+            .flatMap { $0 > 0 ? $0 : nil }
         return ServiceStatus(pid: pid, startedAt: date(object["startedAt"]), updatedAt: date(object["updatedAt"]),
                              lastError: text(object["lastError"], max: 2000), rows: Array(rows.prefix(16)))
     }
@@ -76,14 +74,29 @@ public struct ServiceStatus: Equatable, Sendable {
         return nil
     }
 
-    /// Running only if the pid is alive and is the process that wrote the file: a pid the system handed to
+    /// The same status with every text it shows masked: names and addresses come from the service.
+    public func masked(secrets: [String]) -> ServiceStatus {
+        func m(_ text: String) -> String { ServiceLogs.mask(text, secrets: secrets) }
+        let rows = rows.map { row -> Row in
+            let value: Value = switch row.value {
+            case let .online(online, servers): .online(online, servers: servers.map { Server(name: m($0.name), answers: $0.answers) })
+            case let .place(enabled, at): .place(enabled: enabled, at: at.map(m))
+            case let .provider(provider, alive): .provider(m(provider), alive: alive)
+            case let .check(ok, url): .check(ok: ok, url: url.map(m))
+            }
+            return Row(key: row.key, value: value)
+        }
+        return ServiceStatus(pid: pid, startedAt: startedAt, updatedAt: updatedAt, lastError: lastError.map(m), rows: rows)
+    }
+
+    /// Running only if the pid is alive, belongs to this user and is the process that wrote the file: a pid the system handed to
     /// a newer process after the service died started after `startedAt`.
     public func isRunning() -> Bool {
         guard let pid, let startedAt else { return false }
         guard kill(pid, 0) == 0 || errno == EPERM else { return false }
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return false }
+        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.pbi_uid == getuid() else { return false }
         let began = Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec) + TimeInterval(info.pbi_start_tvusec) / 1e6)
         return began <= startedAt.addingTimeInterval(5)
     }
@@ -147,13 +160,9 @@ public enum ServiceLogs {
 
     /// The last `lines` lines of a file. A first line cut by the read window is dropped.
     public static func tail(_ path: String, lines: Int = 200) -> [String] {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
-        defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return [] }
-        let start = size > UInt64(tailBytes) ? size - UInt64(tailBytes) : 0
-        guard (try? handle.seek(toOffset: start)) != nil, let data = try? handle.readToEnd() else { return [] }
+        guard let (data, cut) = try? ServiceFiles.tail(path, bytes: tailBytes) else { return [] }
         var all = String(decoding: data, as: UTF8.self).components(separatedBy: "\n")
-        if start > 0, !all.isEmpty { all.removeFirst() }
+        if cut, !all.isEmpty { all.removeFirst() }
         if all.last == "" { all.removeLast() }
         return Array(all.suffix(lines))
     }

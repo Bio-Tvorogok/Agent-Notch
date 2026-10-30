@@ -32,6 +32,11 @@ enum ServiceText {
     static func addService(_ name: String) -> String { Loc.t("Add «\(name)»?", "Добавить «\(name)»?") }
     static func changedTitle(_ name: String) -> String { Loc.t("The manifest of «\(name)» changed", "Манифест «\(name)» изменился") }
     static var folder: String { Loc.t("Folder", "Папка") }
+    static var idLabel: String { "ID" }
+    static var runsIn: String { Loc.t("Runs in", "Запуск из") }
+    static var added: String { Loc.t("new", "новая") }
+    static var changedMark: String { Loc.t("changed", "изменена") }
+    static var removed: String { Loc.t("removed", "убрана") }
     static var commands: String { Loc.t("Commands it can run", "Какие команды запускаются") }
     static func getsSettings(_ fd: Int32) -> String { Loc.t("gets the settings on descriptor \(fd)", "получает настройки в дескрипторе \(fd)") }
     static var reads: String { Loc.t("Status and logs it shows", "Какие файлы читаются для состояния и логов") }
@@ -40,8 +45,8 @@ enum ServiceText {
               "Настроек: \(total), из них секретов в связке ключей: \(secrets).")
     }
     static var approveHelp: String {
-        Loc.t("Agent Notch runs only these commands, only from this folder, and only when you press a button or turn on «Start with Agent Notch». Settings reach a command through a private pipe, never a file or environment variable.",
-              "Agent Notch запускает только эти команды, только из этой папки и только по кнопке или с включённым «Запускать вместе с Agent Notch». Настройки попадают в команду через закрытый канал, а не через файл или переменные окружения.")
+        Loc.t("Agent Notch runs only these commands, only from this folder: by your buttons, with «Start with Agent Notch» on, and the command that lists choices when you open the service's settings. Settings reach a command through a private pipe, never a file or environment variable. Approval covers this manifest; the programs in the folder are trusted as they are.",
+              "Agent Notch запускает только эти команды и только из этой папки: по вашим кнопкам, с включённым «Запускать вместе с Agent Notch» и команду со списком вариантов, когда открываются настройки сервиса. Настройки попадают в команду через закрытый канал, а не через файл или переменные окружения. Подтверждается этот манифест; программам в папке приложение доверяет как есть.")
     }
     static var changedHelp: String {
         Loc.t("Nothing runs until you approve the new version.", "Пока вы не подтвердите новую версию, ничего не запускается.")
@@ -79,8 +84,9 @@ enum ServiceText {
     static func exitCode(_ code: Int32) -> String { Loc.t("Finished with exit code \(code).", "Завершилась с кодом \(code).") }
 
     // Commands
+    /// A manifest may name its own commands, not relabel the ones whose meaning the app knows: «stop» stays «Stop».
     static func command(_ command: ServiceManifest.Command) -> String {
-        if let label = command.label { return label }
+        if let label = command.label, !["start", "stop", "restart", "status"].contains(command.name) { return label }
         return switch command.name {
         case "start": Loc.t("Start", "Запустить")
         case "stop": Loc.t("Stop", "Остановить")

@@ -381,9 +381,30 @@ struct ServiceApprovalSheet: View {
         let manifest = pending.manifest
         VStack(alignment: .leading, spacing: 12) {
             Text(pending.changed ? ServiceText.changedTitle(manifest.name) : ServiceText.addService(manifest.name)).font(.headline)
+            ScrollView {
+                details(manifest).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 560)
+            Text(ServiceText.approveHelp).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(SettingsText.cancel, role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
+                Button(pending.changed ? ServiceText.approveChanged : ServiceText.approve, action: onApprove)
+            }
+        }
+        .padding(20).frame(width: 600)
+    }
+
+    @ViewBuilder private func details(_ manifest: ServiceManifest) -> some View {
+        let now = manifest.commandSummary
+        VStack(alignment: .leading, spacing: 12) {
             if let description = manifest.description { Text(description).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             if pending.changed { Text(ServiceText.changedHelp).foregroundStyle(.orange) }
-            LabeledContent(ServiceText.folder) { Text(Self.short(manifest.root)).font(.caption.monospaced()).textSelection(.enabled) }
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+                GridRow { Text(ServiceText.idLabel).foregroundStyle(.secondary); Text(manifest.id).font(.caption.monospaced()) }
+                GridRow { Text(ServiceText.folder).foregroundStyle(.secondary); Text(Self.short(manifest.root)).font(.caption.monospaced()).textSelection(.enabled) }
+                GridRow { Text(ServiceText.runsIn).foregroundStyle(.secondary); Text(Self.short(manifest.cwd)).font(.caption.monospaced()).textSelection(.enabled) }
+            }
             VStack(alignment: .leading, spacing: 6) {
                 Text(ServiceText.commands).font(.subheadline.weight(.semibold))
                 ForEach(manifest.commands, id: \.name) { command in
@@ -391,10 +412,25 @@ struct ServiceApprovalSheet: View {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(command.name).font(.caption.weight(.medium)).frame(width: 74, alignment: .leading)
                             Text(ServiceText.commandLine(command.run)).font(.caption.monospaced()).textSelection(.enabled)
+                            if let previous = pending.previous {
+                                if previous[command.name] == nil { badge(ServiceText.added) }
+                                else if previous[command.name] != now[command.name] { badge(ServiceText.changedMark) }
+                            }
+                        }
+                        // A link or a «..» inside the folder runs something else than the name says: show what.
+                        if command.executable != manifest.cwd + "/" + command.run[0] {
+                            Text("→ " + command.executable.dropFirst(manifest.root.count + 1))
+                                .font(.caption2.monospaced()).foregroundStyle(.secondary).padding(.leading, 82)
                         }
                         if command.config, let fd = manifest.configFD {
                             Text(ServiceText.getsSettings(fd)).font(.caption2).foregroundStyle(.secondary).padding(.leading, 82)
                         }
+                    }
+                }
+                ForEach((pending.previous ?? [:]).keys.filter { now[$0] == nil }.sorted(), id: \.self) { name in
+                    HStack(spacing: 8) {
+                        Text(name).font(.caption.weight(.medium)).strikethrough().frame(width: 74, alignment: .leading)
+                        badge(ServiceText.removed)
                     }
                 }
             }
@@ -409,14 +445,12 @@ struct ServiceApprovalSheet: View {
                 }
             }
             Text(ServiceText.fields(manifest.fields.count, secrets: manifest.fields.filter { $0.kind == .secret }.count)).font(.caption)
-            Text(ServiceText.approveHelp).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button(SettingsText.cancel, role: .cancel, action: onCancel).keyboardShortcut(.cancelAction)
-                Button(pending.changed ? ServiceText.approveChanged : ServiceText.approve, action: onApprove).keyboardShortcut(.defaultAction)
-            }
         }
-        .padding(20).frame(width: 560)
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text).font(.caption2.weight(.semibold)).foregroundStyle(.white)
+            .padding(.horizontal, 5).padding(.vertical, 1).background(Color.orange, in: Capsule())
     }
 
     static func short(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
