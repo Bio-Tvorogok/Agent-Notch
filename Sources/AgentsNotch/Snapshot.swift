@@ -279,7 +279,7 @@ enum Snapshot {
                   let stoppedDefaults = ScratchDefaults("snapshot-services"),
                   let stopped = ServiceFixture(defaults: stoppedDefaults.defaults, running: false) else { return false }
             defer { runningDefaults.remove(); stoppedDefaults.remove(); running.remove(); stopped.remove() }
-            ok = shot(ServicesModel(defaults: scratch.defaults, secrets: MemorySecretStore()), "empty-\(lang).png", height: 360) && ok
+            ok = shot(ServicesModel(defaults: scratch.defaults, secrets: MemorySecretStore()), "empty-\(lang).png", height: 560) && ok
             ok = host(ServiceApprovalSheet(pending: .init(manifest: running.manifest, changed: false), onApprove: {}, onCancel: {})
                 .background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, .light),
                 to: url.appendingPathComponent("approve-\(lang).png")) && ok
